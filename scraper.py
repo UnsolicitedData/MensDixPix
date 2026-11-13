@@ -26,6 +26,11 @@ HEADERS = {
     "Accept": "application/json"
 }
 
+GOLDEN_PLAY_SCALER = 38.5145
+MODEL_TOTAL_INTERCEPT = 42.986
+PI_OVER_PHI_HFA = 1.9416110252
+LOGISTIC_K_TIGHT = 0.128759
+
 # ==============================================================================
 # 1. MASTER 32-TEAM NFL TELEMETRY, STADIUM BAROMETRICS & POWER RATING REGISTRY
 # ==============================================================================
@@ -68,7 +73,6 @@ NFL_TEAM_REGISTRY = {
 # 2. GEODESIC TRAVEL DISTANCE & SYNOPTIC WEATHER FUNCTIONS
 # ==============================================================================
 def calc_haversine_miles(lat1, lon1, lat2, lon2):
-    """Calculates great-circle travel distance in miles between Away and Home stadiums."""
     r_miles = 3958.8
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
@@ -76,59 +80,32 @@ def calc_haversine_miles(lat1, lon1, lat2, lon2):
     a = math.sin(dphi / 2.0)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2.0)**2
     return round(2.0 * r_miles * math.atan2(math.sqrt(a), math.sqrt(1.0 - a)), 1)
 
-def calc_vapor_pressure_hpa(temp_c, rel_humidity_pct):
-    """Calculates actual water vapor pressure (hPa) via Tetens equation."""
-    es = 6.1078 * math.exp((17.27 * temp_c) / (temp_c + 237.3))
-    return round(es * (rel_humidity_pct / 100.0), 2)
-
-def load_pfr_stats(filepath="pfr_stats.csv"):
-    """Loads local Pro-Football-Reference CSV exports into a fast-lookup dictionary."""
-    stats_db = {}
-    if not os.path.exists(filepath):
-        print(f"[Engine] Warning: {filepath} not found. Using baseline lines.")
-        return stats_db
-
-    try:
-        with open(filepath, mode='r', encoding='utf-8-sig') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                raw_name = row.get('Player', '').replace('*', '').replace('+', '').strip()
-                if not raw_name:
-                    continue
-                try:
-                    yds_per_game = float(row.get('Y/G', 0))
-                except ValueError:
-                    yds_per_game = 0.0
-
-                stats_db[raw_name] = yds_per_game
-    except Exception as e:
-        print(f"[Engine] Error reading {filepath}: {e}")
-
-    return stats_db
-
 def fetch_live_stadium_weather(home_meta):
-    """Fetches live telemetry via Open-Meteo. Locks temp/wind for domes but maps true barometric pressure."""
     lat = home_meta.get("lat", 40.0)
     lon = home_meta.get("lon", -80.0)
     is_dome = home_meta.get("is_dome", False)
     elev_m = home_meta.get("elev_m", 0)
 
     weather_payload = {
-        "temperature_f": 72.0 if is_dome else 65.0,
-        "wind_mph": 0.0 if is_dome else 5.0,
+        "temperature_f": 72.0 if is_dome else 58.0,
+        "wind_mph": 0.0 if is_dome else 6.5,
         "pressure_hpa": 1013.25,
         "is_dome": is_dome,
         "elevation_m": elev_m
     }
 
     try:
-        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,wind_speed_10m,surface_pressure&temperature_unit=fahrenheit&wind_speed_unit=mph"
-        resp = requests.get(url, timeout=5)
+        url = (
+            f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
+            f"&current=temperature_2m,wind_speed_10m,surface_pressure"
+            f"&temperature_unit=fahrenheit&wind_speed_unit=mph"
+        )
+        resp = requests.get(url, headers=HEADERS, timeout=10)
         
         if resp.status_code == 200:
             data = resp.json().get("current", {})
-            weather_payload["temperature_f"] = 72.0 if is_dome else data.get("temperature_2m", 65.0)
-            weather_payload["wind_mph"] = 0.0 if is_dome else data.get("wind_speed_10m", 5.0)
+            weather_payload["temperature_f"] = 72.0 if is_dome else data.get("temperature_2m", 58.0)
+            weather_payload["wind_mph"] = 0.0 if is_dome else data.get("wind_speed_10m", 6.5)
             weather_payload["pressure_hpa"] = data.get("surface_pressure", 1013.25)
             
     except Exception:
@@ -140,9 +117,8 @@ def fetch_live_stadium_weather(home_meta):
 # 3. LIVE ODDS API FETCHER & TRUE-MARGIN PAYLOAD BUILDER
 # ==============================================================================
 def fetch_live_odds():
-    """Fetches live NFL spreads, totals, and moneylines from The Odds API."""
     if not ODDS_API_KEY or ODDS_API_KEY == "PASTE_YOUR_API_KEY_HERE":
-        print("[Notice] No valid ODDS_API_KEY set. Please paste your key into scraper.py.")
+        print("[Notice] No valid ODDS_API_KEY set.")
         return []
 
     url = (
@@ -156,46 +132,17 @@ def fetch_live_odds():
             print(f"[Odds API] Connected! Credits Remaining This Month: {remaining}")
             return json.loads(resp.read().decode("utf-8"))
     except Exception as e:
-        print(f"[Odds API Error] Check your API key or internet connection: {e}")
+        print(f"[Odds API Error] {e}")
         return []
 
-def fetch_target_game_props(event_id, api_key):
-    """Fetches player yardage props for a single target event without burning slate quota."""
-    url = f"https://api.the-odds-api.com/v4/sports/americanfootball_nfl/events/{event_id}/odds"
-    params = {
-        "apiKey": api_key,
-        "regions": "us",
-        "markets": "player_pass_yds,player_rush_yds,player_reception_yds",
-        "oddsFormat": "american"
-    }
-    try:
-        resp = requests.get(url, params=params, timeout=12)
-        print(f"[Props Scraper] HTTP {resp.status_code} for event {event_id}")
-        if resp.status_code == 200:
-            data = resp.json()
-            books = data.get("bookmakers", [])
-            print(f"[Props Scraper] Bookmakers returned: {len(books)}")
-            return data
-        else:
-            print(f"[Props Scraper] API Response: {resp.text}")
-    except Exception as e:
-        print(f"[Props Scraper] Network error for {event_id}: {e}")
-    return None
-
 def build_master_payload():
-    """Compiles live NFL slate, sorts chronologically by kickoff, and deduplicates matchups."""
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     raw_odds = fetch_live_odds()
-    
-    # 1. Sort games chronologically by UTC commence_time
     raw_odds.sort(key=lambda g: g.get("commence_time", ""))
 
-    # Identify target game on deck for props pull
+    # LOCKED OUT: Prevents 3-credit burn on player props.
     target_event_id = None
     target_props_data = None
-    if target_event_id:
-        print(f"[Props Scraper] Fetching primetime props for event: {target_event_id}...")
-        target_props_data = fetch_target_game_props(target_event_id, API_KEY)
 
     games_slate = []
     seen_matchups = set()
@@ -212,7 +159,6 @@ def build_master_payload():
         away_meta = NFL_TEAM_REGISTRY.get(away_full, default_meta)
         home_code, away_code = home_meta["code"], away_meta["code"]
 
-        # 2. Deduplicate: Sort codes to guarantee identical key regardless of bookmaker home/away order
         matchup_pair = tuple(sorted([home_code, away_code]))
         if matchup_pair in seen_matchups:
             continue
@@ -222,7 +168,6 @@ def build_master_payload():
         travel_miles = calc_haversine_miles(away_meta["lat"], away_meta["lon"], home_meta["lat"], home_meta["lon"])
         tz_shift = home_meta["tz"] - away_meta["tz"]
 
-        # Parse local kickoff hour
         commence_str = game.get("commence_time", "")
         kickoff_local_hour = 13
         if commence_str:
@@ -233,9 +178,18 @@ def build_master_payload():
             except Exception:
                 pass
 
-        props_board = []
+        env_weather = fetch_live_stadium_weather(home_meta)
+        wind_mph = 0.0 if env_weather.get("is_dome") else float(env_weather.get("wind_mph", 0.0))
+
+        # --- Calculate True Model Spread (Module 8 + Module 9 Synthesis) ---
+        epa_diff = away_meta["epa"] - home_meta["epa"]
+        delta_qb = away_meta["qb_delta"] - home_meta["qb_delta"]
+        delta_to = away_meta["to_reg"] - home_meta["to_reg"]
         
-        # --- Spread Market ---
+        phi_circ = (0.35 * abs(tz_shift)) + (0.25 * (travel_miles / 1000.0))
+        fair_home_spread = round((GOLDEN_PLAY_SCALER * epa_diff) + delta_qb + delta_to - PI_OVER_PHI_HFA - phi_circ, 2)
+
+        props_board = []
         book = next((b for b in game.get("bookmakers", []) if b["key"] == "fanduel"), None) or \
                next((b for b in game.get("bookmakers", []) if b["key"] == "draftkings"), None) or \
                (game.get("bookmakers")[0] if game.get("bookmakers") else None)
@@ -252,13 +206,17 @@ def build_master_payload():
                     opp_code = home_code if is_away else away_code
                     prefix = "@" if is_away else "vs"
 
-                    win_prob = 0.50 + ((home_meta["epa"] - away_meta["epa"]) / 100) if not is_away else 0.50 - ((home_meta["epa"] - away_meta["epa"]) / 100)
+                    model_team_spread = round(-fair_home_spread if is_away else fair_home_spread, 2)
+                    spread_edge_pts = point - model_team_spread
+                    
+                    win_prob = 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * spread_edge_pts))
+                    win_prob = max(0.05, min(0.95, win_prob))
                     
                     props_board.append({
                         "player": f"{t_code} Spread ({'+' if point > 0 else ''}{point}) ({t_code} {prefix} {opp_code})",
                         "market_type": "spread",
                         "model_win_prob": round(win_prob, 4),
-                        "projected_mean_mu": 0,
+                        "projected_mean_mu": model_team_spread,
                         "projected_variance_sigma2": 0,
                         "base_line": point,
                         "base_odds_over": price,
@@ -267,7 +225,6 @@ def build_master_payload():
                         "alt_odds_over": -165
                     })
 
-            # --- Total Market ---
             total_market = next((m for m in book.get("markets", []) if m["key"] == "totals"), None)
             if total_market:
                 over_out = next((o for o in total_market.get("outcomes", []) if o.get("name") == "Over"), None)
@@ -277,15 +234,22 @@ def build_master_payload():
                     o_price = int(over_out.get("price", -110))
                     u_price = int(under_out.get("price", -110))
                     
-                    proj_total = 42.5 + home_meta["epa"] + away_meta["epa"]
+                    epa_total_pts = (home_meta["epa"] + away_meta["epa"]) * GOLDEN_PLAY_SCALER
+                    qb_total_pts = home_meta["qb_delta"] + away_meta["qb_delta"]
+                    rz_total_pts = (home_meta["rz_dvoa"] + away_meta["rz_dvoa"]) * 10.0
+                    wind_penalty = max(0.0, (wind_mph - 10.0) * 0.25)
+
+                    proj_total = MODEL_TOTAL_INTERCEPT + epa_total_pts + qb_total_pts + rz_total_pts - wind_penalty
                     is_under = proj_total < t_point
                     
-                    calc_prob = 0.68 if abs(proj_total - t_point) > 2.0 else 0.52
+                    total_diff = abs(proj_total - t_point)
+                    calc_prob = 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * total_diff))
+                    calc_prob = max(0.50, min(0.95, calc_prob))
                     
                     props_board.append({
                         "player": f"{away_code}@{home_code} Total ({'U' if is_under else 'O'} {t_point}) ({away_code} @ {home_code})",
                         "market_type": "total",
-                        "model_win_prob": calc_prob,
+                        "model_win_prob": round(calc_prob, 4),
                         "projected_mean_mu": round(proj_total, 1),
                         "projected_variance_sigma2": 0,
                         "base_line": t_point,
@@ -295,74 +259,6 @@ def build_master_payload():
                         "alt_odds_over": -165
                     })
 
-        # Ingest Primetime Player Props if this game is the active target
-        if target_props_data and game.get("id") == target_event_id:
-            p_books = target_props_data.get("bookmakers", [])
-            p_book = next((b for b in p_books if b.get("key") == "fanduel" and b.get("markets")), None) or \
-                     next((b for b in p_books if b.get("key") == "draftkings" and b.get("markets")), None) or \
-                     next((b for b in p_books if b.get("markets")), None)
-
-            if p_book:
-                seen_player_props = set()
-                
-                for p_market in p_book.get("markets", []):
-                    m_key = p_market.get("key", "")
-                    outcomes = p_market.get("outcomes", [])
-
-                    players = {}
-                    for out in outcomes:
-                        p_name = out.get("description", "")
-                        if not p_name:
-                            continue
-                        if p_name not in players:
-                            players[p_name] = {}
-                        players[p_name][out.get("name")] = out
-
-                    for p_name, sides in players.items():
-                        over_side = sides.get("Over")
-                        under_side = sides.get("Under")
-                        if not over_side:
-                            continue
-
-                        line_val = float(over_side.get("point", 0.0))
-                        over_odds = int(over_side.get("price", -110))
-                        under_odds = int(under_side.get("price", -110)) if under_side else -110
-
-                        if "pass" in m_key:
-                            stat_tag = "Pass Yds"
-                        elif "rush" in m_key:
-                            stat_tag = "Rush Yds"
-                        else:
-                            stat_tag = "Rec Yds"
-
-                        prop_key = f"{p_name}_{stat_tag}"
-                        if prop_key in seen_player_props:
-                            continue
-                        seen_player_props.add(prop_key)
-
-                        player_name = p_name.strip()
-
-                        if player_name in true_player_stats and true_player_stats[player_name] > 0:
-                            proj_mu = round(true_player_stats[player_name], 1)
-                        else:
-                            proj_mu = round(line_val, 1)
-                        proj_var = round((proj_mu * 0.42) ** 2, 1)
-
-                        props_board.append({
-                            "player": f"{p_name} {stat_tag} (O {line_val})",
-                            "market_type": "continuous_yards",
-                            "model_win_prob": 0.545,
-                            "projected_mean_mu": proj_mu,
-                            "projected_variance_sigma2": proj_var,
-                            "base_line": line_val,
-                            "base_odds_over": over_odds,
-                            "base_odds_under": under_odds,
-                            "alt_line": round(line_val - 10.5, 1),
-                            "alt_odds_over": -185
-                        })
-
-        print(f"[Props Scraper] Ingested {len(props_board)} total items into board for this matchup.")
-
         games_slate.append({
             "game_id": game_id,
             "league": "NFL",
@@ -371,7 +267,7 @@ def build_master_payload():
             "commence_time": commence_str,
             "kickoff_local_hour": kickoff_local_hour,
             "expected_plays": 126,
-            "environmental_payload": fetch_live_stadium_weather(home_meta),
+            "environmental_payload": env_weather,
             "circadian_payload": {
                 "away_travel_miles": travel_miles,
                 "away_tz_shift": tz_shift,
@@ -398,11 +294,9 @@ def write_atomic_json(payload, filepath=DATA_FILE):
         json.dump(payload, f, indent=2)
     os.replace(temp_path, filepath)
 
-true_player_stats = load_pfr_stats("pfr_stats.csv")
-
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — PHASE 6 TELEMETRY SCRAPER")
+    print(" DIXPIX QUANTITATIVE ENGINE — LOCAL DAEMON MODE")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("==========================================================")
     
@@ -414,8 +308,12 @@ def run_daemon():
             print(f"[{timestamp}] Synced {len(payload['games'])} live NFL matchups with full telemetry to {DATA_FILE}")
         except Exception as err:
             print(f"[Scraper Error] {err}")
-
         time.sleep(POLL_INTERVAL_SECONDS)
 
 if __name__ == "__main__":
-    run_daemon()
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        payload = build_master_payload()
+        write_atomic_json(payload, DATA_FILE)
+        print(f"[Cloud Scraper] Successfully synced {len(payload['games'])} games to {DATA_FILE}")
+    else:
+        run_daemon()
