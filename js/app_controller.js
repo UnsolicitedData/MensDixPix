@@ -1,27 +1,38 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — PHASE 4B: BRIDGE & UI CONTROLLER
- * Polls ./data.json every 5s, runs the 12-module math engine, and repaints all DOM panels.
+ * DIXPIX QUANTITATIVE ENGINE — PHASE 7: MASTER UI & COMBINATORICS CONTROLLER
+ * - Supports "Just the Tip", "Balls Deep", and "DaVinci" modes.
+ * - Renders Translucent Locked "You gotta pay to go balls deep..." boxes in Tip mode,
+ *   and unlocks side-by-side comparison in Balls Deep & DaVinci modes.
+ * - Computes Flagship 5-Pack (Mandatory Top 3 Spreads "Ménage à Trois" + 2 Flex Plays).
+ * - Powers Sticky Combinatorics Calculator & Automated Historical Ledger.
  */
 
 const AppState = {
     rawPayload: null,
     lastDataHash: "",
-    activeMode: "tip",        // "tip" | "unsolicited" | "davinci"
+    activeMode: "tip",        // "tip" | "balls_deep" | "davinci"
     intensitySlider: 0.0,     // -1.618 to +1.618
     filters: {
         nfl: true,
         ncaa: true
     },
+    comboFilters: {
+        team: "ALL",
+        market: "ALL",        // "ALL" | "spread" | "total"
+        tier: "ALL"           // "ALL" | "SMASH"
+    },
     selectedParlayLegs: new Set(),
     processedGames: [],
-    processedProps: []
+    processedProps: [],
+    flagshipFivePack: []
 };
 
 const openCardMemory = new Set();
 const MODEL_TOTAL_INTERCEPT = 42.986;
+const SMASH_WIN_PCT_CUTOFF = 54.5; // 54.5% Win Prob (+4.05% EV at -110)
 
 // ==========================================
-// 1. INITIALIZATION & EVENT LISTENERS
+// 1. INITIALIZATION & GLOBAL MODE UNLOCKER
 // ==========================================
 document.addEventListener("DOMContentLoaded", () => {
     bindUIControls();
@@ -29,10 +40,50 @@ document.addEventListener("DOMContentLoaded", () => {
     setInterval(pollDataFeed, 5000);
 });
 
+window.unlockBallsDeepMode = function(event) {
+    if (event) event.stopPropagation();
+    const bdRadio = document.getElementById("mode-balls-deep");
+    if (bdRadio) {
+        bdRadio.checked = true;
+        AppState.activeMode = "balls_deep";
+        recalculateAndRenderAll();
+    }
+};
+
+window.toggleParlayLeg = function(propKey) {
+    if (AppState.selectedParlayLegs.has(propKey)) {
+        AppState.selectedParlayLegs.delete(propKey);
+    } else {
+        AppState.selectedParlayLegs.add(propKey);
+    }
+    renderCombinatoricsDeck();
+};
+
+window.loadFlagshipPreset = function(onlyMenage = false) {
+    AppState.selectedParlayLegs.clear();
+    AppState.flagshipFivePack.forEach(p => {
+        if (!onlyMenage || (p.flagshipSlot && p.flagshipSlot.includes("MÉNAGE"))) {
+            AppState.selectedParlayLegs.add(p.propKey);
+        }
+    });
+    renderCombinatoricsDeck();
+};
+
+window.clearParlaySlip = function() {
+    AppState.selectedParlayLegs.clear();
+    renderCombinatoricsDeck();
+};
+
+window.setComboFilter = function(filterType, value) {
+    AppState.comboFilters[filterType] = value;
+    renderCombinatoricsDeck();
+};
+
 function bindUIControls() {
     const modeRadios = {
         "mode-tip": "tip",
-        "mode-unsolicited": "unsolicited",
+        "mode-balls-deep": "balls_deep",
+        "mode-unsolicited": "balls_deep",
         "mode-davinci": "davinci"
     };
 
@@ -48,7 +99,6 @@ function bindUIControls() {
         }
     });
 
-    // DaVinci Slider: live updates without closing open cards
     document.addEventListener("input", (e) => {
         if (e.target && e.target.id === "davinci-intensity-slider") {
             const readout = document.getElementById("davinci-readout");
@@ -93,7 +143,7 @@ async function pollDataFeed() {
             recalculateAndRenderAll();
         }
     } catch (err) {
-        console.warn("DixPix Polling Notice: Waiting for local server / data.json feed...", err.message);
+        console.warn("DixPix Polling Notice: Waiting for data.json feed...", err.message);
     }
 }
 
@@ -124,30 +174,22 @@ function recalculateAndRenderAll() {
 
         const m7 = calcBarometricBallistics(envPayload);
         const m8 = calcCircadianStrain(circPayload, game.kickoff_local_hour);
-        const m11 = calcBiophysicalMassLoad(
-            envPayload,
-            homeTel,
-            95.0,
-            0.62,
-            mode,
-            sliderVal
-        );
-        const m12 = calcTurnoverEPAMatrix(
-            { home: homeTel, away: awayTel },
-            gameLeague,
-            mode,
-            sliderVal
-        );
 
+        // Compute both Balls Deep baseline and Active Mode (Tip / Balls Deep / DaVinci)
+        const m11Bd = calcBiophysicalMassLoad(envPayload, homeTel, 95.0, 0.62, "balls_deep", 0.0);
+        const m12Bd = calcTurnoverEPAMatrix({ home: homeTel, away: awayTel }, gameLeague, "balls_deep", 0.0);
+        const psiBd = calcCoupledInteractionPsi(m11Bd.phiBioScore, m12Bd.netTurnoverEPA, 0.0);
+
+        const m11 = calcBiophysicalMassLoad(envPayload, homeTel, 95.0, 0.62, mode, sliderVal);
+        const m12 = calcTurnoverEPAMatrix({ home: homeTel, away: awayTel }, gameLeague, mode, sliderVal);
         const psi11_12 = (mode === "tip")
             ? 0
             : calcCoupledInteractionPsi(m11.phiBioScore, m12.netTurnoverEPA, sliderVal);
 
-        // Baseline ("tip") vs Mode-Active Module 9 Fair Margin
         const m9Base = calcFullGameFairMargin(game, m8.phiCircadianPenalty, 0, "tip");
+        const m9Bd = calcFullGameFairMargin(game, m8.phiCircadianPenalty, psiBd, "balls_deep");
         const m9 = calcFullGameFairMargin(game, m8.phiCircadianPenalty, psi11_12, mode);
 
-        // Full-Telemetry Game Total Calculation (42.986 Intercept + 38.5145 Play Scaler + Modifiers)
         const epaTotalPts = ((homeTel.net_epa_per_play || 0) + (awayTel.net_epa_per_play || 0)) * playScaler;
         const qbTotalPts = (homeTel.qb_replacement_delta || 0) + (awayTel.qb_replacement_delta || 0);
         const rzTotalPts = ((homeTel.opp_rz_dvoa || 0) + (awayTel.opp_rz_dvoa || 0)) * 10.0;
@@ -161,14 +203,18 @@ function recalculateAndRenderAll() {
             matchup: `${game.away_team} @ ${game.home_team}`,
             homeTeam: game.home_team,
             awayTeam: game.away_team,
+            commenceTime: game.commence_time,
             elevationM: envPayload.elevation_m || 0,
             tempK: envPayload.temp_kelvin || 288.15,
             windMph: windMph,
             m7,
             m8,
+            m9Base,
+            m9Bd,
             m9,
             m11,
             m12,
+            psiBd,
             psi11_12,
             baseTelemetryTotal
         };
@@ -177,125 +223,85 @@ function recalculateAndRenderAll() {
 
         if (Array.isArray(game.props_board)) {
             game.props_board.forEach((prop, idx) => {
-                const propKey = `${game.game_id}_${prop.player}_${idx}`;
+                const propKey = `${game.game_id}_${prop.market_type}_${idx}`;
                 const m1 = calcVigFreeProbability(prop.base_odds_over || -110, prop.base_odds_under || -110);
                 const vigFreeOver = m1.trueProbA;
-
-                const vegasLine = (prop.base_line !== undefined && prop.base_line !== null)
-                    ? Number(prop.base_line)
-                    : 0;
-
+                const vegasLine = (prop.base_line !== undefined && prop.base_line !== null) ? Number(prop.base_line) : 0;
                 const isHomeSpread = prop.market_type === "spread" && prop.player.startsWith(`${game.home_team} `);
 
-                // 1. Determine Locked ("Just the Tip") Baseline Projection & Logistic Win Probability
+                // 1. Locked ("Just the Tip") Baseline Projection & Probability
                 let baseProjectedLine = vegasLine;
-                let rawModelProb = 0.50;
+                let tipModelProb = 0.50;
+                let bdProjectedLine = vegasLine;
+                let bdModelProb = 0.50;
 
                 if (prop.market_type === "spread") {
-                    baseProjectedLine = isHomeSpread
-                        ? m9Base.fairHomeSpread
-                        : Number((-m9Base.fairHomeSpread).toFixed(2));
-                    const spreadPointGap = vegasLine - baseProjectedLine;
-                    rawModelProb = (typeof calcPointGapWinProb === "function")
-                        ? calcPointGapWinProb(spreadPointGap)
-                        : Math.max(0.05, Math.min(0.95, 0.50 + (spreadPointGap * 0.03)));
+                    baseProjectedLine = isHomeSpread ? m9Base.fairHomeSpread : Number((-m9Base.fairHomeSpread).toFixed(2));
+                    const tipGap = vegasLine - baseProjectedLine;
+                    tipModelProb = calcPointGapWinProb(tipGap);
+
+                    bdProjectedLine = isHomeSpread ? m9Bd.fairHomeSpread : Number((-m9Bd.fairHomeSpread).toFixed(2));
+                    const bdGap = vegasLine - bdProjectedLine;
+                    bdModelProb = calcPointGapWinProb(bdGap);
                 } else if (prop.market_type === "total") {
                     baseProjectedLine = baseTelemetryTotal;
-                    const totalPointGap = Math.abs(baseProjectedLine - vegasLine);
-                    rawModelProb = (typeof calcPointGapWinProb === "function")
-                        ? calcPointGapWinProb(totalPointGap)
-                        : Math.max(0.50, Math.min(0.95, 0.50 + (totalPointGap * 0.03)));
-                } else if (prop.market_type === "discrete_count") {
-                    baseProjectedLine = prop.projected_mean_mu || 1.5;
-                    rawModelProb = prop.dispersion_r
-                        ? calcNegBinOverProb(baseProjectedLine, prop.dispersion_r, vegasLine)
-                        : calcPoissonOverProb(baseProjectedLine, vegasLine);
+                    const tipTotalGap = Math.abs(baseProjectedLine - vegasLine);
+                    tipModelProb = calcPointGapWinProb(tipTotalGap);
+
+                    const bdShift = (psiBd * 0.45) + (m7.passGameModifierYards * 0.08);
+                    bdProjectedLine = Number((baseProjectedLine + bdShift).toFixed(1));
+                    const bdTotalGap = Math.abs(bdProjectedLine - vegasLine);
+                    bdModelProb = calcPointGapWinProb(bdTotalGap);
                 } else {
                     baseProjectedLine = prop.projected_mean_mu || vegasLine || 50;
-                    const gammaRes = calcGammaSurvivalProb(
-                        baseProjectedLine,
-                        prop.projected_variance_sigma2 || 225,
-                        vegasLine || 45.5
-                    );
-                    rawModelProb = gammaRes.trueOverProb;
+                    const gammaRes = calcGammaSurvivalProb(baseProjectedLine, prop.projected_variance_sigma2 || 225, vegasLine || 45.5);
+                    tipModelProb = gammaRes.trueOverProb;
+                    bdModelProb = Math.max(0.01, Math.min(0.99, tipModelProb + (psiBd * 0.025)));
+                    bdProjectedLine = Number((baseProjectedLine + ((bdModelProb - tipModelProb) * 12.0)).toFixed(1));
                 }
 
-                const moduleNormScores = {
-                    m1: vigFreeOver - 0.5,
-                    m2: rawModelProb - vigFreeOver,
-                    m3: 0.05,
-                    m4: prop.market_type === "discrete_count" ? (rawModelProb - 0.5) : 0,
-                    m5: prop.market_type !== "discrete_count" ? (rawModelProb - 0.5) : 0,
-                    m6: 0.04,
-                    m7: (1.225 - m7.airDensityRho) * 2,
-                    m8: -m8.circadianStrainIndex * 0.05,
-                    m10: 0.05,
-                    m11: mode === "tip" ? 0 : m11.phiBioScore * 0.1,
-                    m12: mode === "tip" ? 0 : m12.netTurnoverEPA * 0.05
-                };
-
-                const masterAgg = calcMasterFibonacciAggregate(moduleNormScores, 13, sliderVal);
-
-                // 2. Apply Active Mode (Unsolicited / DaVinci) & Slider Physics to Line and Probability
+                // 2. Active Mode (Just the Tip / Balls Deep / DaVinci) Projection
                 let finalCalculatedLine = baseProjectedLine;
-                let activeModelProb = rawModelProb;
+                let activeModelProb = tipModelProb;
                 let displayLabel = prop.player;
 
                 if (prop.market_type === "spread") {
-                    const activeHomeSpread = m9.fairHomeSpread - (mode === "davinci" ? (sliderVal * 0.85) : 0);
-                    finalCalculatedLine = isHomeSpread
-                        ? Number(activeHomeSpread.toFixed(2))
-                        : Number((-activeHomeSpread).toFixed(2));
-
-                    const activeSpreadGap = vegasLine - finalCalculatedLine;
-                    activeModelProb = (typeof calcPointGapWinProb === "function")
-                        ? calcPointGapWinProb(activeSpreadGap)
-                        : Math.max(0.05, Math.min(0.95, 0.50 + (activeSpreadGap * 0.03)));
-                } else if (prop.market_type === "total") {
-                    let modeTotalShift = 0.0;
-                    if (mode === "unsolicited") {
-                        modeTotalShift = (psi11_12 * 0.45) + (m7.passGameModifierYards * 0.08);
+                    if (mode === "balls_deep") {
+                        finalCalculatedLine = bdProjectedLine;
+                        activeModelProb = bdModelProb;
                     } else if (mode === "davinci") {
-                        modeTotalShift = (psi11_12 * 0.65) + (sliderVal * 1.45);
+                        const activeHomeSpread = m9.fairHomeSpread - (sliderVal * 0.85);
+                        finalCalculatedLine = isHomeSpread ? Number(activeHomeSpread.toFixed(2)) : Number((-activeHomeSpread).toFixed(2));
+                        activeModelProb = calcPointGapWinProb(vegasLine - finalCalculatedLine);
                     }
-                    finalCalculatedLine = Number((baseProjectedLine + modeTotalShift).toFixed(1));
-
+                } else if (prop.market_type === "total") {
+                    if (mode === "balls_deep") {
+                        finalCalculatedLine = bdProjectedLine;
+                        activeModelProb = bdModelProb;
+                    } else if (mode === "davinci") {
+                        const dvShift = (psi11_12 * 0.65) + (sliderVal * 1.45);
+                        finalCalculatedLine = Number((baseProjectedLine + dvShift).toFixed(1));
+                        activeModelProb = calcPointGapWinProb(Math.abs(finalCalculatedLine - vegasLine));
+                    }
                     const isUnderPick = finalCalculatedLine < vegasLine;
                     const dirTag = isUnderPick ? "U" : "O";
-                    displayLabel = `${game.away_team}@${game.home_team} Total (${dirTag} ${vegasLine}) (${game.away_team} @ ${game.home_team})`;
-
-                    const activeTotalGap = Math.abs(finalCalculatedLine - vegasLine);
-                    activeModelProb = (typeof calcPointGapWinProb === "function")
-                        ? calcPointGapWinProb(activeTotalGap)
-                        : Math.max(0.50, Math.min(0.95, 0.50 + (activeTotalGap * 0.03)));
+                    displayLabel = `${game.away_team}@${game.home_team} Total (${dirTag} ${vegasLine})`;
                 } else {
-                    if (mode === "unsolicited") {
-                        activeModelProb = Math.max(0.01, Math.min(0.99, rawModelProb + (psi11_12 * 0.025) + (masterAgg.omegaFibScore * 0.15)));
+                    if (mode === "balls_deep") {
+                        finalCalculatedLine = bdProjectedLine;
+                        activeModelProb = bdModelProb;
                     } else if (mode === "davinci") {
-                        const sliderBoost = sliderVal * 0.06;
-                        activeModelProb = Math.max(0.01, Math.min(0.99, rawModelProb + (psi11_12 * 0.04) + sliderBoost));
+                        activeModelProb = Math.max(0.01, Math.min(0.99, tipModelProb + (psi11_12 * 0.04) + (sliderVal * 0.06)));
+                        finalCalculatedLine = Number((baseProjectedLine + ((activeModelProb - tipModelProb) * 12.0)).toFixed(1));
                     }
-                    const propShift = (activeModelProb - rawModelProb) * 12.0;
-                    finalCalculatedLine = Number((baseProjectedLine + propShift).toFixed(1));
                 }
 
-                const m2 = calcExpectedValueAndKelly(activeModelProb, prop.base_odds_over || -110);
+                const m2Tip = calcExpectedValueAndKelly(tipModelProb, prop.base_odds_over || -110);
+                const m2Bd = calcExpectedValueAndKelly(bdModelProb, prop.base_odds_over || -110);
+                const m2Active = calcExpectedValueAndKelly(activeModelProb, prop.base_odds_over || -110);
 
-                let altTrueProb = activeModelProb;
-                if (prop.alt_line !== undefined) {
-                    const altGamma = calcGammaSurvivalProb(
-                        Math.abs(finalCalculatedLine) || 50,
-                        prop.projected_variance_sigma2 || 225,
-                        Math.abs(prop.alt_line) || 45.5
-                    );
-                    altTrueProb = altGamma.trueOverProb;
-                }
-                const m6 = calcPropAltMER(
-                    activeModelProb,
-                    altTrueProb,
-                    prop.base_odds_over || -110,
-                    prop.alt_odds_over || -200
-                );
+                const activeWinPct = Number((activeModelProb * 100).toFixed(2));
+                const tierBadge = activeWinPct >= SMASH_WIN_PCT_CUTOFF ? "SMASH" : "PASS";
 
                 AppState.processedProps.push({
                     propKey,
@@ -303,52 +309,166 @@ function recalculateAndRenderAll() {
                     gameId: game.game_id,
                     league: gameLeague,
                     matchup: gameRecord.matchup,
+                    homeTeam: game.home_team,
+                    awayTeam: game.away_team,
                     player: displayLabel,
                     marketType: prop.market_type,
-                    baseLine: prop.base_line,
+                    baseLine: vegasLine,
                     baseOdds: prop.base_odds_over || -110,
                     projectedMean: finalCalculatedLine,
+                    tipProjectedMean: baseProjectedLine,
+                    bdProjectedMean: bdProjectedLine,
                     vigFreePct: Number((vigFreeOver * 100).toFixed(2)),
-                    lockedModelPct: Number((rawModelProb * 100).toFixed(2)),
-                    activeModelPct: Number((activeModelProb * 100).toFixed(2)),
+                    tipModelPct: Number((tipModelProb * 100).toFixed(2)),
+                    tipEvPct: Number(m2Tip.evPercentage.toFixed(2)),
+                    bdModelPct: Number((bdModelProb * 100).toFixed(2)),
+                    bdEvPct: Number(m2Bd.evPercentage.toFixed(2)),
+                    activeModelPct: activeWinPct,
                     activeModelProbRaw: activeModelProb,
-                    edgeDeltaPct: Number(((activeModelProb - vigFreeOver) * 100).toFixed(2)),
-                    evPct: Number(m2.evPercentage.toFixed(2)),
-                    quarterKellyPct: Number(m2.quarterKellyStakePct.toFixed(2)),
-                    altLine: prop.alt_line,
-                    altOdds: prop.alt_odds_over,
-                    altMer: Number(m6.merProp.toFixed(2)),
-                    altAuthorized: m6.isAuthorized,
-                    omegaFib: masterAgg.omegaFibScore
+                    evPct: Number(m2Active.evPercentage.toFixed(2)),
+                    quarterKellyPct: Number(m2Active.quarterKellyStakePct.toFixed(2)),
+                    tierBadge: tierBadge,
+                    flagshipSlot: prop.flagship_slot || "",
+                    psiBd: psiBd,
+                    psiActive: psi11_12
                 });
             });
         }
     });
 
-    AppState.processedProps.sort((a, b) => {
-        const timeA = a.commenceTime || "";
-        const timeB = b.commenceTime || "";
-        if (timeA !== timeB) return timeA.localeCompare(timeB);
-        return b.evPct - a.evPct;
+    // 3. Dynamically Tag Flagship 5-Pack: Mandatory Top 3 Spreads ("Ménage à Trois") + Top 2 Flex
+    AppState.processedProps.forEach(p => { p.flagshipSlot = ""; });
+    const bestSpreadPerGame = [];
+    const remainingPool = [];
+
+    AppState.processedGames.forEach(g => {
+        const gameSpreads = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "spread");
+        if (gameSpreads.length > 0) {
+            gameSpreads.sort((a, b) => b.activeModelPct - a.activeModelPct);
+            bestSpreadPerGame.push(gameSpreads[0]);
+        }
+        const gameTotals = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType !== "spread");
+        remainingPool.push(...gameTotals);
     });
 
+    bestSpreadPerGame.sort((a, b) => b.activeModelPct - a.activeModelPct);
+    const menageTop3 = bestSpreadPerGame.slice(0, 3);
+    menageTop3.forEach((p, idx) => {
+        p.flagshipSlot = `MÉNAGE À TROIS #${idx + 1}`;
+    });
+
+    const leftoverSpreads = bestSpreadPerGame.slice(3);
+    const flexCandidates = [...leftoverSpreads, ...remainingPool].sort((a, b) => b.activeModelPct - a.activeModelPct);
+    const flexTop2 = flexCandidates.slice(0, 2);
+    flexTop2.forEach((p, idx) => {
+        p.flagshipSlot = `5-PACK FLEX #${idx + 4}`;
+    });
+
+    AppState.flagshipFivePack = [...menageTop3, ...flexTop2];
+
+    renderFlagshipFivePack();
     render_game_cards(AppState.rawPayload);
     renderCombinatoricsDeck();
     renderCompendiumBoard();
     renderTelemetryInspector();
     renderBioWeatherLab();
+    renderHistoricalLedger();
 }
 
 // ==========================================
-// 4. DOM REPAINT FUNCTIONS (ALL TABS)
+// 4. HELPER: TRANSLUCENT vs UNLOCKED BALLS DEEP BOX
 // ==========================================
+function buildBallsDeepBoxHTML(engineProp, isSpread) {
+    const bdProj = engineProp.bdProjectedMean;
+    const fmtBdProj = (isSpread && Number(bdProj) > 0) ? `+${bdProj}` : `${bdProj}`;
+    const bdEvStr = `${engineProp.bdEvPct > 0 ? '+' : ''}${engineProp.bdEvPct}% EV`;
+
+    if (AppState.activeMode === "tip") {
+        return `
+            <div class="bd-preview-locked" onclick="window.unlockBallsDeepMode(event)" title="Click to unlock Balls Deep Mode">
+                <span style="color: var(--accent-gold); font-weight: 700;">🔒 BALLS DEEP — "You gotta pay to go balls deep..."</span>
+                <span style="color: var(--text-secondary);">Proj: ${fmtBdProj} (${engineProp.bdModelPct}% | ${bdEvStr})</span>
+            </div>
+        `;
+    } else {
+        const tipProj = engineProp.tipProjectedMean;
+        const fmtTipProj = (isSpread && Number(tipProj) > 0) ? `+${tipProj}` : `${tipProj}`;
+        const tipEvStr = `${engineProp.tipEvPct > 0 ? '+' : ''}${engineProp.tipEvPct}% EV`;
+        const activeLabel = AppState.activeMode === "davinci" ? "DAVINCI ACTIVE" : "BALLS DEEP ACTIVE";
+        const activeProj = (isSpread && Number(engineProp.projectedMean) > 0) ? `+${engineProp.projectedMean}` : `${engineProp.projectedMean}`;
+        const activeEvStr = `${engineProp.evPct > 0 ? '+' : ''}${engineProp.evPct}% EV`;
+
+        return `
+            <div class="bd-preview-unlocked">
+                <span style="color: var(--text-secondary);">Tip Baseline: <strong>${fmtTipProj}</strong> (${engineProp.tipModelPct}% | ${tipEvStr})</span>
+                <span style="color: var(--accent-emerald); font-weight: 700;">⚡ ${activeLabel}: ${activeProj} (${engineProp.activeModelPct}% | ${activeEvStr} | Ψ: ${engineProp.psiActive})</span>
+            </div>
+        `;
+    }
+}
+
+// ==========================================
+// 5. TAB 1: FLAGSHIP 5-PACK & MASTER PICK BOARD
+// ==========================================
+function renderFlagshipFivePack() {
+    const container = document.getElementById("flagship-five-pack-container");
+    if (!container) return;
+
+    if (AppState.flagshipFivePack.length === 0) {
+        container.innerHTML = "";
+        return;
+    }
+
+    const modeTitle = AppState.activeMode === "tip"
+        ? "Just the Tip Baseline"
+        : (AppState.activeMode === "balls_deep" ? "Balls Deep Coupled Mode" : "DaVinci Override Mode");
+
+    container.innerHTML = `
+        <div class="panel-header" style="background: linear-gradient(90deg, rgba(245, 158, 11, 0.14), rgba(6, 182, 212, 0.08));">
+            <div>
+                <h2 class="panel-title" style="color: var(--accent-gold); font-size: 16px;">
+                    👑 THE DIXPIX FLAGSHIP 5-PACK // FEATURING "THE MÉNAGE À TROIS" (TOP 3 SPREADS)
+                </h2>
+                <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 2px;">
+                    Mandatory 3 Spread Anchors + Top 2 Board Flex Edges // Active Engine: <strong style="color: var(--accent-cyan);">${modeTitle}</strong>
+                </div>
+            </div>
+        </div>
+        <div style="padding: 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px;">
+            ${AppState.flagshipFivePack.map(p => {
+                const isMenage = p.flagshipSlot.includes("MÉNAGE");
+                const isSpread = p.marketType === "spread";
+                const fmtProj = (isSpread && Number(p.projectedMean) > 0) ? `+${p.projectedMean}` : `${p.projectedMean}`;
+                const evStr = `${p.evPct > 0 ? '+' : ''}${p.evPct}% EV`;
+
+                return `
+                    <div style="background: var(--bg-elevated); border: 1px solid ${isMenage ? 'rgba(245, 158, 11, 0.5)' : 'rgba(6, 182, 212, 0.45)'}; border-radius: 8px; padding: 14px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <span class="${isMenage ? 'badge-menage' : 'badge-flex'}">${p.flagshipSlot}</span>
+                            <span class="${p.tierBadge === 'SMASH' ? 'badge-smash' : 'badge-pass'}">${p.tierBadge}</span>
+                        </div>
+                        <div style="font-weight: 700; font-size: 14px; color: var(--text-primary); margin-bottom: 4px;">
+                            ${p.player}
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 12px; color: var(--accent-emerald);">
+                            <span>Model Proj: <strong>${fmtProj}</strong></span>
+                            <span>Win: <strong>${p.activeModelPct}%</strong> (${evStr})</span>
+                        </div>
+                        ${buildBallsDeepBoxHTML(p, isSpread)}
+                    </div>
+                `;
+            }).join("")}
+        </div>
+    `;
+}
+
 function render_game_cards(data) {
     const container = document.getElementById("master-board-body");
     if (!container) return;
     
     container.innerHTML = ""; 
     container.style.display = "grid";
-    container.style.gridTemplateColumns = "repeat(auto-fit, minmax(300px, 1fr))";
+    container.style.gridTemplateColumns = "repeat(auto-fit, minmax(320px, 1fr))";
     container.style.gap = "15px";
 
     const games = data.games || [];
@@ -387,7 +507,7 @@ function render_game_cards(data) {
                 ${game.away_team} @ ${game.home_team}
             </div>
             <div style="font-size: 0.85em; text-align: center; color: #cbd5e1;">
-                Click to expand props & telemetry
+                Click to expand lines, EV% &amp; Balls Deep telemetry
             </div>
         `;
 
@@ -402,36 +522,36 @@ function render_game_cards(data) {
             drawer.innerHTML = `<div style="font-size: 0.85em; color: #94a3b8;">No active lines available yet.</div>`;
         } else {
             props.forEach((p, idx) => {
-                const propKey = `${game.game_id}_${p.player}_${idx}`;
+                const propKey = `${game.game_id}_${p.market_type}_${idx}`;
                 const engineData = AppState.processedProps.find(ep => ep.propKey === propKey);
+                if (!engineData) return;
 
-                const rowLabel = engineData ? engineData.player : p.player;
-                const proj = engineData ? engineData.projectedMean : p.projected_mean_mu;
-                const winPct = engineData ? engineData.activeModelPct : 50.0;
+                const isSpread = p.market_type === "spread";
+                const displayProj = (isSpread && Number(engineData.projectedMean) > 0)
+                    ? `+${engineData.projectedMean}`
+                    : `${engineData.projectedMean}`;
+                const evStr = `${engineData.evPct > 0 ? '+' : ''}${engineData.evPct}% EV`;
+                const slotBadge = engineData.flagshipSlot
+                    ? `<span class="${engineData.flagshipSlot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}" style="margin-right:6px;">${engineData.flagshipSlot}</span>`
+                    : "";
 
-                let displayProj = "--";
-                if (proj !== undefined && proj !== null) {
-                    if (p.market_type === "spread" && Number(proj) > 0) {
-                        displayProj = `+${proj}`;
-                    } else {
-                        displayProj = `${proj}`;
-                    }
-                }
+                const propBlock = document.createElement("div");
+                propBlock.style.padding = "8px 0";
+                propBlock.style.borderBottom = "1px solid #0f172a";
 
-                const propRow = document.createElement("div");
-                propRow.style.display = "flex";
-                propRow.style.justifyContent = "space-between";
-                propRow.style.fontSize = "0.85em";
-                propRow.style.padding = "4px 0";
-                propRow.style.borderBottom = "1px solid #0f172a";
-
-                propRow.innerHTML = `
-                    <span>${rowLabel}</span>
-                    <span style="color: ${winPct > 52.38 ? '#22c55e' : '#cbd5e1'};">
-                        Proj: ${displayProj} (Win: ${winPct}%)
-                    </span>
+                propBlock.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.85em;">
+                        <span>${slotBadge}<strong>${engineData.player}</strong></span>
+                        <span style="display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono);">
+                            <span style="color: ${engineData.activeModelPct >= SMASH_WIN_PCT_CUTOFF ? '#22c55e' : '#cbd5e1'};">
+                                Proj: ${displayProj} | Win: ${engineData.activeModelPct}% (${evStr})
+                            </span>
+                            <span class="${engineData.tierBadge === 'SMASH' ? 'badge-smash' : 'badge-pass'}">${engineData.tierBadge}</span>
+                        </span>
+                    </div>
+                    ${buildBallsDeepBoxHTML(engineData, isSpread)}
                 `;
-                drawer.appendChild(propRow);
+                drawer.appendChild(propBlock);
             });
         }
 
@@ -451,64 +571,154 @@ function render_game_cards(data) {
     });
 }
 
+// ==========================================
+// 6. TAB 2: STICKY PARLAY & ROUND ROBIN WORKSTATION
+// ==========================================
 function renderCombinatoricsDeck() {
     const container = document.getElementById("combinatorics-container");
     if (!container) return;
 
     const selectedProps = AppState.processedProps.filter(p => AppState.selectedParlayLegs.has(p.propKey));
-
-    if (selectedProps.length === 0) {
-        container.className = "empty-placeholder";
-        container.innerHTML = `Check any props on the Master Pick Board to build 30% Profit Boost Parlays &amp; Uncorrelated Round Robins.`;
-        return;
-    }
-
-    container.className = "table-responsive";
     const legsPayload = selectedProps.map(p => ({
         americanOdds: p.baseOdds,
         trueProb: p.activeModelProbRaw
     }));
 
     const m10 = calcProfitBoostParlayEV(legsPayload, 1.30);
+    const rrTiers = (typeof calcRoundRobinMatrix === "function") ? calcRoundRobinMatrix(legsPayload) : [];
     const baseStake = 10.00;
     const rawPayout = (baseStake * m10.dRaw).toFixed(2);
     const boostedPayout = (baseStake * m10.dBoost).toFixed(2);
 
+    const uniqueMatchups = Array.from(new Set(AppState.processedGames.map(g => g.matchup)));
+
+    const filteredPool = AppState.processedProps.filter(p => {
+        if (AppState.comboFilters.team !== "ALL" && p.matchup !== AppState.comboFilters.team) return false;
+        if (AppState.comboFilters.market !== "ALL" && p.marketType !== AppState.comboFilters.market) return false;
+        if (AppState.comboFilters.tier === "SMASH" && p.tierBadge !== "SMASH") return false;
+        return true;
+    });
+
     container.innerHTML = `
-        <div style="padding: 20px;">
-            <div style="display:flex; gap:24px; flex-wrap:wrap; margin-bottom:16px; font-family:var(--font-mono);">
-                <div><strong>Selected Legs:</strong> ${selectedProps.length}</div>
-                <div><strong>Joint Win Prob:</strong> <span style="color:var(--accent-cyan);">${m10.trueParlayProb}%</span></div>
-                <div><strong>Raw Multiplier:</strong> ${m10.dRaw}x ($${rawPayout} on $10)</div>
-                <div><strong>30% Boost Multiplier:</strong> <span style="color:var(--accent-gold);">${m10.dBoost}x ($${boostedPayout} on $10)</span></div>
-                <div><strong>Boosted Parlay EV:</strong> <span style="color:${m10.evBoostPct >= 0 ? 'var(--accent-emerald)' : 'var(--accent-danger)'}; font-weight:700;">${m10.evBoostPct > 0 ? '+' : ''}${m10.evBoostPct}%</span></div>
+        <!-- Sticky Parlay & Round Robin Calculator -->
+        <div class="combinatorics-sticky-calc">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 10px;">
+                <div>
+                    <span style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-cyan); font-size: 14px;">
+                        📌 PINNED PARLAY &amp; ROUND ROBIN CALCULATOR
+                    </span>
+                    <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-left: 10px;">
+                        Click any pick below to stack legs in real time
+                    </span>
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button class="calc-action-btn" onclick="window.loadFlagshipPreset(true)" style="border-color: var(--accent-gold); color: var(--accent-gold);">
+                        👑 Load Ménage à Trois (3)
+                    </button>
+                    <button class="calc-action-btn" onclick="window.loadFlagshipPreset(false)" style="border-color: var(--accent-emerald); color: var(--accent-emerald);">
+                        🔥 Load Flagship 5-Pack (5)
+                    </button>
+                    <button class="calc-action-btn" onclick="window.clearParlaySlip()">
+                        ✕ Clear Slip (${selectedProps.length})
+                    </button>
+                </div>
             </div>
-            <table class="quant-table">
-                <thead>
-                    <tr>
-                        <th>Leg</th>
-                        <th>Matchup</th>
-                        <th>Line &amp; Odds</th>
-                        <th>Model Win %</th>
-                        <th>Single-Leg EV</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${selectedProps.map(p => `
-                        <tr>
-                            <td>${p.player}</td>
-                            <td>${p.matchup}</td>
-                            <td>${p.baseLine} (${p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds})</td>
-                            <td>${p.activeModelPct}%</td>
-                            <td>${p.evPct > 0 ? '+' : ''}${p.evPct}%</td>
-                        </tr>
-                    `).join("")}
-                </tbody>
-            </table>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; font-family: var(--font-mono); font-size: 12px;">
+                <div style="background: var(--bg-base); padding: 10px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+                    <div style="color: var(--text-secondary); font-size: 10px;">SELECTED LEGS</div>
+                    <div style="font-size: 16px; font-weight: 800; color: var(--text-primary);">${selectedProps.length} Legs</div>
+                </div>
+                <div style="background: var(--bg-base); padding: 10px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+                    <div style="color: var(--text-secondary); font-size: 10px;">JOINT WIN PROBABILITY</div>
+                    <div style="font-size: 16px; font-weight: 800; color: var(--accent-cyan);">${selectedProps.length ? m10.trueParlayProb : '0.00'}%</div>
+                </div>
+                <div style="background: var(--bg-base); padding: 10px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+                    <div style="color: var(--text-secondary); font-size: 10px;">RAW PARLAY ($10 STAKE)</div>
+                    <div style="font-size: 16px; font-weight: 800; color: var(--text-primary);">${selectedProps.length ? m10.dRaw + 'x ($' + rawPayout + ')' : '--'}</div>
+                </div>
+                <div style="background: var(--bg-base); padding: 10px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+                    <div style="color: var(--text-secondary); font-size: 10px;">30% BOOSTED PAYOUT</div>
+                    <div style="font-size: 16px; font-weight: 800; color: var(--accent-gold);">${selectedProps.length ? m10.dBoost + 'x ($' + boostedPayout + ')' : '--'}</div>
+                </div>
+                <div style="background: var(--bg-base); padding: 10px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+                    <div style="color: var(--text-secondary); font-size: 10px;">COMPOUND PARLAY EV%</div>
+                    <div style="font-size: 16px; font-weight: 800; color: ${m10.evBoostPct >= 0 ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">
+                        ${selectedProps.length ? (m10.evBoostPct > 0 ? '+' : '') + m10.evBoostPct + '%' : '0.00%'}
+                    </div>
+                </div>
+            </div>
+
+            ${rrTiers.length > 0 ? `
+                <div style="margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border-subtle); display: flex; gap: 16px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 11px;">
+                    <span style="color: var(--accent-gold); font-weight: 700;">ROUND ROBIN MATRIX:</span>
+                    ${rrTiers.map(t => `
+                        <span>
+                            <strong>${t.legSize}:</strong> Avg ${t.avgMultiplier}x | Win ${t.avgWinProbPct}% |
+                            <span style="color: ${t.expectedRoiPct >= 0 ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">
+                                EV ${t.expectedRoiPct > 0 ? '+' : ''}${t.expectedRoiPct}%
+                            </span>
+                        </span>
+                    `).join(" • ")}
+                </div>
+            ` : ""}
+        </div>
+
+        <!-- Filter Controls & Interactive Pick Selector Grid -->
+        <div class="panel-card">
+            <div class="panel-header">
+                <h2 class="panel-title">Interactive Parlay &amp; Round Robin Pick Builder</h2>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                    <select onchange="window.setComboFilter('team', this.value)" style="background: var(--bg-base); color: var(--text-primary); border: 1px solid var(--border-subtle); padding: 6px 10px; border-radius: 5px; font-family: var(--font-mono); font-size: 11px;">
+                        <option value="ALL" ${AppState.comboFilters.team === 'ALL' ? 'selected' : ''}>All Matchups (${AppState.processedGames.length})</option>
+                        ${uniqueMatchups.map(m => `<option value="${m}" ${AppState.comboFilters.team === m ? 'selected' : ''}>${m}</option>`).join("")}
+                    </select>
+
+                    <button class="calc-action-btn" onclick="window.setComboFilter('market', 'ALL')" style="${AppState.comboFilters.market === 'ALL' ? 'border-color:var(--accent-cyan);color:var(--accent-cyan);' : ''}">All Markets</button>
+                    <button class="calc-action-btn" onclick="window.setComboFilter('market', 'spread')" style="${AppState.comboFilters.market === 'spread' ? 'border-color:var(--accent-cyan);color:var(--accent-cyan);' : ''}">Spreads</button>
+                    <button class="calc-action-btn" onclick="window.setComboFilter('market', 'total')" style="${AppState.comboFilters.market === 'total' ? 'border-color:var(--accent-cyan);color:var(--accent-cyan);' : ''}">Totals (O/U)</button>
+                    <button class="calc-action-btn" onclick="window.setComboFilter('tier', AppState.comboFilters.tier === 'SMASH' ? 'ALL' : 'SMASH')" style="${AppState.comboFilters.tier === 'SMASH' ? 'border-color:var(--accent-emerald);color:var(--accent-emerald);' : ''}">
+                        SMASH Only
+                    </button>
+                </div>
+            </div>
+
+            <div style="padding: 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px;">
+                ${filteredPool.map(p => {
+                    const isSelected = AppState.selectedParlayLegs.has(p.propKey);
+                    const isSpread = p.marketType === "spread";
+                    const fmtProj = (isSpread && Number(p.projectedMean) > 0) ? `+${p.projectedMean}` : `${p.projectedMean}`;
+                    const evStr = `${p.evPct > 0 ? '+' : ''}${p.evPct}% EV`;
+
+                    return `
+                        <div onclick="window.toggleParlayLeg('${p.propKey}')" style="cursor: pointer; padding: 12px 14px; border-radius: 8px; background: ${isSelected ? 'rgba(6, 182, 212, 0.14)' : 'var(--bg-elevated)'}; border: 1px solid ${isSelected ? 'var(--accent-cyan)' : 'var(--border-subtle)'}; transition: all 0.15s ease;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);">
+                                    ${isSelected ? '✅ IN SLIP // ' : ''}${p.matchup}
+                                </span>
+                                <div style="display: flex; gap: 6px;">
+                                    ${p.flagshipSlot ? `<span class="${p.flagshipSlot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}">${p.flagshipSlot}</span>` : ''}
+                                    <span class="${p.tierBadge === 'SMASH' ? 'badge-smash' : 'badge-pass'}">${p.tierBadge}</span>
+                                </div>
+                            </div>
+                            <div style="font-weight: 700; font-size: 13px; color: var(--text-primary); margin-bottom: 4px;">
+                                ${p.player} <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);">(${p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds})</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 12px; color: var(--accent-emerald);">
+                                <span>Proj: <strong>${fmtProj}</strong></span>
+                                <span>Win: <strong>${p.activeModelPct}%</strong> (${evStr})</span>
+                            </div>
+                        </div>
+                    `;
+                }).join("")}
+            </div>
         </div>
     `;
 }
 
+// ==========================================
+// 7. COMPENDIUM, TELEMETRY (DYNAMIC PSI) & BIOLAB
+// ==========================================
 function renderCompendiumBoard() {
     const tbody = document.getElementById("compendium-board-body");
     if (!tbody || AppState.processedGames.length === 0) return;
@@ -546,8 +756,21 @@ function renderTelemetryInspector() {
     const container = document.getElementById("telemetry-container");
     if (!container || AppState.processedGames.length === 0) return;
 
+    const showCoupledPsi = (AppState.activeMode === "balls_deep" || AppState.activeMode === "davinci");
+    const modeDisplay = AppState.activeMode === "tip"
+        ? "JUST THE TIP"
+        : (AppState.activeMode === "balls_deep" ? "BALLS DEEP" : "DAVINCI");
+
     container.className = "table-responsive";
     container.innerHTML = `
+        ${!showCoupledPsi ? `
+            <div style="padding: 12px 16px; border-bottom: 1px solid var(--border-subtle);">
+                <div class="bd-preview-locked" onclick="window.unlockBallsDeepMode(event)" style="margin-top: 0;">
+                    <span style="color: var(--accent-gold); font-weight: 700;">🔒 COUPLED Ψ_11,12 COLUMN HIDDEN IN TIP MODE — "You gotta pay to go balls deep..."</span>
+                    <span style="color: var(--accent-cyan);">Click here to unlock Balls Deep Telemetry &rarr;</span>
+                </div>
+            </div>
+        ` : ""}
         <table class="quant-table">
             <thead>
                 <tr>
@@ -555,21 +778,31 @@ function renderTelemetryInspector() {
                     <th>Mode Active</th>
                     <th>Circadian Strain (CSI)</th>
                     <th>Turnover EPA Diff (M12)</th>
-                    <th>Coupled Psi (Ψ_11,12)</th>
+                    ${showCoupledPsi ? `<th>Coupled Psi (&Psi;_11,12)</th>` : ""}
                     <th>Model Fair Home Spread (M9)</th>
                 </tr>
             </thead>
             <tbody>
-                ${AppState.processedGames.map(g => `
-                    <tr>
-                        <td><strong>${g.matchup}</strong></td>
-                        <td style="text-transform:uppercase; color:var(--accent-cyan);">${AppState.activeMode}</td>
-                        <td>${g.m8.circadianStrainIndex} (Φ_circ: ${g.m8.phiCircadianPenalty})</td>
-                        <td>${g.m12.netTurnoverEPA > 0 ? '+' : ''}${g.m12.netTurnoverEPA}</td>
-                        <td style="color:var(--accent-gold);">${g.psi11_12}</td>
-                        <td><strong>${g.homeTeam} ${g.m9.fairHomeSpread > 0 ? '+' + g.m9.fairHomeSpread : g.m9.fairHomeSpread}</strong></td>
-                    </tr>
-                `).join("")}
+                ${AppState.processedGames.map(g => {
+                    const tipSpreadStr = `${g.homeTeam} ${g.m9Base.fairHomeSpread > 0 ? '+' + g.m9Base.fairHomeSpread : g.m9Base.fairHomeSpread}`;
+                    const activeSpreadStr = `${g.homeTeam} ${g.m9.fairHomeSpread > 0 ? '+' + g.m9.fairHomeSpread : g.m9.fairHomeSpread}`;
+
+                    return `
+                        <tr>
+                            <td><strong>${g.matchup}</strong></td>
+                            <td style="color:var(--accent-cyan); font-weight:700;">${modeDisplay}</td>
+                            <td>${g.m8.circadianStrainIndex} (&Phi;_circ: ${g.m8.phiCircadianPenalty})</td>
+                            <td>${g.m12.netTurnoverEPA > 0 ? '+' : ''}${g.m12.netTurnoverEPA}</td>
+                            ${showCoupledPsi ? `<td style="color:var(--accent-gold); font-weight:700;">${g.psi11_12}</td>` : ""}
+                            <td>
+                                ${showCoupledPsi
+                                    ? `<span style="color:var(--text-secondary); margin-right:10px;">Tip: ${tipSpreadStr}</span> <strong style="color:var(--accent-emerald);">Active: ${activeSpreadStr}</strong>`
+                                    : `<strong>${tipSpreadStr}</strong>`
+                                }
+                            </td>
+                        </tr>
+                    `;
+                }).join("")}
             </tbody>
         </table>
     `;
@@ -587,12 +820,12 @@ function renderBioWeatherLab() {
                     <th>Matchup</th>
                     <th>Elevation (m)</th>
                     <th>Local Gravity g(h)</th>
-                    <th>Air Density ρ (kg/m³)</th>
-                    <th>FG Shift (ΔD_FG)</th>
-                    <th>Pass Carry (ΔD_Pass)</th>
-                    <th>Pass Mod (ΔY_Total)</th>
-                    <th>Somatic Density (ρ_player)</th>
-                    <th>Biophysical Load (Φ_bio)</th>
+                    <th>Air Density &rho; (kg/m³)</th>
+                    <th>FG Shift (&Delta;D_FG)</th>
+                    <th>Pass Carry (&Delta;D_Pass)</th>
+                    <th>Pass Mod (&Delta;Y_Total)</th>
+                    <th>Somatic Density (&rho;_player)</th>
+                    <th>Biophysical Load (&Phi;_bio)</th>
                 </tr>
             </thead>
             <tbody>
@@ -611,5 +844,151 @@ function renderBioWeatherLab() {
                 `).join("")}
             </tbody>
         </table>
+    `;
+}
+
+// ==========================================
+// 8. TAB 5: AUTOMATED HISTORICAL LEDGER & SCORECARD
+// ==========================================
+function renderHistoricalLedger() {
+    const container = document.getElementById("ledger-container");
+    if (!container) return;
+
+    const ledgerObj = (AppState.rawPayload && AppState.rawPayload.historical_ledger) || {};
+    const summary = ledgerObj.summary || {};
+    const entriesMap = ledgerObj.entries || {};
+
+    const fmtBucket = (key) => {
+        const b = summary[key];
+        if (!b || !b.total) return "0 / 0 (0.0%)";
+        return `${b.fraction} (${b.win_pct}%)`;
+    };
+
+    // Build rows from saved historical_ledger entries, or live preview from current slate if ledger is awaiting first scrape
+    let rowsHTML = "";
+    const entryKeys = Object.keys(entriesMap);
+
+    const renderGradeBadge = (res) => {
+        if (res === "HIT") return `<span class="badge-smash" style="font-size:11px;">✅ HIT</span>`;
+        if (res === "MISS") return `<span class="badge-pass" style="background:rgba(239,68,68,0.18);color:var(--accent-danger);border-color:rgba(239,68,68,0.45);font-size:11px;">❌ MISS</span>`;
+        if (res === "PUSH") return `<span class="badge-pass" style="font-size:11px;">➖ PUSH</span>`;
+        return `<span class="badge-pass" style="color:var(--accent-cyan);border-color:rgba(6,182,212,0.4);font-size:11px;">⏳ LOCKED / PENDING</span>`;
+    };
+
+    if (entryKeys.length > 0) {
+        entryKeys.forEach(gid => {
+            const e = entriesMap[gid];
+            const statusLabel = e.status === "FINAL"
+                ? `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${e.final_score})</span>`
+                : (e.is_locked ? `<span style="color:var(--accent-gold);font-weight:700;">🔒 IN-PLAY (CLOSING LOCKED)</span>` : `<span style="color:var(--text-secondary);">PRE-KICKOFF SNAPSHOT</span>`);
+
+            [
+                { type: "SPREAD", rec: e.spread_record },
+                { type: "TOTAL (O/U)", rec: e.total_record }
+            ].forEach(item => {
+                if (!item.rec) return;
+                const r = item.rec;
+                const bdCell = AppState.activeMode === "tip"
+                    ? `<div class="bd-preview-locked" onclick="window.unlockBallsDeepMode(event)" style="margin:0;padding:4px 8px;">
+                         <span style="color:var(--accent-gold);">🔒 "You gotta pay to go balls deep..."</span>
+                       </div>`
+                    : `<span style="color:var(--accent-emerald);">Proj: <strong>${r.balls_deep_proj}</strong> (${r.balls_deep_win_pct}% | ${r.balls_deep_ev_pct > 0 ? '+' : ''}${r.balls_deep_ev_pct}% EV) [${r.result_balls_deep}]</span>`;
+
+                rowsHTML += `
+                    <tr>
+                        <td><strong>${e.matchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+                        <td>${item.type} ${r.flagship_slot ? `<br><span class="badge-menage">${r.flagship_slot}</span>` : ""}</td>
+                        <td><strong>${r.pick_label}</strong> <span class="${r.tier_badge === 'SMASH' ? 'badge-smash' : 'badge-pass'}">${r.tier_badge}</span></td>
+                        <td>${r.vegas_closing_line} (${r.odds > 0 ? '+' + r.odds : r.odds})</td>
+                        <td>Proj: <strong>${r.tip_proj}</strong> (${r.tip_win_pct}% | ${r.tip_ev_pct > 0 ? '+' : ''}${r.tip_ev_pct}% EV)</td>
+                        <td>${bdCell}</td>
+                        <td>${renderGradeBadge(r.result_tip)}</td>
+                    </tr>
+                `;
+            });
+        });
+    } else {
+        // Immediate live fallback before next cloud scrape writes historical_ledger
+        AppState.processedGames.forEach(g => {
+            const gameSpreads = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "spread").sort((a, b) => b.activeModelPct - a.activeModelPct);
+            const gameTotals = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "total");
+            const topPicks = [gameSpreads[0], gameTotals[0]].filter(Boolean);
+
+            topPicks.forEach(p => {
+                const bdCell = AppState.activeMode === "tip"
+                    ? `<div class="bd-preview-locked" onclick="window.unlockBallsDeepMode(event)" style="margin:0;padding:4px 8px;">
+                         <span style="color:var(--accent-gold);">🔒 "You gotta pay to go balls deep..."</span>
+                       </div>`
+                    : `<span style="color:var(--accent-emerald);">Proj: <strong>${p.bdProjectedMean}</strong> (${p.bdModelPct}% | ${p.bdEvPct > 0 ? '+' : ''}${p.bdEvPct}% EV)</span>`;
+
+                rowsHTML += `
+                    <tr>
+                        <td><strong>${g.matchup}</strong><br><span style="font-size:11px;color:var(--text-secondary);">TRACKING CLOSING LINE</span></td>
+                        <td>${p.marketType.toUpperCase()} ${p.flagshipSlot ? `<br><span class="badge-menage">${p.flagshipSlot}</span>` : ""}</td>
+                        <td><strong>${p.player}</strong> <span class="${p.tierBadge === 'SMASH' ? 'badge-smash' : 'badge-pass'}">${p.tierBadge}</span></td>
+                        <td>${p.baseLine} (${p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds})</td>
+                        <td>Proj: <strong>${p.tipProjectedMean}</strong> (${p.tipModelPct}% | ${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV)</td>
+                        <td>${bdCell}</td>
+                        <td><span class="badge-pass" style="color:var(--accent-cyan);">⏳ AWAITING KICKOFF</span></td>
+                    </tr>
+                `;
+            });
+        });
+    }
+
+    container.innerHTML = `
+        <!-- 4-Card Diagnostic Hit-Rate Scoreboard -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-bottom: 20px; font-family: var(--font-mono);">
+            <div style="background: var(--bg-elevated); border: 1px solid rgba(245, 158, 11, 0.5); border-radius: 8px; padding: 14px;">
+                <div style="font-size: 11px; color: var(--accent-gold); font-weight: 800;">👑 FLAGSHIP 5-PACK &amp; MÉNAGE À TROIS</div>
+                <div style="font-size: 18px; font-weight: 800; margin: 6px 0;">5-Pack: ${fmtBucket("flagship_5pack")}</div>
+                <div style="font-size: 12px; color: var(--text-secondary);">Ménage à Trois (Top 3 Spreads): <strong>${fmtBucket("menage_a_trois")}</strong></div>
+            </div>
+
+            <div style="background: var(--bg-elevated); border: 1px solid rgba(16, 185, 129, 0.45); border-radius: 8px; padding: 14px;">
+                <div style="font-size: 11px; color: var(--accent-emerald); font-weight: 800;">🔥 OFFICIAL SMASH RECORD (&ge;54.5%)</div>
+                <div style="font-size: 18px; font-weight: 800; margin: 6px 0;">Overall: ${fmtBucket("overall_smash")}</div>
+                <div style="font-size: 12px; color: var(--text-secondary);">
+                    Spreads: <strong>${fmtBucket("spread_smash")}</strong> | Totals: <strong>${fmtBucket("total_smash")}</strong>
+                </div>
+            </div>
+
+            <div style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 14px;">
+                <div style="font-size: 11px; color: var(--text-secondary); font-weight: 800;">🛡️ PASS AUDIT (&lt;54.5% LEANS)</div>
+                <div style="font-size: 18px; font-weight: 800; margin: 6px 0; color: var(--text-secondary);">${fmtBucket("pass_audit")}</div>
+                <div style="font-size: 11px; color: var(--text-muted);">Tracks low-edge games we passed on</div>
+            </div>
+
+            <div style="background: var(--bg-elevated); border: 1px solid rgba(6, 182, 212, 0.45); border-radius: 8px; padding: 14px;">
+                <div style="font-size: 11px; color: var(--accent-cyan); font-weight: 800;">⚡ TIP vs. BALLS DEEP HEAD-TO-HEAD</div>
+                <div style="font-size: 14px; font-weight: 800; margin: 6px 0;">Just the Tip: ${fmtBucket("tip_all")}</div>
+                ${AppState.activeMode === "tip" ? `
+                    <div class="bd-preview-locked" onclick="window.unlockBallsDeepMode(event)">
+                        <span style="color: var(--accent-gold);">🔒 Balls Deep Record — "You gotta pay to go balls deep..."</span>
+                    </div>
+                ` : `
+                    <div style="font-size: 14px; font-weight: 800; color: var(--accent-emerald);">Balls Deep: ${fmtBucket("balls_deep_all")}</div>
+                `}
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="quant-table">
+                <thead>
+                    <tr>
+                        <th>Matchup &amp; Status</th>
+                        <th>Market &amp; Slot</th>
+                        <th>Official Model Pick</th>
+                        <th>Vegas Closing</th>
+                        <th>Just the Tip Closing</th>
+                        <th>Balls Deep Closing</th>
+                        <th>Graded Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rowsHTML}
+                </tbody>
+            </table>
+        </div>
     `;
 }
