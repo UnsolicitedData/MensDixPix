@@ -4,13 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DixPix</title>
-  
+
   <!-- SMS & Social Media Link Preview Tags -->
-  <meta property="og:title" content="MensDixPix">
+  <meta property="og:title" content="DixPix">
   <meta property="og:description" content="Open for more than 'Just the Tip' ;)">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="DixPix Quant Engine">
+  <meta name="twitter:title" content="DixPix">
+  <meta name="twitter:description" content="Open for more than 'Just the Tip' ;)">
+
   <style>
     :root {
       --bg-base: #090d16;
@@ -24,6 +26,7 @@
       --accent-emerald: #10b981;
       --accent-gold: #f59e0b;
       --accent-danger: #ef4444;
+      --accent-purple: #a855f7;
       --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
     }
@@ -45,7 +48,6 @@
       flex-direction: column;
     }
 
-    /* Hidden Radio Controllers for Pure CSS State Management */
     .tab-radio, .mode-radio {
       display: none;
     }
@@ -55,8 +57,8 @@
       position: sticky;
       top: 0;
       z-index: 1000;
-      background-color: rgba(17, 24, 39, 0.95);
-      backdrop-filter: blur(8px);
+      background-color: rgba(17, 24, 39, 0.96);
+      backdrop-filter: blur(10px);
       border-bottom: 1px solid var(--border-subtle);
       padding: 12px 24px;
       display: flex;
@@ -152,7 +154,7 @@
     .mode-switch-label {
       padding: 5px 12px;
       font-size: 12px;
-      font-weight: 600;
+      font-weight: 700;
       color: var(--text-secondary);
       border-radius: 4px;
       cursor: pointer;
@@ -160,11 +162,17 @@
       user-select: none;
     }
 
-    #mode-tip:checked ~ .app-header label[for="mode-tip"],
-    #mode-unsolicited:checked ~ .app-header label[for="mode-unsolicited"] {
+    #mode-tip:checked ~ .app-header label[for="mode-tip"] {
       background: var(--bg-elevated);
       color: var(--accent-cyan);
       box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+    }
+
+    #mode-balls-deep:checked ~ .app-header label[for="mode-balls-deep"] {
+      background: rgba(16, 185, 129, 0.18);
+      color: var(--accent-emerald);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.25);
     }
 
     #mode-davinci:checked ~ .app-header label[for="mode-davinci"] {
@@ -250,11 +258,11 @@
       display: flex;
       gap: 4px;
       overflow-x: auto;
-      scrollbar-width: none; /* Hide scrollbar Firefox */
+      scrollbar-width: none;
     }
     
     .tab-nav::-webkit-scrollbar {
-      display: none; /* Hide scrollbar Chrome/Safari */
+      display: none;
     }
 
     .tab-link {
@@ -278,7 +286,8 @@
     #tab-2:checked ~ .tab-nav label[for="tab-2"],
     #tab-compendium:checked ~ .tab-nav label[for="tab-compendium"],
     #tab-3:checked ~ .tab-nav label[for="tab-3"],
-    #tab-4:checked ~ .tab-nav label[for="tab-4"] {
+    #tab-4:checked ~ .tab-nav label[for="tab-4"],
+    #tab-5:checked ~ .tab-nav label[for="tab-5"] {
         color: var(--accent-cyan);
         border-bottom-color: var(--accent-cyan);
         background: rgba(6, 182, 212, 0.05);
@@ -301,7 +310,8 @@
     #tab-2:checked ~ .workspace #panel-combinatorics,
     #tab-compendium:checked ~ .workspace #panel-compendium,
     #tab-3:checked ~ .workspace #panel-telemetry,
-    #tab-4:checked ~ .workspace #panel-biolab {
+    #tab-4:checked ~ .workspace #panel-biolab,
+    #tab-5:checked ~ .workspace #panel-ledger {
         display: block;
     }
 
@@ -320,6 +330,8 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
     }
 
     .panel-title {
@@ -327,6 +339,132 @@
       font-weight: 700;
       letter-spacing: 0.02em;
       color: var(--text-primary);
+    }
+
+    /* SMASH / PASS & Flagship Badges */
+    .badge-smash {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(16, 185, 129, 0.18);
+      color: var(--accent-emerald);
+      border: 1px solid rgba(16, 185, 129, 0.45);
+      letter-spacing: 0.05em;
+    }
+
+    .badge-pass {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(100, 116, 139, 0.15);
+      color: var(--text-secondary);
+      border: 1px solid rgba(100, 116, 139, 0.3);
+      letter-spacing: 0.05em;
+    }
+
+    .badge-menage {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: rgba(245, 158, 11, 0.18);
+      color: var(--accent-gold);
+      border: 1px solid rgba(245, 158, 11, 0.5);
+      letter-spacing: 0.04em;
+    }
+
+    .badge-flex {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: rgba(6, 182, 212, 0.18);
+      color: var(--accent-cyan);
+      border: 1px solid rgba(6, 182, 212, 0.5);
+      letter-spacing: 0.04em;
+    }
+
+    /* Translucent Locked vs Unlocked Balls Deep Box */
+    .bd-preview-locked {
+      margin-top: 6px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      background: rgba(15, 23, 42, 0.65);
+      border: 1px dashed rgba(245, 158, 11, 0.4);
+      opacity: 0.52;
+      backdrop-filter: blur(4px);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .bd-preview-locked:hover {
+      opacity: 0.88;
+      border-color: var(--accent-gold);
+      background: rgba(245, 158, 11, 0.08);
+    }
+
+    .bd-preview-unlocked {
+      margin-top: 6px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      background: rgba(16, 185, 129, 0.08);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-primary);
+    }
+
+    /* Sticky Combinatorics Calculator on Tab 2 */
+    .combinatorics-sticky-calc {
+      position: sticky;
+      top: 60px;
+      z-index: 900;
+      background: rgba(17, 24, 39, 0.97);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--accent-cyan);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.65);
+    }
+
+    .calc-action-btn {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 6px 12px;
+      border-radius: 5px;
+      cursor: pointer;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      transition: all 0.15s ease;
+    }
+
+    .calc-action-btn:hover {
+      border-color: var(--accent-cyan);
+      color: var(--accent-cyan);
     }
 
     .table-responsive {
@@ -372,12 +510,12 @@
       font-size: 13px;
     }
 
-    /* Standard Mobile Devices (Portrait & Small Screens) */
+    /* Standard Mobile Devices */
     @media (max-width: 768px) {
       .app-header {
         flex-direction: column;
         align-items: flex-start;
-        padding: 16px;
+        padding: 14px;
       }
       .brand-cluster {
         width: 100%;
@@ -389,7 +527,7 @@
       }
       .controls-cluster {
         width: 100%;
-        margin-top: 12px;
+        margin-top: 8px;
       }
       .mode-switch-group {
         width: 100%;
@@ -403,35 +541,29 @@
         max-width: 100%;
       }
       .workspace {
-        padding: 16px 12px;
+        padding: 14px 10px;
+      }
+      .combinatorics-sticky-calc {
+        top: 110px;
+        padding: 12px;
       }
     }
 
     /* Mobile Landscape Viewport Rule */
     @media (max-height: 500px) {
       .app-header {
-        position: static;
-        flex-direction: row;
-        align-items: center;
-        padding: 8px 12px;
+        padding: 6px 12px;
         gap: 8px;
       }
-      .brand-cluster {
-        width: auto;
-      }
       .brand-title {
-        font-size: 12px;
+        font-size: 13px;
       }
       .brand-badge {
         display: none;
       }
-      .controls-cluster {
-        width: auto;
-        margin-top: 0;
-      }
       .league-checkbox-label,
       .mode-switch-label {
-        padding: 2px 6px;
+        padding: 3px 8px;
         font-size: 10px;
       }
       .tab-nav {
@@ -442,7 +574,7 @@
         font-size: 11px;
       }
       .davinci-drawer {
-        padding-top: 8px;
+        padding-top: 6px;
       }
       .workspace {
         padding: 8px 12px;
@@ -462,7 +594,7 @@
 
   <!-- Pure CSS Operating Mode State Controllers -->
   <input type="radio" name="engine-mode" id="mode-tip" class="mode-radio" checked>
-  <input type="radio" name="engine-mode" id="mode-unsolicited" class="mode-radio">
+  <input type="radio" name="engine-mode" id="mode-balls-deep" class="mode-radio">
   <input type="radio" name="engine-mode" id="mode-davinci" class="mode-radio">
 
   <!-- Sticky Top Command Header -->
@@ -484,12 +616,12 @@
     <div class="controls-cluster">
       <div class="mode-switch-group">
         <label for="mode-tip" class="mode-switch-label">Just the Tip</label>
-        <label for="mode-unsolicited" class="mode-switch-label">Unsolicited</label>
+        <label for="mode-balls-deep" class="mode-switch-label">Balls Deep</label>
         <label for="mode-davinci" class="mode-switch-label">DaVinci</label>
       </div>
     </div>
 
-    <!-- DaVinci Mode Override Slider Container (Now Pinned Inside Header) -->
+    <!-- DaVinci Mode Override Slider Container (Pinned Inside Sticky Header) -->
     <div id="davinci-slider-container" class="davinci-drawer">
       <div class="slider-meta">
         <span class="slider-title">DaVinci Override // Coupled Module 11 &amp; 12 Intensity Scalar (I_slider)</span>
@@ -498,9 +630,7 @@
           <span class="scale-marker">-1.618</span>
           <input type="range" id="davinci-intensity-slider" class="davinci-range" min="-1.618" max="1.618" step="0.1" value="0">
           <span class="scale-marker">+1.618</span>
-      
-          <!-- Active Readout Badge -->
-          <output id="davinci-readout" style="display: block; text-align: center; margin-top: 5px; font-weight: bold; color: #38bdf8;">0.0</output>
+          <output id="davinci-readout" style="display: block; text-align: center; margin-left: 6px; font-weight: bold; color: #38bdf8;">0.0</output>
       </div>
     </div>
   </header>
@@ -520,11 +650,17 @@
 
     <!-- Tab 1: Master Pick Board -->
     <section id="panel-master" class="tab-panel">
+        <!-- Flagship 5-Pack & Ménage à Trois Showcase -->
+        <div id="flagship-five-pack-container" class="panel-card" style="border-color: rgba(245, 158, 11, 0.45);">
+            <!-- Populated dynamically via JS engine -->
+        </div>
+
         <div class="panel-card">
             <div class="panel-header">
-                <h2 class="panel-title">Master Pick Board</h2>
+                <h2 class="panel-title">Master Pick Board // Slate Matchup Cards</h2>
+                <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);">SMASH Threshold: Win &ge; 54.5% (+4.05% EV)</span>
             </div>
-            <div id="master-board-body">
+            <div id="master-board-body" style="padding: 16px;">
                 <!-- Populated dynamically via JS engine -->
             </div>
         </div>
@@ -532,13 +668,8 @@
 
     <!-- Tab 2: Combinatorics & Round Robin Deck -->
     <section id="panel-combinatorics" class="tab-panel">
-      <div class="panel-card">
-        <div class="panel-header">
-          <h2 class="panel-title">Combinatorics &amp; Round Robin Deck</h2>
-        </div>
-        <div id="combinatorics-container" class="empty-placeholder">
-          [ Combinatorics &amp; Round Robin Deck Container ]
-        </div>
+      <div id="combinatorics-container">
+        <!-- Sticky Calculator + Interactive Filterable Selector Grid populated via JS -->
       </div>
     </section>
 
@@ -552,16 +683,16 @@
           <p style="margin-bottom: 12px; color: var(--text-primary);"><strong>Architectural Definition of Master Modules:</strong></p>
           <ul style="padding-left: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px;">
             <li><strong>M1: Vig-Free Probability</strong> — Strips bookmaker juice via true-odds normalization.</li>
-            <li><strong>M2: Quarter-Kelly Staking</strong> — Optimal bankroll allocation ($\lambda = 0.25$) based on EV.</li>
-            <li><strong>M3: Spread Point-Buy MER</strong> — Marginal efficiency ratio for key-number alt lines (>1.15).</li>
-            <li><strong>M4: Discrete Count Props</strong> — Poisson & Negative Binomial survival for counts.</li>
+            <li><strong>M2: Quarter-Kelly Staking</strong> — Optimal bankroll allocation (&lambda; = 0.25) based on EV.</li>
+            <li><strong>M3: Spread Point-Buy MER</strong> — Marginal efficiency ratio for key-number alt lines (&gt;1.15).</li>
+            <li><strong>M4: Discrete Count Props</strong> — Poisson &amp; Negative Binomial survival for counts.</li>
             <li><strong>M5: Continuous Yardage Gamma</strong> — Lanczos Gamma distribution right-tail yardage survival.</li>
             <li><strong>M6: Prop Alt-Line Arbitrage</strong> — True probability gain vs. juice tax verification.</li>
-            <li><strong>M7: Barometric Air Density ($\rho$)</strong> — Ballistic drag & effective FG range shift ($\Delta D_{FG}$).</li>
-            <li><strong>M8: Circadian Fatigue ($CSI$)</strong> — Travel mileage, TZ shifts, and body-clock troughs.</li>
-            <li><strong>M9: Full-Game Fair Margin ($\Delta \text{Margin}$)</strong> — Net EPA, QB delta, and HFA synthesis.</li>
-            <li><strong>M10: Profit Boost Parlay EV</strong> — Compounding 30% profit boost multiplier math.</li>
-            <li><strong>M11: Biophysical Mass ($\Phi_{bio}$)</strong> — Gravity differentials $g(h)$, altitude & somatic density.</li>
+            <li><strong>M7: Barometric Air Density (&rho;)</strong> — Ballistic drag &amp; effective FG range shift (&Delta;D_FG).</li>
+            <li><strong>M8: Circadian Fatigue (CSI)</strong> — Travel mileage, TZ shifts, and body-clock troughs.</li>
+            <li><strong>M9: Full-Game Fair Margin (&Delta;Margin)</strong> — 38.5145 Play Scaler, Fluid QB Delta &amp; &pi;/&phi; HFA.</li>
+            <li><strong>M10: Profit Boost Parlay EV</strong> — Compounding 30% profit boost &amp; Round Robin matrix math.</li>
+            <li><strong>M11: Biophysical Mass (&Phi;_bio)</strong> — Gravity differentials g(h), altitude &amp; somatic density.</li>
             <li><strong>M12: Turnover EPA Matrix</strong> — Short-field conversion value and 4th-quarter pacing weights.</li>
           </ul>
         </div>
@@ -569,19 +700,19 @@
 
       <div class="panel-card">
         <div class="panel-header">
-          <h2 class="panel-title">Slate Matchup Module Breakdown &amp; Master Fibonacci Score ($\Omega_{fib}$)</h2>
+          <h2 class="panel-title">Slate Matchup Module Breakdown &amp; Master Fibonacci Score (&Omega;_fib)</h2>
         </div>
         <div class="table-responsive">
           <table class="quant-table">
             <thead>
               <tr>
                 <th>Matchup</th>
-                <th>M7 Air Density ($\rho$)</th>
-                <th>M8 Circadian ($CSI$)</th>
-                <th>M11 Biophysical ($\Phi_{bio}$)</th>
+                <th>M7 Air Density (&rho;)</th>
+                <th>M8 Circadian (CSI)</th>
+                <th>M11 Biophysical (&Phi;_bio)</th>
                 <th>M12 Turnover EPA</th>
-                <th>Master Fibonacci Score ($\Omega_{fib}$)</th>
-                <th>Home Team Composite Win Probability ($P_{agg}$)</th>
+                <th>Master Fibonacci Score (&Omega;_fib)</th>
+                <th>Home Team Composite Win Probability (P_agg)</th>
               </tr>
             </thead>
             <tbody id="compendium-board-body">
@@ -620,17 +751,18 @@
     <section id="panel-ledger" class="tab-panel">
       <div class="panel-card">
         <div class="panel-header">
-          <h2 class="panel-title">Living Historical Archive &amp; Graded Ledger</h2>
+          <h2 class="panel-title">Living Historical Archive &amp; Auto-Graded Ledger</h2>
+          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--accent-cyan);">Lines Lock Automatically at Kickoff // Graded via ESPN Final Score Feed</span>
         </div>
-        <div id="ledger-container" class="empty-placeholder">
-          [ Historical Ledger Container ]
+        <div id="ledger-container" style="padding: 16px;">
+          <!-- Populated dynamically via JS engine -->
         </div>
       </div>
     </section>
 
   </main>
   
-  <script src="./js/math_engine.js?v=100"></script>
-  <script src="./js/app_controller.js?v=100"></script>
+  <script src="./js/math_engine.js?v=101"></script>
+  <script src="./js/app_controller.js?v=101"></script>
 </body>
 </html>
