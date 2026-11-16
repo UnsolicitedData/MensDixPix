@@ -7,6 +7,7 @@ const GOLDEN_RATIO_PHI = 1.6180339887;
 const PI_OVER_PHI_HFA = 1.9416110252;
 const GOLDEN_PLAY_SCALER = 38.5145;
 const LOGISTIC_K_TIGHT = GOLDEN_RATIO_PHI / (4.0 * Math.PI); // ~0.12875903
+const SMASH_PROB_THRESHOLD = 0.545; // 54.5% Win Prob (+4.05% EV at -110)
 
 const FIBONACCI_TIERS = {
     TIER_1: 34,
@@ -247,7 +248,6 @@ function calcBarometricBallistics(envPayload) {
     const Rv = 461.495;
     const rho0 = 1.225;
 
-    // Supports both temperature_f (from scraper.py) and temp_kelvin
     const T = envPayload.temp_kelvin !== undefined
         ? envPayload.temp_kelvin
         : (envPayload.temperature_f !== undefined ? ((envPayload.temperature_f - 32) * 5 / 9) + 273.15 : 288.15);
@@ -263,7 +263,6 @@ function calcBarometricBallistics(envPayload) {
     const areaCross = 0.024;
     const dragForceFd = 0.5 * rho * Math.pow(vRel, 2) * Cd * areaCross;
 
-    // Supports both wind_mph (from scraper.py) and wind_speed_mph
     const windSpeed = envPayload.wind_mph !== undefined ? envPayload.wind_mph : (envPayload.wind_speed_mph || 0);
     const windType = envPayload.wind_direction_head_cross || "cross";
     
@@ -346,7 +345,7 @@ function calcPointGapWinProb(pointGap) {
 }
 
 // ==========================================
-// MODULE 10: 30% PROFIT BOOST COMPOUND PARLAY EV
+// MODULE 10: 30% PROFIT BOOST PARLAY & ROUND ROBIN COMBINATORICS
 // ==========================================
 function calcProfitBoostParlayEV(legsArray, boostMultiplier = 1.30) {
     if (!legsArray || legsArray.length === 0) {
@@ -373,10 +372,52 @@ function calcProfitBoostParlayEV(legsArray, boostMultiplier = 1.30) {
     };
 }
 
+function calcRoundRobinMatrix(legsArray) {
+    const n = legsArray ? legsArray.length : 0;
+    if (n < 2) return [];
+
+    function getCombinations(arr, k) {
+        if (k === 1) return arr.map(el => [el]);
+        const combs = [];
+        for (let i = 0; i <= arr.length - k; i++) {
+            const head = arr[i];
+            const tailCombs = getCombinations(arr.slice(i + 1), k - 1);
+            tailCombs.forEach(tc => combs.push([head, ...tc]));
+        }
+        return combs;
+    }
+
+    const tiers = [];
+    const maxK = Math.min(n, 4);
+    for (let k = 2; k <= maxK; k++) {
+        const combos = getCombinations(legsArray, k);
+        let totalEv = 0;
+        let avgMult = 0;
+        let avgProb = 0;
+
+        combos.forEach(c => {
+            const res = calcProfitBoostParlayEV(c, 1.0);
+            totalEv += res.evBoostPct;
+            avgMult += res.dRaw;
+            avgProb += res.trueParlayProb;
+        });
+
+        const count = combos.length;
+        tiers.push({
+            legSize: `${k}-Leg Round Robin (${count}x)`,
+            ticketCount: count,
+            avgMultiplier: Number((avgMult / count).toFixed(2)),
+            avgWinProbPct: Number((avgProb / count).toFixed(2)),
+            expectedRoiPct: Number((totalEv / count).toFixed(2))
+        });
+    }
+    return tiers;
+}
+
 // ==========================================
 // MODULE 11: BIOPHYSICAL MASS DENSITY & CLOSING MULTIPLIERS
 // ==========================================
-function calcBiophysicalMassLoad(envPayload, homeTelemetry, playerMassKg = 95.0, fH2O = 0.62, mode = "unsolicited", intensitySlider = 0.0) {
+function calcBiophysicalMassLoad(envPayload, homeTelemetry, playerMassKg = 95.0, fH2O = 0.62, mode = "balls_deep", intensitySlider = 0.0) {
     const h = envPayload.elevation_m || 0;
     const Re = 6371000;
     const gSea = 9.80665;
@@ -407,12 +448,11 @@ function calcBiophysicalMassLoad(envPayload, homeTelemetry, playerMassKg = 95.0,
                       (eta2 * ((rhoPlayerH / rhoPlayer0) - 1.0)) + 
                       (eta3 * hypoxicTerm);
 
-    // Distinct scaling across all 3 modes + DaVinci slider reactivity
     const rankPct = homeTelemetry.closing_rank_pct || 0.5;
     const winStreak = homeTelemetry.active_win_streak || 0;
     let closingMultiplier = 0.382; // "tip" baseline
 
-    if (mode === "unsolicited") {
+    if (mode === "balls_deep" || mode === "unsolicited") {
         closingMultiplier = (rankPct >= 0.53) ? 0.786 : 0.618;
     } else if (mode === "davinci") {
         const baseDavinci = (rankPct >= 0.53 && winStreak >= 2) ? 1.618 : ((rankPct >= 0.53) ? 1.0 : 0.618);
@@ -432,7 +472,7 @@ function calcBiophysicalMassLoad(envPayload, homeTelemetry, playerMassKg = 95.0,
 // ==========================================
 // MODULE 12: TURNOVER VALUE & EXPECTED POINTS MATRIX
 // ==========================================
-function calcTurnoverEPAMatrix(teamTelemetry, league = "NFL", mode = "unsolicited", intensitySlider = 0.0) {
+function calcTurnoverEPAMatrix(teamTelemetry, league = "NFL", mode = "balls_deep", intensitySlider = 0.0) {
     const N = (league === "NCAA") ? 138 : 32;
     
     const homeRankPct = teamTelemetry.home.closing_rank_pct !== undefined 
@@ -443,11 +483,10 @@ function calcTurnoverEPAMatrix(teamTelemetry, league = "NFL", mode = "unsolicite
         ? teamTelemetry.away.closing_rank_pct 
         : 1.0 - (((teamTelemetry.away.closing_rank || 16) - 1) / (N - 1));
 
-    // Distinct weights across "tip", "unsolicited", and "davinci" + slider
     let home4QWeight = 0.382;
     let away4QWeight = 0.382;
 
-    if (mode === "unsolicited") {
+    if (mode === "balls_deep" || mode === "unsolicited") {
         home4QWeight = homeRankPct >= 0.53 ? 0.786 : 0.618;
         away4QWeight = awayRankPct >= 0.53 ? 0.786 : 0.618;
     } else if (mode === "davinci") {
@@ -482,7 +521,6 @@ function calcCoupledInteractionPsi(phiBio, epaTov, intensitySlider = 0.0) {
     const sign = sumVal > 0 ? 1 : (sumVal < 0 ? -1 : 0);
     const rootProduct = Math.sqrt(Math.abs(phiBio * epaTov));
     
-    // Smooth continuous scaling across negative and positive slider positions
     const scalar = 1.0 + (intensitySlider * 0.618);
     const psi = sign * rootProduct * scalar;
 
