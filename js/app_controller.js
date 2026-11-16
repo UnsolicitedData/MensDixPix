@@ -419,40 +419,54 @@ function renderFlagshipFivePack() {
         return;
     }
 
+    // Center as a single compact sub-banner card right under the header
+    container.style.maxWidth = "820px";
+    container.style.margin = "0 auto 24px auto";
+    container.style.border = "1px solid rgba(245, 158, 11, 0.55)";
+    container.style.borderRadius = "8px";
+    container.style.backgroundColor = "#111827";
+    container.style.boxShadow = "0 8px 24px rgba(0, 0, 0, 0.5)";
+
+    const bannerKey = "FLAGSHIP_5_PACK_DRAWER";
+    const isExpanded = openCardMemory.has(bannerKey);
+
     const modeTitle = AppState.activeMode === "tip"
         ? "Just the Tip Baseline"
         : (AppState.activeMode === "balls_deep" ? "Balls Deep Coupled Mode" : "DaVinci Override Mode");
 
     container.innerHTML = `
-        <div class="panel-header" style="background: linear-gradient(90deg, rgba(245, 158, 11, 0.14), rgba(6, 182, 212, 0.08));">
-            <div>
-                <h2 class="panel-title" style="color: var(--accent-gold); font-size: 16px;">
-                    👑 THE DIXPIX FLAGSHIP 5-PACK // FEATURING "THE MÉNAGE À TROIS" (TOP 3 SPREADS)
-                </h2>
-                <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 2px;">
-                    Mandatory 3 Spread Anchors + Top 2 Board Flex Edges // Active Engine: <strong style="color: var(--accent-cyan);">${modeTitle}</strong>
-                </div>
+        <div id="flagship-banner-toggle" style="cursor: pointer; padding: 14px 20px; text-align: center; background: linear-gradient(90deg, rgba(245, 158, 11, 0.16), rgba(6, 182, 212, 0.10), rgba(245, 158, 11, 0.16)); user-select: none;">
+            <div style="font-size: 15px; font-weight: 800; color: var(--accent-gold); letter-spacing: 0.04em;">
+                👑 THE DIXPIX FLAGSHIP 5-PACK // FEATURING "THE MÉNAGE À TROIS"
+            </div>
+            <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
+                Active Engine: <strong style="color: var(--accent-cyan);">${modeTitle}</strong> &bull; 
+                <span style="color: var(--text-primary); text-decoration: underline;">
+                    ${isExpanded ? 'Click to collapse 5-Pack ▲' : 'Click to unlock &amp; expand all 5 Flagship Plays ▼'}
+                </span>
             </div>
         </div>
-        <div style="padding: 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px;">
-            ${AppState.flagshipFivePack.map(p => {
+
+        <div id="flagship-banner-drawer" style="display: ${isExpanded ? 'block' : 'none'}; padding: 14px 18px; border-top: 1px solid var(--border-subtle); background: var(--bg-surface);">
+            ${AppState.flagshipFivePack.map((p, idx) => {
                 const isMenage = p.flagshipSlot.includes("MÉNAGE");
                 const isSpread = p.marketType === "spread";
                 const fmtProj = (isSpread && Number(p.projectedMean) > 0) ? `+${p.projectedMean}` : `${p.projectedMean}`;
                 const evStr = `${p.evPct > 0 ? '+' : ''}${p.evPct}% EV`;
 
                 return `
-                    <div style="background: var(--bg-elevated); border: 1px solid ${isMenage ? 'rgba(245, 158, 11, 0.5)' : 'rgba(6, 182, 212, 0.45)'}; border-radius: 8px; padding: 14px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                            <span class="${isMenage ? 'badge-menage' : 'badge-flex'}">${p.flagshipSlot}</span>
-                            <span class="${p.tierBadge === 'SMASH' ? 'badge-smash' : 'badge-pass'}">${p.tierBadge}</span>
-                        </div>
-                        <div style="font-weight: 700; font-size: 14px; color: var(--text-primary); margin-bottom: 4px;">
-                            ${p.player}
-                        </div>
-                        <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 12px; color: var(--accent-emerald);">
-                            <span>Model Proj: <strong>${fmtProj}</strong></span>
-                            <span>Win: <strong>${p.activeModelPct}%</strong> (${evStr})</span>
+                    <div style="padding: 10px 0; ${idx < AppState.flagshipFivePack.length - 1 ? 'border-bottom: 1px solid #1e293b;' : ''}">
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                <span class="${isMenage ? 'badge-menage' : 'badge-flex'}">${p.flagshipSlot}</span>
+                                <strong style="font-size: 13px; color: var(--text-primary);">${p.player}</strong>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 12px;">
+                                <span style="color: var(--accent-emerald);">
+                                    Proj: <strong>${fmtProj}</strong> | Win: <strong>${p.activeModelPct}%</strong> (${evStr})
+                                </span>
+                                <span class="${p.tierBadge === 'SMASH' ? 'badge-smash' : 'badge-pass'}">${p.tierBadge}</span>
+                            </div>
                         </div>
                         ${buildBallsDeepBoxHTML(p, isSpread)}
                     </div>
@@ -460,8 +474,22 @@ function renderFlagshipFivePack() {
             }).join("")}
         </div>
     `;
-}
 
+    const toggleHeader = document.getElementById("flagship-banner-toggle");
+    const drawer = document.getElementById("flagship-banner-drawer");
+    if (toggleHeader && drawer) {
+        toggleHeader.addEventListener("click", () => {
+            const closing = drawer.style.display === "block";
+            drawer.style.display = closing ? "none" : "block";
+            if (closing) {
+                openCardMemory.delete(bannerKey);
+            } else {
+                openCardMemory.add(bannerKey);
+            }
+            renderFlagshipFivePack();
+        });
+    }
+}
 function render_game_cards(data) {
     const container = document.getElementById("master-board-body");
     if (!container) return;
