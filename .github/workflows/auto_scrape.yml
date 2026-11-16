@@ -2,8 +2,15 @@ name: DixPix Auto-Scraper
 
 on:
   schedule:
+    # Standard 4-hour pulse
     - cron: '0 */4 * * *'
-  workflow_dispatch:
+    # Sunday Early Slate Closing Line Lock: 12:35 PM EST (17:35 UTC)
+    - cron: '35 17 * * 0'
+    # Sunday Late Slate Lock + Early Slate Grading: 3:45 PM EST (20:45 UTC)
+    - cron: '45 20 * * 0'
+    # Primetime Kickoff Locks (TNF, SNF, MNF): 7:50 PM EST (00:50 UTC next day)
+    - cron: '50 0 * * 1,2,5'
+  workflow_dispatch: # Allows manual trigger button in Actions tab
 
 permissions:
   contents: write
@@ -11,6 +18,7 @@ permissions:
 jobs:
   scrape-and-update:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -20,18 +28,17 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install requests
+      - name: Install dependencies
         run: pip install requests
 
-      - name: Run DixPix Scraper
+      - name: Run DixPix Scraper & Auto-Grader
         env:
           GITHUB_ACTIONS: "true"
         run: python scraper.py
 
       - name: Commit and Push updated data.json
         run: |
-          git config user.name "DixPix Quant Bot"
-          git config user.email "bot@dixpix.local"
+          git config --global user.name "DixPix Auto-Bot"
+          git config --global user.email "actions@github.com"
           git add data.json
-          git diff --staged --quiet || git commit -m "Auto-update live odds & telemetry"
-          git push
+          git diff --staged --quiet || (git commit -m "Auto-update live odds, fluid QB deltas & graded ledger" && git push)
