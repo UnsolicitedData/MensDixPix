@@ -1,11 +1,11 @@
 """
-DIXPIX QUANTITATIVE ENGINE — PHASE 6: FULL 32-TEAM TELEMETRY & LIVE ODDS SCRAPER (scraper.py)
-Maps The Odds API full team names to stadium physics, Haversine travel mileage,
-time-zone shifts, and team EPA/DVOA baselines to calculate true fair-value edges.
+DIXPIX QUANTITATIVE ENGINE — PHASE 7: FLUID QB DELTAS, ZERO-CREDIT ESPN AUTO-GRADER & LIVE ODDS SCRAPER
+- Pulls live spreads & totals from The Odds API (player props disabled to protect 500-credit limit).
+- Pulls live & trailing 3-week NFL scores/records from ESPN's free API (0 tokens used) to compute
+  fluid QB/Offensive rolling form deltas and auto-grade completed games in historical_ledger.
 """
 
 import json
-import csv
 import math
 import os
 import time
@@ -15,21 +15,22 @@ from datetime import datetime, timezone, timedelta
 import requests
 
 DATA_FILE = "data.json"
-POLL_INTERVAL_SECONDS = 14400  # 4 hours to protect free 500-credit monthly quota
+POLL_INTERVAL_SECONDS = 14400  # 4 hours
 
-# Paste your 32-character key from https://the-odds-api.com inside the quotes below:
 ODDS_API_KEY = os.environ.get("DIXPIX_ODDS_API_KEY", "44660163df1724ea28bfc8022e66f9e1")
 API_KEY = ODDS_API_KEY
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) DixPixQuantEngine/2.0",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) DixPixQuantEngine/3.0",
     "Accept": "application/json"
 }
 
+GOLDEN_RATIO_PHI = 1.6180339887
 GOLDEN_PLAY_SCALER = 38.5145
 MODEL_TOTAL_INTERCEPT = 42.986
 PI_OVER_PHI_HFA = 1.9416110252
-LOGISTIC_K_TIGHT = 0.128759
+LOGISTIC_K_TIGHT = GOLDEN_RATIO_PHI / (4.0 * math.pi)  # ~0.12875903
+SMASH_PROB_THRESHOLD = 0.545  # 54.5% Win Prob (+4.05% EV at -110)
 
 # ==============================================================================
 # 1. MASTER 32-TEAM NFL TELEMETRY, STADIUM BAROMETRICS & POWER RATING REGISTRY
@@ -69,8 +70,11 @@ NFL_TEAM_REGISTRY = {
     "Washington Commanders": {"code": "WAS", "lat": 38.9076, "lon": -76.8645,  "elev_m": 60,   "is_dome": False, "tz": -5, "epa": 0.110,  "qb_delta": 0.0,  "to_reg": -0.3, "close_pct": 0.805, "streak": 3, "rz_dvoa": -0.13}
 }
 
+CODE_TO_TEAM = {v["code"]: k for k, v in NFL_TEAM_REGISTRY.items()}
+ESPN_CODE_MAP = {"WSH": "WAS", "JAC": "JAX"}
+
 # ==============================================================================
-# 2. GEODESIC TRAVEL DISTANCE & SYNOPTIC WEATHER FUNCTIONS
+# 2. GEODESIC DISTANCE, FAST WEATHER & FLUID ESPN TELEMETRY / SCOREBOARD ENGINE
 # ==============================================================================
 def calc_haversine_miles(lat1, lon1, lat2, lon2):
     r_miles = 3958.8
@@ -94,28 +98,198 @@ def fetch_live_stadium_weather(home_meta):
         "elevation_m": elev_m
     }
 
+    if is_dome:
+        return weather_payload
+
     try:
         url = (
             f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
             f"&current=temperature_2m,wind_speed_10m,surface_pressure"
             f"&temperature_unit=fahrenheit&wind_speed_unit=mph"
         )
-        resp = requests.get(url, headers=HEADERS, timeout=10)
-        
+        # 2-second timeout prevents GitHub Actions from hanging on Open-Meteo rate limits
+        resp = requests.get(url, headers=HEADERS, timeout=2)
         if resp.status_code == 200:
             data = resp.json().get("current", {})
-            weather_payload["temperature_f"] = 72.0 if is_dome else data.get("temperature_2m", 58.0)
-            weather_payload["wind_mph"] = 0.0 if is_dome else data.get("wind_speed_10m", 6.5)
+            weather_payload["temperature_f"] = data.get("temperature_2m", 58.0)
+            weather_payload["wind_mph"] = data.get("wind_speed_10m", 6.5)
             weather_payload["pressure_hpa"] = data.get("surface_pressure", 1013.25)
-            
     except Exception:
-        print(f"[Telemetry] Warning: Weather API timeout for {lat},{lon}")
+        pass
 
     return weather_payload
 
+def fetch_espn_telemetry_and_scores():
+    """
+    Zero-credit ESPN Scoreboard scraper.
+    1. Captures live/final game scores for automatic ledger grading.
+    2. Captures trailing 3-week offensive scoring & win records to dynamically update
+       fluid QB form deltas (qb_delta) and closing rank percentiles (close_pct).
+    """
+    score_lookup = {}
+    recent_team_scores = {v["code"]: [] for v in NFL_TEAM_REGISTRY.values()}
+    live_win_pct = {}
+
+    now_utc = datetime.now(timezone.utc)
+    # Query a 25-day trailing-to-current window so we get last 3 weeks + current slate in 1 call
+    start_str = (now_utc - timedelta(days=25)).strftime("%Y%m%d")
+    end_str = (now_utc + timedelta(days=7)).strftime("%Y%m%d")
+    url = f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=200&dates={start_str}-{end_str}"
+
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=5)
+        if resp.status_code == 200:
+            events = resp.json().get("events", [])
+            # Sort chronologically so most recent games are at the end
+            events.sort(key=lambda e: e.get("date", ""))
+
+            for ev in events:
+                comps = ev.get("competitions", [])
+                if not comps:
+                    continue
+                comp = comps[0]
+                status_type = comp.get("status", {}).get("type", {})
+                state = status_type.get("state", "pre")  # "pre", "in", "post"
+                completed = bool(status_type.get("completed", False))
+
+                competitors = comp.get("competitors", [])
+                home_c = next((c for c in competitors if c.get("homeAway") == "home"), None)
+                away_c = next((c for c in competitors if c.get("homeAway") == "away"), None)
+                if not home_c or not away_c:
+                    continue
+
+                h_abbr = ESPN_CODE_MAP.get(home_c.get("team", {}).get("abbreviation", ""), home_c.get("team", {}).get("abbreviation", ""))
+                a_abbr = ESPN_CODE_MAP.get(away_c.get("team", {}).get("abbreviation", ""), away_c.get("team", {}).get("abbreviation", ""))
+
+                h_score = int(float(home_c.get("score", 0) or 0))
+                a_score = int(float(away_c.get("score", 0) or 0))
+
+                # Extract overall win percentage from ESPN team records
+                for c_obj, abbr in [(home_c, h_abbr), (away_c, a_abbr)]:
+                    recs = c_obj.get("records", [])
+                    if recs:
+                        summary = recs[0].get("summary", "")
+                        parts = summary.split("-")
+                        if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+                            w, l = int(parts[0]), int(parts[1])
+                            if (w + l) > 0:
+                                live_win_pct[abbr] = round(w / (w + l), 3)
+
+                if completed or state == "post":
+                    if h_abbr in recent_team_scores:
+                        recent_team_scores[h_abbr].append((h_score, a_score))
+                    if a_abbr in recent_team_scores:
+                        recent_team_scores[a_abbr].append((a_score, h_score))
+
+                match_key = f"{a_abbr}_{h_abbr}"
+                score_lookup[match_key] = {
+                    "state": state,
+                    "completed": completed,
+                    "home_score": h_score,
+                    "away_score": a_score,
+                    "event_date": ev.get("date", "")
+                }
+    except Exception as e:
+        print(f"[ESPN Telemetry Notice] {e}")
+
+    # Apply Fluid 3-Game Rolling QB/Offense Form Delta & Win Pct to Registry in-memory
+    for team_name, meta in NFL_TEAM_REGISTRY.items():
+        code = meta["code"]
+        if code in live_win_pct:
+            meta["close_pct"] = live_win_pct[code]
+
+        games_list = recent_team_scores.get(code, [])
+        if games_list:
+            last_3 = games_list[-3:]
+            # Update active win streak from recent results
+            streak = 0
+            for pts_for, pts_against in reversed(games_list):
+                if pts_for > pts_against:
+                    streak += 1
+                else:
+                    break
+            meta["streak"] = streak
+
+            # Weighted 3-game offensive scoring form (50% most recent, 30% prev, 20% 3rd)
+            weights = [0.20, 0.30, 0.50][-len(last_3):]
+            w_sum = sum(weights)
+            weighted_ppg = sum(g[0] * w for g, w in zip(last_3, weights)) / w_sum
+
+            # Expected team PPG from baseline intercept + EPA
+            expected_ppg = (MODEL_TOTAL_INTERCEPT / 2.0) + (meta["epa"] * (GOLDEN_PLAY_SCALER / 2.0))
+            form_diff = weighted_ppg - expected_ppg
+
+            # Damped Golden Ratio scaling (0.382) adjusts QB delta automatically for slumps/surges
+            fluid_adjustment = round(0.382 * form_diff, 2)
+            base_qb = meta.get("qb_delta", 0.0)
+            meta["qb_delta"] = round(max(-6.5, min(4.5, (base_qb * 0.5) + fluid_adjustment)), 2)
+
+    return score_lookup
+
 # ==============================================================================
-# 3. LIVE ODDS API FETCHER & TRUE-MARGIN PAYLOAD BUILDER
+# 3. PYTHON-SIDE COUPLED MODULE 11 & 12 FOR BALLS DEEP LEDGER LOCKING
 # ==============================================================================
+def calc_coupled_balls_deep_psi(home_meta, away_meta, env_weather):
+    h = float(env_weather.get("elevation_m", 0))
+    re = 6371000.0
+    g_sea = 9.80665
+    g_alt = g_sea * ((re / (re + h)) ** 2)
+    delta_g = g_alt - g_sea
+
+    temp_f = float(env_weather.get("temperature_f", 72.0))
+    temp_k = ((temp_f - 32.0) * 5.0 / 9.0) + 273.15
+    p_pa = float(env_weather.get("pressure_hpa", 1013.25)) * 100.0
+    pv_pa = 1000.0
+    pd_pa = max(0.0, p_pa - pv_pa)
+    rho_air = 1.204 if env_weather.get("is_dome") else ((pd_pa / (287.058 * temp_k)) + (pv_pa / (461.495 * temp_k)))
+
+    f_h2o = 0.62
+    f_lean = 1.0 - f_h2o - 0.015
+    trace_sum = (0.00006 / 7874) + (0.0005 / 1738) + (0.012 / 1550) + (0.002 / 862) + (0.0015 / 968)
+    inv_base = (f_h2o / 997.0) + (f_lean / 1100.0) + trace_sum
+    rho_player_h = (1.0 / inv_base) - rho_air
+    rho_player_0 = (1.0 / inv_base) - 1.225
+
+    delta_fg_bio = 95.0 * (f_h2o + 0.014) * delta_g
+    po2_drop = 1.0 - math.exp(-h / 8500.0)
+    phi_bio_raw = (100.0 * (delta_fg_bio / (95.0 * g_sea))) + (10.0 * ((rho_player_h / rho_player_0) - 1.0)) + (2.5 * 1.45 * po2_drop)
+
+    close_mult = 0.786 if home_meta["close_pct"] >= 0.53 else 0.618
+    phi_bio = phi_bio_raw * close_mult
+
+    h_rank = home_meta["close_pct"]
+    a_rank = away_meta["close_pct"]
+    h_4q = 0.786 if h_rank >= 0.53 else 0.618
+    a_4q = 0.786 if a_rank >= 0.53 else 0.618
+
+    h_tov = 3.85 * (1.0 - away_meta["rz_dvoa"]) * ((0.382 + h_4q) * h_rank)
+    a_tov = 3.85 * (1.0 - home_meta["rz_dvoa"]) * ((0.382 + a_4q) * a_rank)
+    net_tov = h_tov - a_tov
+
+    sum_val = phi_bio + net_tov
+    sign = 1.0 if sum_val > 0 else (-1.0 if sum_val < 0 else 0.0)
+    psi = sign * math.sqrt(abs(phi_bio * net_tov))
+    return round(psi, 4)
+
+def calc_ev_pct(win_prob, american_odds=-110):
+    dec = (american_odds / 100.0) + 1.0 if american_odds > 0 else (100.0 / abs(american_odds)) + 1.0
+    b = dec - 1.0
+    return round(((win_prob * b) - (1.0 - win_prob)) * 100.0, 2)
+
+# ==============================================================================
+# 4. LIVE ODDS API FETCHER, FLAGSHIP 5-PACK & HISTORICAL LEDGER AUTO-GRADER
+# ==============================================================================
+def load_existing_ledger():
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                old_data = json.load(f)
+                if "historical_ledger" in old_data and isinstance(old_data["historical_ledger"], dict):
+                    return old_data["historical_ledger"]
+        except Exception:
+            pass
+    return {"entries": {}, "summary": {}}
+
 def fetch_live_odds():
     if not ODDS_API_KEY or ODDS_API_KEY == "PASTE_YOUR_API_KEY_HERE":
         print("[Notice] No valid ODDS_API_KEY set.")
@@ -135,14 +309,201 @@ def fetch_live_odds():
         print(f"[Odds API Error] {e}")
         return []
 
+def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc):
+    entries = ledger.get("entries", {})
+
+    # 1. Snapshot Pre-Game Lines or Lock at Kickoff
+    for g in games_slate:
+        gid = g["game_id"]
+        match_key = f"{g['away_team']}_{g['home_team']}"
+        commence_str = g.get("commence_time", "")
+        is_past_kickoff = False
+        if commence_str:
+            try:
+                dt_kick = datetime.strptime(commence_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                is_past_kickoff = (now_utc >= dt_kick)
+            except Exception:
+                pass
+
+        # Identify best spread pick and total pick for this game
+        spread_props = [p for p in g.get("props_board", []) if p.get("market_type") == "spread"]
+        total_props = [p for p in g.get("props_board", []) if p.get("market_type") == "total"]
+        if not spread_props:
+            continue
+
+        best_spread = max(spread_props, key=lambda x: x.get("model_win_prob", 0.5))
+        best_total = total_props[0] if total_props else None
+
+        existing = entries.get(gid)
+        if not existing:
+            existing = {
+                "game_id": gid,
+                "matchup": f"{g['away_team']} @ {g['home_team']}",
+                "home_team": g["home_team"],
+                "away_team": g["away_team"],
+                "commence_time": commence_str,
+                "is_locked": is_past_kickoff,
+                "status": "IN_PLAY" if is_past_kickoff else "PRE_GAME",
+                "final_score": None,
+                "spread_record": None,
+                "total_record": None
+            }
+
+        # Only update closing lines if the game hasn't locked at kickoff yet
+        if not existing.get("is_locked", False):
+            existing["commence_time"] = commence_str
+            existing["is_locked"] = is_past_kickoff
+            existing["status"] = "IN_PLAY" if is_past_kickoff else "PRE_GAME"
+            existing["spread_record"] = {
+                "pick_label": best_spread["player"],
+                "pick_team": g["home_team"] if best_spread["player"].startswith(f"{g['home_team']} ") else g["away_team"],
+                "vegas_closing_line": best_spread["base_line"],
+                "odds": best_spread["base_odds_over"],
+                "tip_proj": best_spread["projected_mean_mu"],
+                "tip_win_pct": round(best_spread["model_win_prob"] * 100, 2),
+                "tip_ev_pct": best_spread.get("ev_pct", 0.0),
+                "balls_deep_proj": best_spread.get("balls_deep_proj", best_spread["projected_mean_mu"]),
+                "balls_deep_win_pct": round(best_spread.get("balls_deep_win_prob", best_spread["model_win_prob"]) * 100, 2),
+                "balls_deep_ev_pct": best_spread.get("balls_deep_ev_pct", best_spread.get("ev_pct", 0.0)),
+                "tier_badge": best_spread.get("tier_badge", "PASS"),
+                "flagship_slot": best_spread.get("flagship_slot", ""),
+                "result_tip": "PENDING",
+                "result_balls_deep": "PENDING"
+            }
+            if best_total:
+                existing["total_record"] = {
+                    "pick_label": best_total["player"],
+                    "vegas_closing_line": best_total["base_line"],
+                    "odds": best_total["base_odds_over"],
+                    "tip_proj": best_total["projected_mean_mu"],
+                    "tip_direction": "U" if best_total["projected_mean_mu"] < best_total["base_line"] else "O",
+                    "tip_win_pct": round(best_total["model_win_prob"] * 100, 2),
+                    "tip_ev_pct": best_total.get("ev_pct", 0.0),
+                    "balls_deep_proj": best_total.get("balls_deep_proj", best_total["projected_mean_mu"]),
+                    "balls_deep_direction": "U" if best_total.get("balls_deep_proj", best_total["projected_mean_mu"]) < best_total["base_line"] else "O",
+                    "balls_deep_win_pct": round(best_total.get("balls_deep_win_prob", best_total["model_win_prob"]) * 100, 2),
+                    "balls_deep_ev_pct": best_total.get("balls_deep_ev_pct", best_total.get("ev_pct", 0.0)),
+                    "tier_badge": best_total.get("tier_badge", "PASS"),
+                    "flagship_slot": best_total.get("flagship_slot", ""),
+                    "result_tip": "PENDING",
+                    "result_balls_deep": "PENDING"
+                }
+
+        entries[gid] = existing
+
+    # 2. Grade Any Entry Whose Game Has Reached FINAL on ESPN
+    for gid, entry in entries.items():
+        match_key = f"{entry['away_team']}_{entry['home_team']}"
+        espn_info = espn_scores.get(match_key)
+        if not espn_info:
+            continue
+
+        if espn_info["state"] == "in" and entry["status"] == "PRE_GAME":
+            entry["is_locked"] = True
+            entry["status"] = "IN_PLAY"
+
+        if espn_info["completed"] or espn_info["state"] == "post":
+            h_pts = espn_info["home_score"]
+            a_pts = espn_info["away_score"]
+            entry["is_locked"] = True
+            entry["status"] = "FINAL"
+            entry["final_score"] = f"{entry['away_team']} {a_pts} - {entry['home_team']} {h_pts}"
+
+            # Grade Spread Pick
+            s_rec = entry.get("spread_record")
+            if s_rec and s_rec.get("result_tip") == "PENDING":
+                pick_team = s_rec["pick_team"]
+                line = float(s_rec["vegas_closing_line"])
+                team_margin = (h_pts - a_pts) if pick_team == entry["home_team"] else (a_pts - h_pts)
+                cover_diff = team_margin + line
+                grade = "HIT" if cover_diff > 0 else ("MISS" if cover_diff < 0 else "PUSH")
+                s_rec["result_tip"] = grade
+
+                # Check if Balls Deep picked the same side or opposite side
+                bd_proj = float(s_rec.get("balls_deep_proj", s_rec["tip_proj"]))
+                bd_same_side = (line - bd_proj) >= 0
+                if bd_same_side:
+                    s_rec["result_balls_deep"] = grade
+                else:
+                    s_rec["result_balls_deep"] = "MISS" if grade == "HIT" else ("HIT" if grade == "MISS" else "PUSH")
+
+            # Grade Total Pick
+            t_rec = entry.get("total_record")
+            if t_rec and t_rec.get("result_tip") == "PENDING":
+                total_pts = h_pts + a_pts
+                t_line = float(t_rec["vegas_closing_line"])
+
+                for mode_key, dir_key in [("result_tip", "tip_direction"), ("result_balls_deep", "balls_deep_direction")]:
+                    direction = t_rec.get(dir_key, "O")
+                    if total_pts == t_line:
+                        t_rec[mode_key] = "PUSH"
+                    elif direction == "O":
+                        t_rec[mode_key] = "HIT" if total_pts > t_line else "MISS"
+                    else:
+                        t_rec[mode_key] = "HIT" if total_pts < t_line else "MISS"
+
+    # 3. Compute Summary Fractions & Percentages
+    counters = {
+        "overall_smash": {"hits": 0, "total": 0},
+        "spread_smash": {"hits": 0, "total": 0},
+        "total_smash": {"hits": 0, "total": 0},
+        "flagship_5pack": {"hits": 0, "total": 0},
+        "menage_a_trois": {"hits": 0, "total": 0},
+        "pass_audit": {"hits": 0, "total": 0},
+        "tip_all": {"hits": 0, "total": 0},
+        "balls_deep_all": {"hits": 0, "total": 0}
+    }
+
+    def tally(bucket, result_str):
+        if result_str in ("HIT", "MISS"):
+            counters[bucket]["total"] += 1
+            if result_str == "HIT":
+                counters[bucket]["hits"] += 1
+
+    for entry in entries.values():
+        for m_type, rec in [("spread", entry.get("spread_record")), ("total", entry.get("total_record"))]:
+            if not rec:
+                continue
+            res_tip = rec.get("result_tip", "PENDING")
+            res_bd = rec.get("result_balls_deep", "PENDING")
+            if res_tip not in ("HIT", "MISS"):
+                continue
+
+            tally("tip_all", res_tip)
+            tally("balls_deep_all", res_bd)
+
+            if rec.get("tier_badge") == "SMASH":
+                tally("overall_smash", res_tip)
+                tally("spread_smash" if m_type == "spread" else "total_smash", res_tip)
+            else:
+                tally("pass_audit", res_tip)
+
+            slot = rec.get("flagship_slot", "")
+            if slot:
+                tally("flagship_5pack", res_tip)
+                if "MÉNAGE" in slot.upper():
+                    tally("menage_a_trois", res_tip)
+
+    summary_out = {}
+    for k, v in counters.items():
+        h, t = v["hits"], v["total"]
+        pct = round((h / t) * 100.0, 1) if t > 0 else 0.0
+        summary_out[k] = {"hits": h, "total": t, "fraction": f"{h} / {t}", "win_pct": pct}
+
+    return {"entries": entries, "summary": summary_out}
+
 def build_master_payload():
-    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now_utc = datetime.now(timezone.utc)
+    now_iso = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # 1. Sync ESPN Fluid QB Form Deltas & Live/Final Scoreboard (0 Odds API credits)
+    espn_scores = fetch_espn_telemetry_and_scores()
+
+    # 2. Fetch Live Spreads & Totals (2 Odds API credits; player props disabled)
     raw_odds = fetch_live_odds()
     raw_odds.sort(key=lambda g: g.get("commence_time", ""))
 
-    # LOCKED OUT: Prevents 3-credit burn on player props.
-    target_event_id = None
-    target_props_data = None
+    target_event_id = None  # Locked to None to conserve 500-credit monthly budget
 
     games_slate = []
     seen_matchups = set()
@@ -181,19 +542,27 @@ def build_master_payload():
         env_weather = fetch_live_stadium_weather(home_meta)
         wind_mph = 0.0 if env_weather.get("is_dome") else float(env_weather.get("wind_mph", 0.0))
 
-        # --- Calculate True Model Spread (Module 8 + Module 9 Synthesis) ---
+        # --- Module 8 Circadian Penalty (exact parity with math_engine.js) ---
+        abs_tz = abs(tz_shift)
+        omega_dir = 1.35 if tz_shift > 0 else (0.85 if tz_shift < 0 else 1.0)
+        body_clock = kickoff_local_hour - tz_shift
+        trough_pen = max(0.0, 13.0 - body_clock)
+        phi_circ = round(0.45 * (abs_tz * omega_dir * math.exp(-0.35 * 1.0)) + (0.30 * trough_pen), 3)
+
+        # --- Module 9 Fair Home Spread (Tip Baseline vs Balls Deep Coupled) ---
         epa_diff = away_meta["epa"] - home_meta["epa"]
         delta_qb = away_meta["qb_delta"] - home_meta["qb_delta"]
         delta_to = away_meta["to_reg"] - home_meta["to_reg"]
-        
-        phi_circ = (0.35 * abs(tz_shift)) + (0.25 * (travel_miles / 1000.0))
-        fair_home_spread = round((GOLDEN_PLAY_SCALER * epa_diff) + delta_qb + delta_to - PI_OVER_PHI_HFA - phi_circ, 2)
+        psi_11_12 = calc_coupled_balls_deep_psi(home_meta, away_meta, env_weather)
+
+        fair_home_tip = round((GOLDEN_PLAY_SCALER * epa_diff) + delta_qb + delta_to - PI_OVER_PHI_HFA - phi_circ, 2)
+        fair_home_bd = round(fair_home_tip + psi_11_12, 2)
 
         props_board = []
         book = next((b for b in game.get("bookmakers", []) if b["key"] == "fanduel"), None) or \
                next((b for b in game.get("bookmakers", []) if b["key"] == "draftkings"), None) or \
                (game.get("bookmakers")[0] if game.get("bookmakers") else None)
-        
+
         if book:
             spread_market = next((m for m in book.get("markets", []) if m["key"] == "spreads"), None)
             if spread_market:
@@ -206,17 +575,30 @@ def build_master_payload():
                     opp_code = home_code if is_away else away_code
                     prefix = "@" if is_away else "vs"
 
-                    model_team_spread = round(-fair_home_spread if is_away else fair_home_spread, 2)
-                    spread_edge_pts = point - model_team_spread
-                    
-                    win_prob = 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * spread_edge_pts))
-                    win_prob = max(0.05, min(0.95, win_prob))
-                    
+                    model_tip_spread = round(-fair_home_tip if is_away else fair_home_tip, 2)
+                    model_bd_spread = round(-fair_home_bd if is_away else fair_home_bd, 2)
+
+                    tip_edge_pts = point - model_tip_spread
+                    bd_edge_pts = point - model_bd_spread
+
+                    win_prob_tip = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * tip_edge_pts))))
+                    win_prob_bd = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * bd_edge_pts))))
+
+                    ev_tip = calc_ev_pct(win_prob_tip, price)
+                    ev_bd = calc_ev_pct(win_prob_bd, price)
+                    badge = "SMASH" if win_prob_tip >= SMASH_PROB_THRESHOLD else "PASS"
+
                     props_board.append({
                         "player": f"{t_code} Spread ({'+' if point > 0 else ''}{point}) ({t_code} {prefix} {opp_code})",
                         "market_type": "spread",
-                        "model_win_prob": round(win_prob, 4),
-                        "projected_mean_mu": model_team_spread,
+                        "model_win_prob": round(win_prob_tip, 4),
+                        "projected_mean_mu": model_tip_spread,
+                        "balls_deep_proj": model_bd_spread,
+                        "balls_deep_win_prob": round(win_prob_bd, 4),
+                        "ev_pct": ev_tip,
+                        "balls_deep_ev_pct": ev_bd,
+                        "tier_badge": badge,
+                        "flagship_slot": "",
                         "projected_variance_sigma2": 0,
                         "base_line": point,
                         "base_odds_over": price,
@@ -233,27 +615,42 @@ def build_master_payload():
                     t_point = float(over_out.get("point", 0.0))
                     o_price = int(over_out.get("price", -110))
                     u_price = int(under_out.get("price", -110))
-                    
+
                     epa_total_pts = (home_meta["epa"] + away_meta["epa"]) * GOLDEN_PLAY_SCALER
                     qb_total_pts = home_meta["qb_delta"] + away_meta["qb_delta"]
                     rz_total_pts = (home_meta["rz_dvoa"] + away_meta["rz_dvoa"]) * 10.0
                     wind_penalty = max(0.0, (wind_mph - 10.0) * 0.25)
 
-                    proj_total = MODEL_TOTAL_INTERCEPT + epa_total_pts + qb_total_pts + rz_total_pts - wind_penalty
-                    is_under = proj_total < t_point
-                    
-                    total_diff = abs(proj_total - t_point)
-                    calc_prob = 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * total_diff))
-                    calc_prob = max(0.50, min(0.95, calc_prob))
-                    
+                    proj_total_tip = round(MODEL_TOTAL_INTERCEPT + epa_total_pts + qb_total_pts + rz_total_pts - wind_penalty, 1)
+                    proj_total_bd = round(proj_total_tip + (psi_11_12 * 0.45), 1)
+
+                    is_under = proj_total_tip < t_point
+                    active_price = u_price if is_under else o_price
+
+                    total_diff_tip = abs(proj_total_tip - t_point)
+                    total_diff_bd = abs(proj_total_bd - t_point)
+
+                    calc_prob_tip = max(0.50, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * total_diff_tip))))
+                    calc_prob_bd = max(0.50, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * total_diff_bd))))
+
+                    ev_tip = calc_ev_pct(calc_prob_tip, active_price)
+                    ev_bd = calc_ev_pct(calc_prob_bd, active_price)
+                    badge = "SMASH" if calc_prob_tip >= SMASH_PROB_THRESHOLD else "PASS"
+
                     props_board.append({
                         "player": f"{away_code}@{home_code} Total ({'U' if is_under else 'O'} {t_point}) ({away_code} @ {home_code})",
                         "market_type": "total",
-                        "model_win_prob": round(calc_prob, 4),
-                        "projected_mean_mu": round(proj_total, 1),
+                        "model_win_prob": round(calc_prob_tip, 4),
+                        "projected_mean_mu": proj_total_tip,
+                        "balls_deep_proj": proj_total_bd,
+                        "balls_deep_win_prob": round(calc_prob_bd, 4),
+                        "ev_pct": ev_tip,
+                        "balls_deep_ev_pct": ev_bd,
+                        "tier_badge": badge,
+                        "flagship_slot": "",
                         "projected_variance_sigma2": 0,
                         "base_line": t_point,
-                        "base_odds_over": u_price if is_under else o_price,
+                        "base_odds_over": active_price,
                         "base_odds_under": o_price if is_under else u_price,
                         "alt_line": t_point + 4.5 if is_under else t_point - 4.5,
                         "alt_odds_over": -165
@@ -280,13 +677,43 @@ def build_master_payload():
             },
             "props_board": props_board
         })
+
+    # 3. Tag Flagship 5-Pack: Mandatory Top 3 Spreads ("Ménage à Trois") + Top 2 Flex Edges
+    all_spreads = []
+    all_props = []
+    for g in games_slate:
+        # Keep only the favored model side per game so we don't pick both sides of one game
+        game_spreads = [p for p in g["props_board"] if p["market_type"] == "spread"]
+        if game_spreads:
+            best_s = max(game_spreads, key=lambda x: x["model_win_prob"])
+            all_spreads.append(best_s)
+            all_props.append(best_s)
+        for p in g["props_board"]:
+            if p["market_type"] != "spread":
+                all_props.append(p)
+
+    all_spreads.sort(key=lambda x: x["model_win_prob"], reverse=True)
+    menage_picks = all_spreads[:3]
+    for idx, p in enumerate(menage_picks, start=1):
+        p["flagship_slot"] = f"MÉNAGE À TROIS #{idx}"
+
+    remaining_pool = [p for p in all_props if not p.get("flagship_slot")]
+    remaining_pool.sort(key=lambda x: x["model_win_prob"], reverse=True)
+    for idx, p in enumerate(remaining_pool[:2], start=4):
+        p["flagship_slot"] = f"5-PACK FLEX #{idx}"
+
+    # 4. Update & Auto-Grade Persistent Historical Ledger
+    existing_ledger = load_existing_ledger()
+    updated_ledger = update_and_grade_ledger(existing_ledger, games_slate, espn_scores, now_utc)
+
     return {
-        "slate_info": {"league": "NFL", "week": 10, "last_updated": now_iso},
-        "games": games_slate
+        "slate_info": {"league": "NFL", "week": 11, "last_updated": now_iso},
+        "games": games_slate,
+        "historical_ledger": updated_ledger
     }
 
 # ==============================================================================
-# 4. ATOMIC DISK WRITE & EXECUTION LOOP
+# 5. ATOMIC DISK WRITE & EXECUTION LOOP
 # ==============================================================================
 def write_atomic_json(payload, filepath=DATA_FILE):
     temp_path = f"{filepath}.tmp"
@@ -299,13 +726,13 @@ def run_daemon():
     print(" DIXPIX QUANTITATIVE ENGINE — LOCAL DAEMON MODE")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("==========================================================")
-    
+
     while True:
         try:
             payload = build_master_payload()
             write_atomic_json(payload, DATA_FILE)
             timestamp = payload["slate_info"]["last_updated"]
-            print(f"[{timestamp}] Synced {len(payload['games'])} live NFL matchups with full telemetry to {DATA_FILE}")
+            print(f"[{timestamp}] Synced {len(payload['games'])} live NFL matchups + graded ledger to {DATA_FILE}")
         except Exception as err:
             print(f"[Scraper Error] {err}")
         time.sleep(POLL_INTERVAL_SECONDS)
@@ -314,6 +741,6 @@ if __name__ == "__main__":
     if os.environ.get("GITHUB_ACTIONS") == "true":
         payload = build_master_payload()
         write_atomic_json(payload, DATA_FILE)
-        print(f"[Cloud Scraper] Successfully synced {len(payload['games'])} games to {DATA_FILE}")
+        print(f"[Cloud Scraper] Successfully synced {len(payload['games'])} games & graded ledger to {DATA_FILE}")
     else:
         run_daemon()
