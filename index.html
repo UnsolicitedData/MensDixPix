@@ -252,18 +252,32 @@
 
     /* Navigation Bar (Locked inside Sticky Shell) */
     .tab-nav {
-      background-color: rgba(17, 24, 39, 0.98);
-      border-bottom: 1px solid var(--border-subtle);
-      padding: 0 24px;
-      display: flex;
-      gap: 4px;
-      overflow-x: auto;
-      scrollbar-width: none;
-    }
-    
-    .tab-nav::-webkit-scrollbar {
-      display: none;
-    }
+   background-color: rgba(17, 24, 39, 0.98);
+   border-bottom: 1px solid var(--border-subtle);
+   padding: 0 24px;
+   display: flex;
+   gap: 4px;
+   overflow-x: auto;
+   scrollbar-width: thin;
+   scrollbar-color: var(--accent-cyan) var(--bg-base);
+ }
+
+ .tab-nav::-webkit-scrollbar {
+   height: 6px;
+ }
+
+ .tab-nav::-webkit-scrollbar-track {
+   background: var(--bg-base);
+ }
+
+ .tab-nav::-webkit-scrollbar-thumb {
+   background: var(--border-subtle);
+   border-radius: 3px;
+ }
+
+ .tab-nav::-webkit-scrollbar-thumb:hover {
+   background: var(--accent-cyan);
+ }
 
     .tab-link {
       padding: 12px 18px;
