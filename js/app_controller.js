@@ -615,12 +615,21 @@ function buildBallsDeepBoxHTML(engineProp, isSpread) {
     const activeEvStr = `${engineProp.evPct > 0 ? '+' : ''}${engineProp.evPct}% EV`;
     const altEvStr = `${engineProp.bdAltEvPct > 0 ? '+' : ''}${engineProp.bdAltEvPct}% EV`;
 
-    return `
-        <div class="bd-preview-unlocked" style="background: ${boxBg}; border: 1px solid ${boxBorder}; flex-direction: column; align-items: stretch; gap: 4px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+    // Only show the ⚡ BALLS DEEP PROJ lightning bolt on Totals and the favored Spread cover side (Win >= 50%)
+    const showLightningBolt = !isSpread || (engineProp.tipModelPct >= 50.0);
+
+    const boltRowHTML = showLightningBolt
+        ? `
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; border-bottom: 1px dashed rgba(255,255,255,0.08); padding-bottom: 4px;">
                 <span style="color: ${activeColor}; font-weight: 800;">⚡ ${activeLabel}: ${activeProj} | Win: ${engineProp.activeModelPct}% (${activeEvStr})</span>
             </div>
-            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 4px; font-size: 10.5px;">
+        `
+        : "";
+
+    return `
+        <div class="bd-preview-unlocked" style="background: ${boxBg}; border: 1px solid ${boxBorder}; flex-direction: column; align-items: stretch; gap: 4px;">
+            ${boltRowHTML}
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10.5px;">
                 <span style="color: var(--accent-gold); font-weight: 700;">🎯 Longer-Odds Escalator: ${engineProp.bdAltLabel} (${altEvStr})</span>
                 <span style="color: var(--text-secondary);">Coupled Ψ_11,12: <strong>${engineProp.psiActive > 0 ? '+' : ''}${engineProp.psiActive} pts</strong></span>
             </div>
