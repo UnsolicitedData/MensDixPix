@@ -56,7 +56,7 @@
       position: sticky;
       top: 0;
       z-index: 1000;
-      background-color: rgba(17, 24, 39, 0.97);
+      background-color: rgba(17, 24, 39, 0.98);
       backdrop-filter: blur(10px);
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
     }
@@ -399,36 +399,35 @@
       letter-spacing: 0.04em;
     }
 
+    /* 100% Opaque, Borderless Balls Deep Lock Bar (Zero Spoilers Before Click) */
     .bd-preview-locked {
       margin-top: 6px;
-      padding: 6px 10px;
-      border-radius: 6px;
-      background: rgba(15, 23, 42, 0.65);
-      border: 1px dashed rgba(245, 158, 11, 0.4);
-      opacity: 0.52;
-      backdrop-filter: blur(4px);
+      padding: 7px 12px;
+      border-radius: 5px;
+      background: #0f172a;
+      border: none;
+      opacity: 1;
       display: flex;
-      justify-content: space-between;
+      justify-content: center;
       align-items: center;
-      gap: 8px;
       font-family: var(--font-mono);
       font-size: 11px;
+      font-weight: 700;
+      color: var(--accent-gold);
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: background 0.15s ease;
     }
 
     .bd-preview-locked:hover {
-      opacity: 0.88;
-      border-color: var(--accent-gold);
-      background: rgba(245, 158, 11, 0.08);
+      background: #172554;
     }
 
     .bd-preview-unlocked {
       margin-top: 6px;
       padding: 6px 10px;
-      border-radius: 6px;
-      background: rgba(16, 185, 129, 0.08);
-      border: 1px solid rgba(16, 185, 129, 0.35);
+      border-radius: 5px;
+      background: rgba(16, 185, 129, 0.10);
+      border: none;
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -699,7 +698,7 @@
   <input type="radio" name="engine-mode" id="mode-balls-deep" class="mode-radio">
   <input type="radio" name="engine-mode" id="mode-davinci" class="mode-radio">
 
-  <!-- Unified Sticky Command Shell (Header + Mode Bar + Tab Navigation Stay Put Together) -->
+  <!-- Unified Sticky Command Shell -->
   <div class="sticky-command-shell">
     <header class="app-header">
       <div class="brand-cluster">
@@ -724,15 +723,15 @@
         </div>
       </div>
 
-      <!-- DaVinci Mode Override Slider Container -->
+      <!-- DaVinci Mode Override Slider Container (Spectrum: -3.236 to +3.236) -->
       <div id="davinci-slider-container" class="davinci-drawer">
         <div class="slider-meta">
-          <span class="slider-title">DaVinci Override // Coupled Module 11 &amp; 12 Intensity Scalar (I_slider)</span>
+          <span class="slider-title">DaVinci Continuous Flow // Sacred Geometry Escalator (I_flow &in; [-2&phi;, +2&phi;])</span>
         </div>
         <div class="slider-control-wrap">
-          <span class="scale-marker">-1.618</span>
-          <input type="range" id="davinci-intensity-slider" class="davinci-range" min="-1.618" max="1.618" step="0.1" value="0">
-          <span class="scale-marker">+1.618</span>
+          <span class="scale-marker">-3.236</span>
+          <input type="range" id="davinci-intensity-slider" class="davinci-range" min="-3.236" max="3.236" step="0.1" value="0">
+          <span class="scale-marker">+3.236</span>
           <output id="davinci-readout" style="display: block; text-align: center; margin-left: 6px; font-weight: bold; color: #38bdf8;">0.0</output>
         </div>
       </div>
@@ -742,7 +741,7 @@
     <nav class="tab-nav">
       <label for="tab-1" class="tab-link">Master Pick Board</label>
       <label for="tab-2" class="tab-link">Combinatorics &amp; Round Robin Deck</label>
-      <label for="tab-compendium" class="tab-link">12-Module Compendium</label>
+      <label for="tab-compendium" class="tab-link">13-Module Compendium</label>
       <label for="tab-3" class="tab-link">Module Telemetry</label>
       <label for="tab-4" class="tab-link">Biophysical &amp; Weather Lab</label>
       <label for="tab-horsecocks" class="tab-link tab-link-teaser">DixPixProudlyPresents:</label>
@@ -760,7 +759,7 @@
       <div class="panel-card">
         <div class="panel-header">
           <h2 class="panel-title">Master Pick Board // Slate Matchup Cards</h2>
-          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);">SMASH Threshold: EV &ge; +10.0% (~57.6% Win at -110)</span>
+          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);">Institutional Calibration (F_9 = 34/76 Anchor) // SMASH &ge; +10.0% EV</span>
         </div>
         <div id="master-board-body" style="padding: 16px;"></div>
       </div>
@@ -771,34 +770,35 @@
       <div id="combinatorics-container"></div>
     </section>
 
-    <!-- Tab: 12-Module Compendium Reference & Master Score -->
+    <!-- Tab: 13-Module Compendium Reference & Master Score -->
     <section id="panel-compendium" class="tab-panel">
       <div class="panel-card">
         <div class="panel-header">
-          <h2 class="panel-title">DixPix 12-Module Quantitative Compendium Reference</h2>
+          <h2 class="panel-title">DixPix 13-Module Quantitative Compendium Reference (&Sigma;F = 76)</h2>
         </div>
         <div style="padding: 20px; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); line-height: 1.6;">
-          <p style="margin-bottom: 12px; color: var(--text-primary);"><strong>Architectural Definition of Master Modules:</strong></p>
+          <p style="margin-bottom: 12px; color: var(--text-primary);"><strong>Architectural Definition of All 13 Governing Modules:</strong></p>
           <ul style="padding-left: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px;">
-            <li><strong>M1: Vig-Free Probability</strong> — Strips bookmaker juice via true-odds normalization.</li>
-            <li><strong>M2: Quarter-Kelly Staking</strong> — Optimal bankroll allocation (&lambda; = 0.25) based on EV.</li>
-            <li><strong>M3: Spread Point-Buy MER</strong> — Marginal efficiency ratio for key-number alt lines (&gt;1.15).</li>
-            <li><strong>M4: Discrete Count Props</strong> — Poisson &amp; Negative Binomial survival for counts.</li>
-            <li><strong>M5: Continuous Yardage Gamma</strong> — Lanczos Gamma distribution right-tail yardage survival.</li>
-            <li><strong>M6: Prop Alt-Line Arbitrage</strong> — True probability gain vs. juice tax verification.</li>
-            <li><strong>M7: Barometric Air Density (&rho;)</strong> — Ballistic drag &amp; effective FG range shift (&Delta;D_FG).</li>
-            <li><strong>M8: Circadian Fatigue (CSI)</strong> — Travel mileage, TZ shifts, and body-clock troughs.</li>
-            <li><strong>M9: Full-Game Fair Margin (&Delta;Margin)</strong> — 38.5145 Play Scaler, Net EPA &amp; &pi;/&phi; HFA.</li>
-            <li><strong>M10: Profit Boost Parlay EV</strong> — Compounding 30% profit boost &amp; Round Robin matrix math.</li>
-            <li><strong>M11: Biophysical Mass (&Phi;_bio)</strong> — Gravity differentials g(h), altitude &amp; somatic density.</li>
-            <li><strong>M12: Turnover EPA Matrix</strong> — Short-field conversion value and 4th-quarter pacing weights.</li>
+            <li><strong>M1: Vig-Free Baseline (F9=34)</strong> — Strips bookmaker juice &amp; anchors Tier 1 efficiency (44.7%).</li>
+            <li><strong>M2: Quarter-Kelly &amp; 50% Rollover (F7=13)</strong> — Optimal bankroll sizing (&lambda; = 0.25) &amp; profit lock.</li>
+            <li><strong>M3: Spread Point-Buy MER (F7=13)</strong> — Key-number marginal efficiency verification (&gt;1.15).</li>
+            <li><strong>M4: Discrete Count Props (F6=8)</strong> — Poisson &amp; Negative Binomial count distributions.</li>
+            <li><strong>M5: Continuous Yardage Gamma (F9=34)</strong> — Right-skewed Gamma survival integration.</li>
+            <li><strong>M6: Prop Alt-Line Arbitrage (F8=21)</strong> — True probability gain vs. break-even juice tax.</li>
+            <li><strong>M7: Barometric Air Density (F9=34)</strong> — Ballistic drag &amp; effective FG shift (&Delta;D_FG).</li>
+            <li><strong>M8: Circadian Fatigue &amp; Delay (F6=8)</strong> — Travel mileage, TZ shifts &amp; body-clock troughs.</li>
+            <li><strong>M9: Full-Game Fair Margin</strong> — 38.5145 Play Scaler, Net EPA, &Delta;RZ_fin, &pi;/&phi; HFA &amp; Tier-1 Anchor.</li>
+            <li><strong>M10: Profit Boost Parlay EV (F8=21)</strong> — Compounding 30% profit boost &amp; Round Robin matrix.</li>
+            <li><strong>M11: Biophysical &amp; 10-Zone Elevation (F7=13)</strong> — Gravity g(h), &Phi;_bio &amp; 0.1&times;F_z Ascent/Descent (&Psi;_elev).</li>
+            <li><strong>M12: Turnover EPA Matrix (F8=21)</strong> — Short-field conversion value &amp; Q4 takeaway weights.</li>
+            <li><strong>M13: Sacred Geometry Overlay (M_rise)</strong> — &phi;/&pi; (0.5150) Market-to-EPA divergence &amp; underdog havoc lift.</li>
           </ul>
         </div>
       </div>
 
       <div class="panel-card">
         <div class="panel-header">
-          <h2 class="panel-title">Slate Matchup Module Breakdown &amp; Master Fibonacci Score (&Omega;_fib)</h2>
+          <h2 class="panel-title">Slate Matchup Module Breakdown, Master Fibonacci Score (&Omega;_fib,rise) &amp; Unified Win Probability (P_agg)</h2>
         </div>
         <div class="table-responsive">
           <table class="quant-table">
@@ -807,10 +807,11 @@
                 <th>Matchup</th>
                 <th>M7 Air Density (&rho;)</th>
                 <th>M8 Circadian (CSI)</th>
-                <th>M11 Biophysical (&Phi;_bio)</th>
+                <th>M11 Bio + 10-Zone (&Psi;_elev)</th>
                 <th>M12 Turnover EPA</th>
-                <th>Master Fibonacci Score (&Omega;_fib)</th>
-                <th>Home Team Composite Win Probability (P_agg)</th>
+                <th>M13 Sacred Geometry (M_rise)</th>
+                <th>Master Score (&Omega;_fib,rise)</th>
+                <th>Unified Home Win &amp; Cover Prob (P_agg)</th>
               </tr>
             </thead>
             <tbody id="compendium-board-body"></tbody>
@@ -823,7 +824,7 @@
     <section id="panel-telemetry" class="tab-panel">
       <div class="panel-card">
         <div class="panel-header">
-          <h2 class="panel-title">12-Module Telemetry Inspector</h2>
+          <h2 class="panel-title">13-Module Telemetry Inspector</h2>
         </div>
         <div id="telemetry-container" class="empty-placeholder">[ Module Telemetry Container ]</div>
       </div>
@@ -833,7 +834,7 @@
     <section id="panel-biolab" class="tab-panel">
       <div class="panel-card">
         <div class="panel-header">
-          <h2 class="panel-title">Biophysical Mass &amp; Synoptic Weather Lab</h2>
+          <h2 class="panel-title">Biophysical Mass, 10-Zone Elevation &amp; Synoptic Weather Lab</h2>
         </div>
         <div id="biolab-container" class="empty-placeholder">[ Biophysical &amp; Weather Lab Container ]</div>
       </div>
@@ -873,7 +874,7 @@
 
   </main>
   
-  <script src="./js/math_engine.js?v=200"></script>
-  <script src="./js/app_controller.js?v=200"></script>
+  <script src="./js/math_engine.js?v=300"></script>
+  <script src="./js/app_controller.js?v=300"></script>
 </body>
 </html>
