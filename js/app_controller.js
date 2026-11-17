@@ -560,7 +560,12 @@ function render_game_cards(data) {
     if (!container) return;
     
     container.innerHTML = "";
-    const games = data.games || [];
+const games = (data.games || []).filter(g => {
+    const lg = g.league || "NFL";
+    if (lg === "NFL" && !AppState.filters.nfl) return false;
+    if (lg === "NCAA" && !AppState.filters.ncaa) return false;
+    return true;
+});
     if (games.length === 0) return;
 
     const containerWidth = container.clientWidth || window.innerWidth || 1200;
