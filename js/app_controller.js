@@ -263,7 +263,7 @@ function recalculateAndRenderAll() {
                     // Balls Deep: Escalates the edge via Coupled Psi_11,12
                     const rawBdSpread = isHomeSpread ? m9Bd.fairHomeSpread : Number((-m9Bd.fairHomeSpread).toFixed(2));
                     const escalatedDirection = Math.sign(tipGap || 1);
-                    const escalatedShift = escalatedDirection * Math.min(3.5, Math.max(1.65, Math.abs(psiBd) * 0.45));
+                    const escalatedShift = escalatedDirection * Math.min(3.25, Math.max(1.75, Math.abs(psiBd) * 0.55));
                     bdProjectedLine = Number((rawBdSpread - escalatedShift).toFixed(2));
 
                     const bdGap = vegasLine - bdProjectedLine;
@@ -280,7 +280,7 @@ function recalculateAndRenderAll() {
 
                     // Balls Deep: Escalates total divergence via Atmospheric/Bio-Turnover shift
                     const dirSign = tipTotalDiff >= 0 ? 1 : -1;
-                    const bdTotalEscalation = dirSign * Math.min(6.5, (Math.abs(psiBd) * 0.65 + Math.abs(m7.passGameModifierYards) * 0.35 + 2.1));
+                    const bdTotalEscalation = dirSign * Math.min(4.5, (Math.abs(psiBd) * 0.55 + Math.abs(m7.passGameModifierYards) * 0.25 + 1.8));
                     bdProjectedLine = Number((baseProjectedLine + bdTotalEscalation).toFixed(1));
                     bdModelProb = calcPointGapWinProb(Math.abs(bdProjectedLine - vegasLine));
 
@@ -633,14 +633,8 @@ function render_game_cards(data) {
         if (props.length === 0) {
             drawer.innerHTML = `<div style="font-size: 0.85em; color: #94a3b8;">No active lines available yet.</div>`;
         } else {
-            props.forEach((p, idx) => {
-                const propKey = `${game.game_id}_${p.market_type}_${idx}`;
-                const engineData = AppState.processedProps.find(ep => ep.propKey === propKey);
-                if (!engineData) return;
-
-                // Top Line is 100% hard-locked to Just the Tip (tipProjectedMean, tipModelPct, tipEvPct, tipBadge)
-                const isSpread = p.market_type === "spread";
-                const tipIsSmash = engineData.tipBadge === "SMASH";
+            const isSpread = p.market_type === "spread";
+                const isTipSmash = engineData.tipEvPct >= SMASH_EV_CUTOFF;
                 const displayTipProj = (isSpread && Number(engineData.tipProjectedMean) > 0)
                     ? `+${engineData.tipProjectedMean}`
                     : `${engineData.tipProjectedMean}`;
@@ -648,6 +642,23 @@ function render_game_cards(data) {
                 const slotBadge = engineData.flagshipSlot
                     ? `<span class="${engineData.flagshipSlot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}" style="margin-right:6px;">${engineData.flagshipSlot}</span>`
                     : "";
+
+                const propBlock = document.createElement("div");
+                propBlock.style.padding = "8px 0";
+                propBlock.style.borderBottom = "1px solid #0f172a";
+
+                propBlock.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.85em;">
+                        <span>${slotBadge}<strong>${engineData.player}</strong></span>
+                        <span style="display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono);">
+                            <span style="color: ${isTipSmash ? '#22c55e' : '#ef4444'};">
+                                Proj: ${displayTipProj} | Win: ${engineData.tipModelPct}% (${tipEvStr})
+                            </span>
+                            ${renderTierBadgeHTML(isTipSmash ? "SMASH" : "PASS")}
+                        </span>
+                    </div>
+                    ${buildBallsDeepBoxHTML(engineData, isSpread)}
+                `;
 
                 const propBlock = document.createElement("div");
                 propBlock.style.padding = "8px 0";
