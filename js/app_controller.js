@@ -429,10 +429,6 @@ function buildBallsDeepBoxHTML(engineProp, isSpread) {
     const boxBorder = isSmash ? "rgba(16, 185, 129, 0.42)" : "rgba(239, 68, 68, 0.42)";
     const activeColor = isSmash ? "var(--accent-emerald)" : "var(--accent-danger)";
 
-    const tipProj = engineProp.tipProjectedMean;
-    const fmtTipProj = (isSpread && Number(tipProj) > 0) ? `+${tipProj}` : `${tipProj}`;
-    const tipEvStr = `${engineProp.tipEvPct > 0 ? '+' : ''}${engineProp.tipEvPct}% EV`;
-
     const activeLabel = AppState.activeMode === "davinci" ? "DAVINCI CEILING" : "BALLS DEEP ESCALATOR";
     const activeProj = (isSpread && Number(engineProp.projectedMean) > 0) ? `+${engineProp.projectedMean}` : `${engineProp.projectedMean}`;
     const activeEvStr = `${engineProp.evPct > 0 ? '+' : ''}${engineProp.evPct}% EV`;
@@ -441,8 +437,8 @@ function buildBallsDeepBoxHTML(engineProp, isSpread) {
     return `
         <div class="bd-preview-unlocked" style="background: ${boxBg}; border: 1px solid ${boxBorder}; flex-direction: column; align-items: stretch; gap: 4px;">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
-                <span style="color: var(--text-secondary);">Tip Floor: <strong>${fmtTipProj}</strong> (${engineProp.tipModelPct}% | ${tipEvStr})</span>
-                <span style="color: ${activeColor}; font-weight: 800;">⚡ ${activeLabel}: ${activeProj} (${engineProp.activeModelPct}% | ${activeEvStr})</span>
+                <span style="color: ${activeColor}; font-weight: 800;">⚡ ${activeLabel}: ${activeProj} | Win: ${engineProp.activeModelPct}% (${activeEvStr})</span>
+                ${renderTierBadgeHTML(engineProp.tierBadge)}
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 4px; font-size: 10.5px;">
                 <span style="color: var(--accent-gold); font-weight: 700;">🎯 Longer-Odds Escalator: ${engineProp.bdAltLabel} (${altEvStr})</span>
@@ -505,9 +501,10 @@ function renderFlagshipFivePack() {
             ${AppState.flagshipFivePack.map((p, idx) => {
                 const isMenage = p.flagshipSlot.includes("MÉNAGE");
                 const isSpread = p.marketType === "spread";
-                const isSmash = p.tierBadge === "SMASH";
-                const fmtProj = (isSpread && Number(p.projectedMean) > 0) ? `+${p.projectedMean}` : `${p.projectedMean}`;
-                const evStr = `${p.evPct > 0 ? '+' : ''}${p.evPct}% EV`;
+                const tipIsSmash = p.tipEvPct >= SMASH_EV_CUTOFF;
+                const tipBadge = tipIsSmash ? "SMASH" : "PASS";
+                const fmtTipProj = (isSpread && Number(p.tipProjectedMean) > 0) ? `+${p.tipProjectedMean}` : `${p.tipProjectedMean}`;
+                const tipEvStr = `${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV`;
 
                 return `
                     <div style="padding: 10px 0; ${idx < AppState.flagshipFivePack.length - 1 ? 'border-bottom: 1px solid #1e293b;' : ''}">
@@ -517,10 +514,10 @@ function renderFlagshipFivePack() {
                                 <strong style="font-size: 13px; color: var(--text-primary);">${p.player}</strong>
                             </div>
                             <div style="display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 12px;">
-                                <span style="color: ${isSmash ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">
-                                    Proj: <strong>${fmtProj}</strong> | Win: <strong>${p.activeModelPct}%</strong> (${evStr})
+                                <span style="color: ${tipIsSmash ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">
+                                    Proj: <strong>${fmtTipProj}</strong> | Win: <strong>${p.tipModelPct}%</strong> (${tipEvStr})
                                 </span>
-                                ${renderTierBadgeHTML(p.tierBadge)}
+                                ${renderTierBadgeHTML(tipBadge)}
                             </div>
                         </div>
                         ${buildBallsDeepBoxHTML(p, isSpread)}
@@ -541,6 +538,136 @@ function renderFlagshipFivePack() {
             renderFlagshipFivePack();
         });
     }
+}
+
+// ==========================================
+// INDEPENDENT MASONRY FLEX COLUMNS (TILES SLIDE UP TO FILL VOIDS)
+// ==========================================
+function render_game_cards(data) {
+    const container = document.getElementById("master-board-body");
+    if (!container) return;
+    
+    container.innerHTML = "";
+    const games = data.games || [];
+    if (games.length === 0) return;
+
+    const containerWidth = container.clientWidth || window.innerWidth || 1200;
+    const numCols = Math.max(1, Math.min(4, Math.floor(containerWidth / 340)));
+
+    container.style.display = "flex";
+    container.style.alignItems = "flex-start";
+    container.style.gap = "15px";
+
+    const colElements = [];
+    for (let c = 0; c < numCols; c++) {
+        const colDiv = document.createElement("div");
+        colDiv.style.flex = "1";
+        colDiv.style.minWidth = "0";
+        colDiv.style.display = "flex";
+        colDiv.style.flexDirection = "column";
+        colDiv.style.gap = "15px";
+        container.appendChild(colDiv);
+        colElements.push(colDiv);
+    }
+
+    const cardSubtitle = AppState.activeMode === "tip"
+        ? "Click to expand lines &amp; EV%"
+        : "Click to expand lines, EV% &amp; Balls Deep Escalator";
+
+    games.forEach((game, gameIndex) => {
+        const cardKey = game.game_id || `${game.away_team}@${game.home_team}`;
+        let gameDate = "TBD", gameTime = "TBD";
+        if (game.commence_time) {
+            const dt = new Date(game.commence_time);
+            gameDate = dt.toLocaleDateString("en-US", { weekday: 'short', month: 'short', day: 'numeric' });
+            gameTime = dt.toLocaleTimeString("en-US", { hour: 'numeric', minute: '2-digit' });
+        }
+
+        const env = game.environmental_payload || {};
+        const weatherString = env.is_dome 
+            ? "Dome (72°F)" 
+            : `${env.temperature_f || "--"}°F | Wind: ${env.wind_mph || "--"} mph`;
+
+        const card = document.createElement("div");
+        card.className = "game-card";
+        card.style.border = "1px solid #334155";
+        card.style.borderRadius = "8px";
+        card.style.backgroundColor = "#1e293b";
+        card.style.padding = "15px";
+        card.style.cursor = "pointer";
+        card.style.color = "#e2e8f0";
+        card.style.width = "100%";
+
+        card.innerHTML = `
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #334155; padding-bottom: 10px; margin-bottom: 10px;">
+                <span style="font-size: 0.85em; color: #94a3b8;">${gameDate} @ ${gameTime}</span>
+                <span style="font-size: 0.85em; color: #94a3b8;">${weatherString}</span>
+            </div>
+            <div style="font-size: 1.25em; font-weight: bold; text-align: center; margin-bottom: 10px;">
+                ${game.away_team} @ ${game.home_team}
+            </div>
+            <div style="font-size: 0.85em; text-align: center; color: #cbd5e1;">
+                ${cardSubtitle}
+            </div>
+        `;
+
+        const drawer = document.createElement("div");
+        drawer.style.display = openCardMemory.has(cardKey) ? "block" : "none";
+        drawer.style.marginTop = "15px";
+        drawer.style.borderTop = "1px solid #334155";
+        drawer.style.paddingTop = "10px";
+
+        const props = game.props_board || [];
+        if (props.length === 0) {
+            drawer.innerHTML = `<div style="font-size: 0.85em; color: #94a3b8;">No active lines available yet.</div>`;
+        } else {
+            props.forEach((p, idx) => {
+                const propKey = `${game.game_id}_${p.market_type}_${idx}`;
+                const engineData = AppState.processedProps.find(ep => ep.propKey === propKey);
+                if (!engineData) return;
+
+                // Top line stays locked on Just the Tip baseline projections
+                const isSpread = p.market_type === "spread";
+                const tipIsSmash = engineData.tipEvPct >= SMASH_EV_CUTOFF;
+                const tipBadge = tipIsSmash ? "SMASH" : "PASS";
+                const displayTipProj = (isSpread && Number(engineData.tipProjectedMean) > 0)
+                    ? `+${engineData.tipProjectedMean}`
+                    : `${engineData.tipProjectedMean}`;
+                const tipEvStr = `${engineData.tipEvPct > 0 ? '+' : ''}${engineData.tipEvPct}% EV`;
+                const slotBadge = engineData.flagshipSlot
+                    ? `<span class="${engineData.flagshipSlot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}" style="margin-right:6px;">${engineData.flagshipSlot}</span>`
+                    : "";
+
+                const propBlock = document.createElement("div");
+                propBlock.style.padding = "8px 0";
+                propBlock.style.borderBottom = "1px solid #0f172a";
+
+                propBlock.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.85em;">
+                        <span>${slotBadge}<strong>${engineData.player}</strong></span>
+                        <span style="display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono);">
+                            <span style="color: ${tipIsSmash ? '#22c55e' : '#ef4444'};">
+                                Proj: ${displayTipProj} | Win: ${engineData.tipModelPct}% (${tipEvStr})
+                            </span>
+                            ${renderTierBadgeHTML(tipBadge)}
+                        </span>
+                    </div>
+                    ${buildBallsDeepBoxHTML(engineData, isSpread)}
+                `;
+                drawer.appendChild(propBlock);
+            });
+        }
+
+        card.appendChild(drawer);
+        card.addEventListener("click", () => {
+            const isClosing = drawer.style.display === "block";
+            drawer.style.display = isClosing ? "none" : "block";
+            if (isClosing) openCardMemory.delete(cardKey);
+            else openCardMemory.add(cardKey);
+        });
+
+        colElements[gameIndex % numCols].appendChild(card);
+    });
 }
 
 // ==========================================
