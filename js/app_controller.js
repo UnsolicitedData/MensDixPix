@@ -634,7 +634,11 @@ function render_game_cards(data) {
             drawer.innerHTML = `<div style="font-size: 0.85em; color: #94a3b8;">No active lines available yet.</div>`;
         } else {
             props.forEach((p, idx) => {
-               const isSpread = p.market_type === "spread";
+                const propKey = `${game.game_id}_${p.market_type}_${idx}`;
+                const engineData = AppState.processedProps.find(ep => ep.propKey === propKey);
+                if (!engineData) return;
+
+                const isSpread = p.market_type === "spread";
                 const isTipSmash = engineData.tipEvPct >= SMASH_EV_CUTOFF;
                 const displayTipProj = (isSpread && Number(engineData.tipProjectedMean) > 0)
                     ? `+${engineData.tipProjectedMean}`
@@ -656,23 +660,6 @@ function render_game_cards(data) {
                                 Proj: ${displayTipProj} | Win: ${engineData.tipModelPct}% (${tipEvStr})
                             </span>
                             ${renderTierBadgeHTML(isTipSmash ? "SMASH" : "PASS")}
-                        </span>
-                    </div>
-                    ${buildBallsDeepBoxHTML(engineData, isSpread)}
-                `;
-
-                const propBlock = document.createElement("div");
-                propBlock.style.padding = "8px 0";
-                propBlock.style.borderBottom = "1px solid #0f172a";
-
-                propBlock.innerHTML = `
-                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.85em;">
-                        <span>${slotBadge}<strong>${engineData.player}</strong></span>
-                        <span style="display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono);">
-                            <span style="color: ${tipIsSmash ? '#22c55e' : '#ef4444'};">
-                                Proj: ${displayTipProj} | Win: ${engineData.tipModelPct}% (${tipEvStr})
-                            </span>
-                            ${renderTierBadgeHTML(engineData.tipBadge)}
                         </span>
                     </div>
                     ${buildBallsDeepBoxHTML(engineData, isSpread)}
