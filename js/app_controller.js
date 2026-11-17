@@ -1,12 +1,10 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v206)
- * - Top Line of Every Card & 5-Pack Row: Hard-locked to "Just the Tip" Baseline
- * - Unlocked Sub-Box:
- *     Row 1: True Balls Deep / DaVinci Projected Margin, Win% & EV% (no duplicate SMASH/PASS badge)
- *     Row 2: Clean .5 Sportsbook Hook Longer-Odds Escalator (+145 Spreads / +155 Totals) with true alt-line EV%
- * - Clickable 🔒 Paywall Locks on Compendium & Biophysical/Weather Lab values in "Just the Tip" mode
- * - Emerald Green / Crimson Red positive & negative ballistic/telemetry shifts when unlocked
- * - Dual NFL + NCAA Checkbox Filtering on Game Cards + Independent Masonry Flex Columns
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v207)
+ * - 1 Spread Lean + 1 Total Lean per Game Card (Eliminates mirror-image duplicate spread rows)
+ * - True SMASH (>= +10.0% EV) vs. PASS (< +10.0% EV) grading on the model's preferred side
+ * - Unmapped NCAA G5/MAC Fallback Filter: Anchors non-registry teams to real weather/circadian/altitude shifts
+ * - Top Line Hard-Locked to "Just the Tip" Baseline; Clean Unlocked Balls Deep Box (No duplicate badges)
+ * - Clickable 🔒 Paywall Locks + Emerald/Crimson Ballistic & Telemetry Shifts
  */
 
 const AppState = {
@@ -24,9 +22,16 @@ const AppState = {
 
 const openCardMemory = new Set();
 const MODEL_TOTAL_INTERCEPT = 42.986;
-const SMASH_EV_CUTOFF = 10.0; // +10.0% EV threshold for SMASH
+const SMASH_EV_CUTOFF = 10.0; // +10.0% EV threshold for SMASH (~57.62% Win Prob at -110)
 const PHI = 1.6180339887;
 const PHI_OVER_PI = PHI / Math.PI; // ~0.5150362 (Module 13 Sacred Geometry Constant)
+
+// Verified NCAA Registry Codes (Teams with full custom telemetry; others use weather/circadian market anchor)
+const VERIFIED_NCAA_CODES = new Set([
+    "WYO", "AFA", "COLO", "UNM", "USU", "UTAH", "BYU", "NEV", "UTEP", "CSU", "APP", "TTU", "BSU",
+    "OSU", "ORE", "TEX", "UGA", "ALA", "PSU", "ND", "IND", "TENN", "MISS", "MIA", "SMU", "CLEM",
+    "TAMU", "ISU", "KSU", "LSU", "SCAR", "LOU", "PITT", "WVU", "MICH", "USC", "WASH", "TULN", "ARMY", "UNLV", "SYR"
+]);
 
 document.addEventListener("DOMContentLoaded", () => {
     bindUIControls();
@@ -217,14 +222,54 @@ function recalculateAndRenderAll() {
         const m11 = calcBiophysicalMassLoad(envPayload, homeTel, 95.0, 0.62, mode, sliderVal);
         const m12 = calcTurnoverEPAMatrix({ home: homeTel, away: awayTel }, gameLeague, mode, sliderVal);
 
-        // 1. JUST THE TIP BASELINE (100% Untouched Pure EPA Baseline)
-        const m9Base = calcFullGameFairMargin(game, m8.phiCircadianPenalty, 0, "tip");
+        // Extract Vegas Home Spread & Total Line for reference
+        let vegasHomeSpread = 0;
+        let vegasTotalLine = (gameLeague === "NCAA") ? 51.5 : 43.5;
+        if (Array.isArray(game.props_board)) {
+            const homeSpreadObj = game.props_board.find(
+                p => p.market_type === "spread" && p.player.startsWith(`${game.home_team} `)
+            );
+            const awaySpreadObj = game.props_board.find(
+                p => p.market_type === "spread" && p.player.startsWith(`${game.away_team} `)
+            );
+            if (homeSpreadObj && homeSpreadObj.base_line !== undefined) {
+                vegasHomeSpread = Number(homeSpreadObj.base_line);
+            } else if (awaySpreadObj && awaySpreadObj.base_line !== undefined) {
+                vegasHomeSpread = -Number(awaySpreadObj.base_line);
+            }
+            const totalObj = game.props_board.find(p => p.market_type === "total");
+            if (totalObj && totalObj.base_line !== undefined) {
+                vegasTotalLine = Number(totalObj.base_line);
+            }
+        }
 
-        // 2. BALLS DEEP COUPLED TELEMETRY VECTOR (Psi_11,12 bounded to realistic [-4.25, +4.25] pts)
+        const isUnmappedNCAA = (gameLeague === "NCAA") &&
+            (!VERIFIED_NCAA_CODES.has(game.home_team) || !VERIFIED_NCAA_CODES.has(game.away_team));
+
+        // 1. JUST THE TIP BASELINE
+        const rawM9Base = calcFullGameFairMargin(game, m8.phiCircadianPenalty, 0, "tip");
+        const windMph = envPayload.is_dome ? 0 : (envPayload.wind_mph || 0);
+        const windPenalty = Math.max(0, (windMph - 10.0) * 0.25);
+
+        let fairHomeTip = rawM9Base.fairHomeSpread;
+        if (isUnmappedNCAA) {
+            // Prevents unmapped G5/MAC fallback hashes from inventing 16-pt edges; uses real weather, altitude & circadian shifts
+            const envSpreadShift = -m8.phiCircadianPenalty - ((m11Bd.phiBioScore + psiElev) * 1.15) - (m7.passGameModifierYards * 0.08);
+            const dampedHashDelta = Math.max(-2.1, Math.min(2.1, (rawM9Base.fairHomeSpread - vegasHomeSpread) * 0.18));
+            fairHomeTip = Number((vegasHomeSpread + envSpreadShift + dampedHashDelta).toFixed(2));
+        }
+
+        const m9Base = {
+            fairHomeSpread: fairHomeTip,
+            epaContribution: rawM9Base.epaContribution,
+            activeCoupledOverlay: 0
+        };
+
+        // 2. BALLS DEEP COUPLED TELEMETRY VECTOR (Psi_11,12 bounded to [-4.25, +4.25] pts)
         const tovVector = -(m12Bd.netTurnoverEPA || 0) * PHI * 1.15;
         const bioElevVector = -(m11Bd.phiBioScore + psiElev) * PHI * 1.25;
         const m13Vector = -m13Rise * 11.5;
-        const edgeAmplifier = Math.sign(m9Base.fairHomeSpread || -1) * (0.618 * (1.0 + Math.abs(m8.phiCircadianPenalty) * 0.4));
+        const edgeAmplifier = Math.sign(fairHomeTip || -1) * (0.618 * (1.0 + Math.abs(m8.phiCircadianPenalty) * 0.4));
         const rawPsiBd = tovVector + bioElevVector + m13Vector + edgeAmplifier;
         const psiBd = Number(Math.max(-4.25, Math.min(4.25, rawPsiBd)).toFixed(2));
 
@@ -232,15 +277,28 @@ function recalculateAndRenderAll() {
             ? 0
             : Number((psiBd * (mode === "davinci" ? (1.0 + sliderVal * 0.5) : 1.0)).toFixed(2));
 
-        const m9Bd = calcFullGameFairMargin(game, m8.phiCircadianPenalty, psiBd, "balls_deep");
-        const m9 = calcFullGameFairMargin(game, m8.phiCircadianPenalty, psi11_12, mode);
+        const m9Bd = {
+            fairHomeSpread: Number((fairHomeTip + psiBd).toFixed(2)),
+            epaContribution: rawM9Base.epaContribution,
+            activeCoupledOverlay: psiBd
+        };
+        const m9 = {
+            fairHomeSpread: Number((fairHomeTip + psi11_12).toFixed(2)),
+            epaContribution: rawM9Base.epaContribution,
+            activeCoupledOverlay: psi11_12
+        };
 
         const totalIntercept = (gameLeague === "NCAA") ? 51.450 : MODEL_TOTAL_INTERCEPT;
         const epaTotalPts = ((homeTel.net_epa_per_play || 0) + (awayTel.net_epa_per_play || 0)) * playScaler;
         const rzTotalPts = ((homeTel.opp_rz_dvoa || 0) + (awayTel.opp_rz_dvoa || 0)) * 10.0;
-        const windMph = envPayload.is_dome ? 0 : (envPayload.wind_mph || 0);
-        const windPenalty = Math.max(0, (windMph - 10.0) * 0.25);
-        const baseTelemetryTotal = Number((totalIntercept + epaTotalPts + rzTotalPts - windPenalty).toFixed(1));
+        const rawTelemetryTotal = totalIntercept + epaTotalPts + rzTotalPts - windPenalty;
+
+        let baseTelemetryTotal = Number(rawTelemetryTotal.toFixed(1));
+        if (isUnmappedNCAA) {
+            const envTotalShift = -windPenalty + (m7.passGameModifierYards * 0.25) + ((psiElev > 0.3 ? 1.8 : 0));
+            const dampedTotalDelta = Math.max(-2.2, Math.min(2.2, (rawTelemetryTotal - vegasTotalLine) * 0.20));
+            baseTelemetryTotal = Number((vegasTotalLine + envTotalShift + dampedTotalDelta).toFixed(1));
+        }
 
         const gameRecord = {
             gameId: game.game_id,
@@ -264,6 +322,9 @@ function recalculateAndRenderAll() {
         AppState.processedGames.push(gameRecord);
 
         if (Array.isArray(game.props_board)) {
+            const candidateSpreads = [];
+            const otherGameProps = [];
+
             game.props_board.forEach((prop, idx) => {
                 const propKey = `${game.game_id}_${prop.market_type}_${idx}`;
                 const m1 = calcVigFreeProbability(prop.base_odds_over || -110, prop.base_odds_under || -110);
@@ -282,17 +343,14 @@ function recalculateAndRenderAll() {
                 let bdReachProb = 0.50;
 
                 if (prop.market_type === "spread") {
-                    // 1. JUST THE TIP BASELINE (Locked on Main Card Line)
                     baseProjectedLine = isHomeSpread ? m9Base.fairHomeSpread : Number((-m9Base.fairHomeSpread).toFixed(2));
                     const tipGap = vegasLine - baseProjectedLine;
                     tipModelProb = calcPointGapWinProb(tipGap);
 
-                    // 2. BALLS DEEP PROJECTED MARGIN (True Coupled Margin: e.g. ARI +7.14 -> +4.85 or +5.15)
                     bdProjectedLine = isHomeSpread ? m9Bd.fairHomeSpread : Number((-m9Bd.fairHomeSpread).toFixed(2));
                     const bdGap = vegasLine - bdProjectedLine;
                     bdModelProb = calcPointGapWinProb(bdGap);
 
-                    // Active Mode Projected Margin (Balls Deep vs. DaVinci Slider)
                     if (mode === "balls_deep") {
                         finalCalculatedLine = bdProjectedLine;
                         activeModelProb = bdModelProb;
@@ -304,8 +362,6 @@ function recalculateAndRenderAll() {
                         activeModelProb = tipModelProb;
                     }
 
-                    // 3. LONGER-ODDS ESCALATOR (Clean .5 Sportsbook Hook selling 3.0 pts for +145 odds)
-                    // e.g., ARI +15.5 -> Alt +12.5 (+145); KC -15.5 -> Alt -18.5 (+145); NO +11.5 -> Alt +8.5 (+145)
                     const altSpreadHook = snapToHalfPointHook(vegasLine, 3.0);
                     bdAltLineLabel = `Alt ${altSpreadHook > 0 ? '+' + altSpreadHook.toFixed(1) : altSpreadHook.toFixed(1)} (+145)`;
                     bdLongerOdds = 145;
@@ -313,12 +369,10 @@ function recalculateAndRenderAll() {
                     bdReachProb = calcPointGapWinProb(altCoverGap);
 
                 } else if (prop.market_type === "total") {
-                    // 1. JUST THE TIP BASELINE (Locked on Main Card Line)
                     baseProjectedLine = baseTelemetryTotal;
                     const tipTotalDiff = baseProjectedLine - vegasLine;
                     tipModelProb = calcPointGapWinProb(Math.abs(tipTotalDiff));
 
-                    // 2. BALLS DEEP PROJECTED TOTAL
                     const dirSign = tipTotalDiff >= 0 ? 1 : -1;
                     const bdTotalShift = dirSign * Math.min(4.2, (Math.abs(psiBd) * 0.45 + Math.abs(m7.passGameModifierYards) * 0.22 + 1.5));
                     bdProjectedLine = Number((baseProjectedLine + bdTotalShift).toFixed(1));
@@ -336,7 +390,6 @@ function recalculateAndRenderAll() {
                         activeModelProb = tipModelProb;
                     }
 
-                    // 3. LONGER-ODDS TOTAL ESCALATOR (Clean .5 Sportsbook Hook selling 3.0 pts for +155 odds)
                     const isUnderTip = baseProjectedLine < vegasLine;
                     const altTotalHook = isUnderTip
                         ? (Math.floor(vegasLine - 3.0) + 0.5)
@@ -361,7 +414,6 @@ function recalculateAndRenderAll() {
                     bdReachProb = Math.max(0.05, activeModelProb - 0.08);
                 }
 
-                // HARD-LOCK displayLabel to Just the Tip's direction so the top title never flips
                 let displayLabel = prop.player;
                 if (prop.market_type === "total") {
                     const isUnderTip = baseProjectedLine < vegasLine;
@@ -380,7 +432,7 @@ function recalculateAndRenderAll() {
                 const activeWinPct = Number((activeModelProb * 100).toFixed(2));
                 const activeEvPct = Number(m2Active.evPercentage.toFixed(2));
 
-                AppState.processedProps.push({
+                const processedItem = {
                     propKey,
                     commenceTime: game.commence_time,
                     gameId: game.game_id,
@@ -392,12 +444,10 @@ function recalculateAndRenderAll() {
                     marketType: prop.market_type,
                     baseLine: vegasLine,
                     baseOdds: prop.base_odds_over || -110,
-                    // Locked Just the Tip Baseline Properties (Used on Top Line)
                     tipProjectedMean: baseProjectedLine,
                     tipModelPct: tipWinPct,
                     tipEvPct: tipEvPct,
                     tipBadge: tipBadge,
-                    // Balls Deep / DaVinci Escalator Properties (Used in Unlocked Sub-Box)
                     projectedMean: finalCalculatedLine,
                     bdProjectedMean: bdProjectedLine,
                     vigFreePct: Number((vigFreeOver * 100).toFixed(2)),
@@ -413,12 +463,25 @@ function recalculateAndRenderAll() {
                     flagshipSlot: prop.flagship_slot || "",
                     psiBd,
                     psiActive: psi11_12
-                });
+                };
+
+                if (prop.market_type === "spread") {
+                    candidateSpreads.push(processedItem);
+                } else {
+                    otherGameProps.push(processedItem);
+                }
             });
+
+            // Collapse the 2 mirror-image spread sides down to ONLY the model's preferred lean (1 spread per game)
+            if (candidateSpreads.length > 0) {
+                candidateSpreads.sort((a, b) => b.tipModelPct - a.tipModelPct || b.tipEvPct - a.tipEvPct);
+                AppState.processedProps.push(candidateSpreads[0]);
+            }
+            AppState.processedProps.push(...otherGameProps);
         }
     });
 
-    // Lock Flagship 5-Pack Selection to tipEvPct so the 5-Pack order never jumps around
+    // Lock Flagship 5-Pack Selection to tipEvPct so the 5-Pack order never shifts across modes
     AppState.processedProps.forEach(p => { p.flagshipSlot = ""; });
     const bestSpreadPerGame = [];
     const remainingPool = [];
@@ -426,7 +489,6 @@ function recalculateAndRenderAll() {
     AppState.processedGames.forEach(g => {
         const gameSpreads = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "spread");
         if (gameSpreads.length > 0) {
-            gameSpreads.sort((a, b) => b.tipEvPct - a.tipEvPct);
             bestSpreadPerGame.push(gameSpreads[0]);
         }
         const gameTotals = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType !== "spread");
@@ -581,7 +643,7 @@ function renderFlagshipFivePack() {
 }
 
 // ==========================================
-// INDEPENDENT MASONRY FLEX COLUMNS (WITH NFL/NCAA FILTERING)
+// INDEPENDENT MASONRY FLEX COLUMNS (1 SPREAD LEAN + 1 TOTAL LEAN PER CARD)
 // ==========================================
 function render_game_cards(data) {
     const container = document.getElementById("master-board-body");
@@ -618,7 +680,7 @@ function render_game_cards(data) {
     }
 
     const cardSubtitle = AppState.activeMode === "tip"
-        ? "Click to expand lines &amp; EV%"
+        ? "Click to expand model spread &amp; total leans"
         : "Click to expand lines, EV% &amp; Balls Deep Escalator";
 
     games.forEach((game, gameIndex) => {
@@ -664,17 +726,12 @@ function render_game_cards(data) {
         drawer.style.borderTop = "1px solid #334155";
         drawer.style.paddingTop = "10px";
 
-        const props = game.props_board || [];
-        if (props.length === 0) {
+        const gameProps = AppState.processedProps.filter(ep => ep.gameId === game.game_id);
+        if (gameProps.length === 0) {
             drawer.innerHTML = `<div style="font-size: 0.85em; color: #94a3b8;">No active lines available yet.</div>`;
         } else {
-            props.forEach((p, idx) => {
-                const propKey = `${game.game_id}_${p.market_type}_${idx}`;
-                const engineData = AppState.processedProps.find(ep => ep.propKey === propKey);
-                if (!engineData) return;
-
-                // Top Line is 100% hard-locked to Just the Tip (tipProjectedMean, tipModelPct, tipEvPct, tipBadge)
-                const isSpread = p.market_type === "spread";
+            gameProps.forEach((engineData) => {
+                const isSpread = engineData.marketType === "spread";
                 const tipIsSmash = engineData.tipBadge === "SMASH";
                 const displayTipProj = (isSpread && Number(engineData.tipProjectedMean) > 0)
                     ? `+${engineData.tipProjectedMean}`
@@ -1081,7 +1138,7 @@ function renderHistoricalLedger() {
             ? `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${savedEntry.final_score})</span>`
             : (savedEntry.is_locked ? `<span style="color:var(--accent-gold);font-weight:700;">🔒 IN-PLAY (CLOSING LOCKED)</span>` : `<span style="color:var(--text-secondary);">PRE-KICKOFF SNAPSHOT</span>`);
 
-        const gameSpreads = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "spread").sort((a, b) => b.tipEvPct - a.tipEvPct);
+        const gameSpreads = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "spread");
         const gameTotals = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "total");
         const topPicks = [
             { p: gameSpreads[0], savedRec: savedEntry.spread_record },
