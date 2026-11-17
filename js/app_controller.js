@@ -1,8 +1,8 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v201)
- * - Tier-1 Market Baseline Anchor (Pi * tanh(Delta / (Pi * Phi))) prevents runaway 40%-70% EVs
- * - Single non-clickable locked "Balls Deep" banner under Active Engine in Tip mode
- * - Zero Balls Deep projections or boxes inside game cards unless Balls Deep / DaVinci is active
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v202)
+ * - Pure Unanchored EPA Baseline Math Restored
+ * - Closed cards stay compact (align-items: start) instead of stretching into blank grey boxes
+ * - PASS plays and unlocked Balls Deep PASS boxes render in Crimson Red (#ef4444) vs. Emerald Green (#10b981) for SMASH
  */
 
 const AppState = {
@@ -21,7 +21,6 @@ const AppState = {
 const openCardMemory = new Set();
 const MODEL_TOTAL_INTERCEPT = 42.986;
 const SMASH_EV_CUTOFF = 10.0; // +10.0% EV threshold for SMASH
-const SACRED_PI_PHI = Math.PI * 1.6180339887; // ~5.08320369
 
 document.addEventListener("DOMContentLoaded", () => {
     bindUIControls();
@@ -153,52 +152,16 @@ function recalculateAndRenderAll() {
             ? 0
             : calcCoupledInteractionPsi(m11.phiBioScore, m12.netTurnoverEPA, sliderVal);
 
-        const m9RawBase = calcFullGameFairMargin(game, m8.phiCircadianPenalty, 0, "tip");
+        // Pure Unanchored Model Spreads & Totals
+        const m9Base = calcFullGameFairMargin(game, m8.phiCircadianPenalty, 0, "tip");
+        const m9Bd = calcFullGameFairMargin(game, m8.phiCircadianPenalty, psiBd, "balls_deep");
+        const m9 = calcFullGameFairMargin(game, m8.phiCircadianPenalty, psi11_12, mode);
 
-        // Extract Vegas Home Spread & Vegas Total to anchor Tier-1 Market Baseline (F9 = 34/76)
-        let vegasHomeSpread = m9RawBase.fairHomeSpread;
-        let vegasTotalLine = MODEL_TOTAL_INTERCEPT;
-        if (Array.isArray(game.props_board)) {
-            const homeSpreadObj = game.props_board.find(
-                p => p.market_type === "spread" && p.player.startsWith(`${game.home_team} `)
-            );
-            const awaySpreadObj = game.props_board.find(
-                p => p.market_type === "spread" && p.player.startsWith(`${game.away_team} `)
-            );
-            if (homeSpreadObj && homeSpreadObj.base_line !== undefined) {
-                vegasHomeSpread = Number(homeSpreadObj.base_line);
-            } else if (awaySpreadObj && awaySpreadObj.base_line !== undefined) {
-                vegasHomeSpread = -Number(awaySpreadObj.base_line);
-            }
-            const totalObj = game.props_board.find(p => p.market_type === "total");
-            if (totalObj && totalObj.base_line !== undefined) {
-                vegasTotalLine = Number(totalObj.base_line);
-            }
-        }
-
-        // Sacred Geometry Tier-1 Market Anchor: Damps raw EPA divergence via Pi * tanh(Delta / (Pi * Phi))
-        const rawHomeSpreadDelta = m9RawBase.fairHomeSpread - vegasHomeSpread;
-        const anchoredHomeShift = Math.PI * Math.tanh(rawHomeSpreadDelta / SACRED_PI_PHI);
-
-        const fairHomeTip = Number((vegasHomeSpread + anchoredHomeShift).toFixed(2));
-        const fairHomeBd = Number((fairHomeTip + psiBd).toFixed(2));
-        const fairHomeActive = (mode === "tip")
-            ? fairHomeTip
-            : Number((fairHomeTip + psi11_12 - (sliderVal * 0.618)).toFixed(2));
-
-        const m9Base = { fairHomeSpread: fairHomeTip, epaContribution: m9RawBase.epaContribution, activeCoupledOverlay: 0 };
-        const m9Bd = { fairHomeSpread: fairHomeBd, epaContribution: m9RawBase.epaContribution, activeCoupledOverlay: psiBd };
-        const m9 = { fairHomeSpread: fairHomeActive, epaContribution: m9RawBase.epaContribution, activeCoupledOverlay: psi11_12 };
-
-        // Pure EPA + Red-Zone DVOA + Wind Penalty anchored to Tier-1 Market Total Baseline
         const epaTotalPts = ((homeTel.net_epa_per_play || 0) + (awayTel.net_epa_per_play || 0)) * playScaler;
         const rzTotalPts = ((homeTel.opp_rz_dvoa || 0) + (awayTel.opp_rz_dvoa || 0)) * 10.0;
         const windMph = envPayload.is_dome ? 0 : (envPayload.wind_mph || 0);
         const windPenalty = Math.max(0, (windMph - 10.0) * 0.25);
-        const rawTelemetryTotal = MODEL_TOTAL_INTERCEPT + epaTotalPts + rzTotalPts - windPenalty;
-        const rawTotalDelta = rawTelemetryTotal - vegasTotalLine;
-        const anchoredTotalShift = Math.PI * Math.tanh(rawTotalDelta / SACRED_PI_PHI);
-        const baseTelemetryTotal = Number((vegasTotalLine + anchoredTotalShift).toFixed(1));
+        const baseTelemetryTotal = Number((MODEL_TOTAL_INTERCEPT + epaTotalPts + rzTotalPts - windPenalty).toFixed(1));
 
         const gameRecord = {
             gameId: game.game_id,
@@ -259,7 +222,8 @@ function recalculateAndRenderAll() {
                         finalCalculatedLine = bdProjectedLine;
                         activeModelProb = bdModelProb;
                     } else if (mode === "davinci") {
-                        finalCalculatedLine = isHomeSpread ? m9.fairHomeSpread : Number((-m9.fairHomeSpread).toFixed(2));
+                        const activeHomeSpread = m9.fairHomeSpread - (sliderVal * 0.85);
+                        finalCalculatedLine = isHomeSpread ? Number(activeHomeSpread.toFixed(2)) : Number((-activeHomeSpread).toFixed(2));
                         activeModelProb = calcPointGapWinProb(vegasLine - finalCalculatedLine);
                     }
                 } else if (prop.market_type === "total") {
@@ -267,7 +231,7 @@ function recalculateAndRenderAll() {
                         finalCalculatedLine = bdProjectedLine;
                         activeModelProb = bdModelProb;
                     } else if (mode === "davinci") {
-                        const dvShift = (psi11_12 * 0.65) + (sliderVal * 0.95);
+                        const dvShift = (psi11_12 * 0.65) + (sliderVal * 1.45);
                         finalCalculatedLine = Number((baseProjectedLine + dvShift).toFixed(1));
                         activeModelProb = calcPointGapWinProb(Math.abs(finalCalculatedLine - vegasLine));
                     }
@@ -359,11 +323,23 @@ function recalculateAndRenderAll() {
     renderHistoricalLedger();
 }
 
-// Returns NOTHING in "Just the Tip" mode so cards stay 100% clean; shows comparison only when unlocked
+function renderTierBadgeHTML(tierBadge) {
+    if (tierBadge === "SMASH") {
+        return `<span class="badge-smash">SMASH</span>`;
+    }
+    return `<span class="badge-pass" style="background: rgba(239, 68, 68, 0.16); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.45); font-weight: 800;">PASS</span>`;
+}
+
+// Hidden in "Just the Tip" mode; Green for SMASH and Crimson Red for PASS when unlocked
 function buildBallsDeepBoxHTML(engineProp, isSpread) {
     if (AppState.activeMode === "tip") {
         return "";
     }
+
+    const isSmash = engineProp.tierBadge === "SMASH";
+    const boxBg = isSmash ? "rgba(16, 185, 129, 0.08)" : "rgba(239, 68, 68, 0.08)";
+    const boxBorder = isSmash ? "rgba(16, 185, 129, 0.35)" : "rgba(239, 68, 68, 0.40)";
+    const activeColor = isSmash ? "var(--accent-emerald)" : "var(--accent-danger)";
 
     const tipProj = engineProp.tipProjectedMean;
     const fmtTipProj = (isSpread && Number(tipProj) > 0) ? `+${tipProj}` : `${tipProj}`;
@@ -373,9 +349,9 @@ function buildBallsDeepBoxHTML(engineProp, isSpread) {
     const activeEvStr = `${engineProp.evPct > 0 ? '+' : ''}${engineProp.evPct}% EV`;
 
     return `
-        <div class="bd-preview-unlocked">
+        <div class="bd-preview-unlocked" style="background: ${boxBg}; border: 1px solid ${boxBorder};">
             <span style="color: var(--text-secondary);">Tip Baseline: <strong>${fmtTipProj}</strong> (${engineProp.tipModelPct}% | ${tipEvStr})</span>
-            <span style="color: var(--accent-emerald); font-weight: 700;">⚡ ${activeLabel}: ${activeProj} (${engineProp.activeModelPct}% | ${activeEvStr} | Ψ: ${engineProp.psiActive})</span>
+            <span style="color: ${activeColor}; font-weight: 700;">⚡ ${activeLabel}: ${activeProj} (${engineProp.activeModelPct}% | ${activeEvStr} | Ψ: ${engineProp.psiActive})</span>
         </div>
     `;
 }
@@ -403,7 +379,6 @@ function renderFlagshipFivePack() {
         ? "Just the Tip Baseline"
         : (AppState.activeMode === "balls_deep" ? "Balls Deep Coupled Mode" : "DaVinci Override Mode");
 
-    // Single centered, non-clickable locked tab right under Active Engine when in "Just the Tip" mode
     const singleLockedStatusHTML = AppState.activeMode === "tip"
         ? `
             <div style="margin: 10px auto 4px auto; max-width: 480px; padding: 7px 14px; border-radius: 6px; background: rgba(9, 13, 22, 0.78); border: 1px dashed rgba(245, 158, 11, 0.45); opacity: 0.65; font-family: var(--font-mono); font-size: 11px; color: var(--accent-gold); font-weight: 700; text-align: center; cursor: not-allowed; user-select: none;">
@@ -434,6 +409,7 @@ function renderFlagshipFivePack() {
             ${AppState.flagshipFivePack.map((p, idx) => {
                 const isMenage = p.flagshipSlot.includes("MÉNAGE");
                 const isSpread = p.marketType === "spread";
+                const isSmash = p.tierBadge === "SMASH";
                 const fmtProj = (isSpread && Number(p.projectedMean) > 0) ? `+${p.projectedMean}` : `${p.projectedMean}`;
                 const evStr = `${p.evPct > 0 ? '+' : ''}${p.evPct}% EV`;
 
@@ -445,10 +421,10 @@ function renderFlagshipFivePack() {
                                 <strong style="font-size: 13px; color: var(--text-primary);">${p.player}</strong>
                             </div>
                             <div style="display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 12px;">
-                                <span style="color: var(--accent-emerald);">
+                                <span style="color: ${isSmash ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">
                                     Proj: <strong>${fmtProj}</strong> | Win: <strong>${p.activeModelPct}%</strong> (${evStr})
                                 </span>
-                                <span class="${p.tierBadge === 'SMASH' ? 'badge-smash' : 'badge-pass'}">${p.tierBadge}</span>
+                                ${renderTierBadgeHTML(p.tierBadge)}
                             </div>
                         </div>
                         ${buildBallsDeepBoxHTML(p, isSpread)}
@@ -479,6 +455,7 @@ function render_game_cards(data) {
     container.style.display = "grid";
     container.style.gridTemplateColumns = "repeat(auto-fit, minmax(320px, 1fr))";
     container.style.gap = "15px";
+    container.style.alignItems = "start"; // Prevents closed cards from stretching into giant empty boxes
 
     const games = data.games || [];
     const cardSubtitle = AppState.activeMode === "tip"
@@ -537,6 +514,7 @@ function render_game_cards(data) {
                 if (!engineData) return;
 
                 const isSpread = p.market_type === "spread";
+                const isSmash = engineData.tierBadge === "SMASH";
                 const displayProj = (isSpread && Number(engineData.projectedMean) > 0)
                     ? `+${engineData.projectedMean}`
                     : `${engineData.projectedMean}`;
@@ -553,10 +531,10 @@ function render_game_cards(data) {
                     <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.85em;">
                         <span>${slotBadge}<strong>${engineData.player}</strong></span>
                         <span style="display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono);">
-                            <span style="color: ${engineData.evPct >= SMASH_EV_CUTOFF ? '#22c55e' : '#cbd5e1'};">
+                            <span style="color: ${isSmash ? '#22c55e' : '#ef4444'};">
                                 Proj: ${displayProj} | Win: ${engineData.activeModelPct}% (${evStr})
                             </span>
-                            <span class="${engineData.tierBadge === 'SMASH' ? 'badge-smash' : 'badge-pass'}">${engineData.tierBadge}</span>
+                            ${renderTierBadgeHTML(engineData.tierBadge)}
                         </span>
                     </div>
                     ${buildBallsDeepBoxHTML(engineData, isSpread)}
@@ -688,6 +666,7 @@ function renderCombinatoricsDeck() {
                 ${filteredPool.map(p => {
                     const isSelected = AppState.selectedParlayLegs.has(p.propKey);
                     const isSpread = p.marketType === "spread";
+                    const isSmash = p.tierBadge === "SMASH";
                     const fmtProj = (isSpread && Number(p.projectedMean) > 0) ? `+${p.projectedMean}` : `${p.projectedMean}`;
                     const evStr = `${p.evPct > 0 ? '+' : ''}${p.evPct}% EV`;
 
@@ -699,13 +678,13 @@ function renderCombinatoricsDeck() {
                                 </span>
                                 <div style="display: flex; gap: 6px;">
                                     ${p.flagshipSlot ? `<span class="${p.flagshipSlot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}">${p.flagshipSlot}</span>` : ''}
-                                    <span class="${p.tierBadge === 'SMASH' ? 'badge-smash' : 'badge-pass'}">${p.tierBadge}</span>
+                                    ${renderTierBadgeHTML(p.tierBadge)}
                                 </div>
                             </div>
                             <div style="font-weight: 700; font-size: 13px; color: var(--text-primary); margin-bottom: 4px;">
                                 ${p.player} <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);">(${p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds})</span>
                             </div>
-                            <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 12px; color: var(--accent-emerald);">
+                            <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 12px; color: ${isSmash ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">
                                 <span>Proj: <strong>${fmtProj}</strong></span>
                                 <span>Win: <strong>${p.activeModelPct}%</strong> (${evStr})</span>
                             </div>
@@ -876,6 +855,7 @@ function renderHistoricalLedger() {
 
         topPicks.forEach(({ p, savedRec }) => {
             const isSpread = p.marketType === "spread";
+            const isSmash = p.tierBadge === "SMASH";
             const fmtTipProj = (isSpread && Number(p.tipProjectedMean) > 0) ? `+${p.tipProjectedMean}` : `${p.tipProjectedMean}`;
             const fmtBdProj = (isSpread && Number(p.bdProjectedMean) > 0) ? `+${p.bdProjectedMean}` : `${p.bdProjectedMean}`;
             const gradedRes = (savedRec && savedRec.result_tip) ? savedRec.result_tip : "PENDING";
@@ -884,10 +864,10 @@ function renderHistoricalLedger() {
                 <tr>
                     <td><strong>${g.matchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
                     <td>${isSpread ? 'SPREAD' : 'TOTAL (O/U)'} ${p.flagshipSlot ? `<br><span class="badge-menage">${p.flagshipSlot}</span>` : ""}</td>
-                    <td><strong>${p.player}</strong> <span class="${p.tierBadge === 'SMASH' ? 'badge-smash' : 'badge-pass'}">${p.tierBadge}</span></td>
+                    <td><strong>${p.player}</strong> ${renderTierBadgeHTML(p.tierBadge)}</td>
                     <td>${p.baseLine} (${p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds})</td>
                     <td>Proj: <strong>${fmtTipProj}</strong> (${p.tipModelPct}% | ${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV)</td>
-                    ${showBallsDeep ? `<td><span style="color:var(--accent-emerald);">Proj: <strong>${fmtBdProj}</strong> (${p.bdModelPct}% | ${p.bdEvPct > 0 ? '+' : ''}${p.bdEvPct}% EV)</span></td>` : ""}
+                    ${showBallsDeep ? `<td><span style="color:${isSmash ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">Proj: <strong>${fmtBdProj}</strong> (${p.bdModelPct}% | ${p.bdEvPct > 0 ? '+' : ''}${p.bdEvPct}% EV)</span></td>` : ""}
                     <td>${renderGradeBadge(gradedRes)}</td>
                 </tr>
             `;
@@ -910,8 +890,8 @@ function renderHistoricalLedger() {
                 </div>
             </div>
 
-            <div style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 14px;">
-                <div style="font-size: 11px; color: var(--text-secondary); font-weight: 800;">🛡️ PASS AUDIT (&lt;+10.0% EV LEANS)</div>
+            <div style="background: var(--bg-elevated); border: 1px solid rgba(239, 68, 68, 0.45); border-radius: 8px; padding: 14px;">
+                <div style="font-size: 11px; color: var(--accent-danger); font-weight: 800;">🛡️ PASS AUDIT (&lt;+10.0% EV LEANS)</div>
                 <div style="font-size: 18px; font-weight: 800; margin: 6px 0; color: var(--text-secondary);">${fmtBucket("pass_audit")}</div>
                 <div style="font-size: 11px; color: var(--text-muted);">Tracks lower-edge games we passed on</div>
             </div>
