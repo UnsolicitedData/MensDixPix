@@ -1,8 +1,9 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v202)
- * - Pure Unanchored EPA Baseline Math Restored
- * - Closed cards stay compact (align-items: start) instead of stretching into blank grey boxes
- * - PASS plays and unlocked Balls Deep PASS boxes render in Crimson Red (#ef4444) vs. Emerald Green (#10b981) for SMASH
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v203)
+ * - Just the Tip: Locked at pure unanchored EPA baseline (I_flow = 0.000)
+ * - Balls Deep: Aggressive Golden Ratio Escalator (I_flow = +1.000 to +1.618) with full M11/M12/M13 coupling & longer-odds alt targets
+ * - Independent Masonry Flex Columns: Game cards slide up to fill vertical voids automatically
+ * - Compendium Table: Fixed 8-column alignment (M7, M8, M11+10-Zone, M12, M13, Master Score, Unified Win Prob)
  */
 
 const AppState = {
@@ -21,11 +22,16 @@ const AppState = {
 const openCardMemory = new Set();
 const MODEL_TOTAL_INTERCEPT = 42.986;
 const SMASH_EV_CUTOFF = 10.0; // +10.0% EV threshold for SMASH
+const PHI = 1.6180339887;
+const PHI_OVER_PI = PHI / Math.PI; // ~0.5150362 (Module 13 Sacred Geometry Constant)
 
 document.addEventListener("DOMContentLoaded", () => {
     bindUIControls();
     pollDataFeed();
     setInterval(pollDataFeed, 5000);
+    window.addEventListener("resize", () => {
+        if (AppState.rawPayload) render_game_cards(AppState.rawPayload);
+    });
 });
 
 window.toggleParlayLeg = function(propKey) {
@@ -118,6 +124,41 @@ async function pollDataFeed() {
     }
 }
 
+// ==========================================
+// 10-ZONE FIBONACCI ELEVATION & MODULE 13 HELPERS
+// ==========================================
+function calcTenZoneElevationPsi(elevMeters, airDensityRho) {
+    const elevFeet = elevMeters * 3.28084;
+    const fibZones = [
+        { maxFt: 100, w: 0.1 },
+        { maxFt: 200, w: 0.2 },
+        { maxFt: 300, w: 0.3 },
+        { maxFt: 500, w: 0.5 },
+        { maxFt: 800, w: 0.8 },
+        { maxFt: 1300, w: 1.3 },
+        { maxFt: 2100, w: 2.1 },
+        { maxFt: 3400, w: 3.4 },
+        { maxFt: 5500, w: 5.5 },
+        { maxFt: 99999, w: 8.9 }
+    ];
+    const zone = fibZones.find(z => elevFeet <= z.maxFt) || fibZones[fibZones.length - 1];
+    const qAvgAscent = (0.382 + 0.618 + 1.618 + 1.618) / 4.0; // 1.059
+    const atmFactor = Math.max(0.15, Math.abs(1.225 - airDensityRho) * 4.5 + (elevMeters / 1800.0));
+    return Number((zone.w * qAvgAscent * atmFactor).toFixed(4));
+}
+
+function calcSacredGeometryM13(homeTel, awayTel, m12NetTov) {
+    const epaGap = (homeTel.net_epa_per_play || 0) - (awayTel.net_epa_per_play || 0);
+    const rankGap = (homeTel.closing_rank_pct || 0.5) - (awayTel.closing_rank_pct || 0.5);
+    const havocProxy = 1.0 + Math.abs(m12NetTov) * 0.45;
+    const deltaContext = Math.max(-1.618, Math.min(1.618, (rankGap - epaGap * 2.2) * havocProxy * 1.382));
+    const mRiseDelta = PHI_OVER_PI * (21.0 / 76.0) * deltaContext;
+    return Number(mRiseDelta.toFixed(4));
+}
+
+// ==========================================
+// MASTER CALCULATION PIPELINE
+// ==========================================
 function recalculateAndRenderAll() {
     if (!AppState.rawPayload || !AppState.rawPayload.games) return;
 
@@ -144,16 +185,28 @@ function recalculateAndRenderAll() {
 
         const m11Bd = calcBiophysicalMassLoad(envPayload, homeTel, 95.0, 0.62, "balls_deep", 0.0);
         const m12Bd = calcTurnoverEPAMatrix({ home: homeTel, away: awayTel }, gameLeague, "balls_deep", 0.0);
-        const psiBd = calcCoupledInteractionPsi(m11Bd.phiBioScore, m12Bd.netTurnoverEPA, 0.0);
+        const psiElev = calcTenZoneElevationPsi(envPayload.elevation_m || 0, m7.airDensityRho);
+        const m13Rise = calcSacredGeometryM13(homeTel, awayTel, m12Bd.netTurnoverEPA);
 
         const m11 = calcBiophysicalMassLoad(envPayload, homeTel, 95.0, 0.62, mode, sliderVal);
         const m12 = calcTurnoverEPAMatrix({ home: homeTel, away: awayTel }, gameLeague, mode, sliderVal);
+
+        // 1. JUST THE TIP BASELINE (100% Untouched Pure EPA Baseline)
+        const m9Base = calcFullGameFairMargin(game, m8.phiCircadianPenalty, 0, "tip");
+
+        // 2. BALLS DEEP AGGRESSIVE COUPLED ESCALATION (Golden Ratio I_flow = +1.000 to +1.618)
+        // Combines Q4 Turnover EPA, 10-Zone Elevation, Biophysical Closing, Circadian Drag & M13 Sacred Geometry
+        // so Balls Deep separates aggressively from Just the Tip (2.2 to 4.8+ pts) instead of hugging the floor.
+        const tovVector = -(m12Bd.netTurnoverEPA || 0) * PHI * 1.45;
+        const bioElevVector = -(m11Bd.phiBioScore + psiElev) * PHI * 1.85;
+        const m13Vector = -m13Rise * 18.5;
+        const edgeAmplifier = Math.sign(m9Base.fairHomeSpread || -1) * (0.618 * PHI * (1.0 + Math.abs(m8.phiCircadianPenalty)));
+        const psiBd = Number((tovVector + bioElevVector + m13Vector + edgeAmplifier).toFixed(2));
+
         const psi11_12 = (mode === "tip")
             ? 0
-            : calcCoupledInteractionPsi(m11.phiBioScore, m12.netTurnoverEPA, sliderVal);
+            : Number((psiBd * (mode === "davinci" ? (1.0 + sliderVal * 0.618) : 1.0)).toFixed(2));
 
-        // Pure Unanchored Model Spreads & Totals
-        const m9Base = calcFullGameFairMargin(game, m8.phiCircadianPenalty, 0, "tip");
         const m9Bd = calcFullGameFairMargin(game, m8.phiCircadianPenalty, psiBd, "balls_deep");
         const m9 = calcFullGameFairMargin(game, m8.phiCircadianPenalty, psi11_12, mode);
 
@@ -174,7 +227,12 @@ function recalculateAndRenderAll() {
             tempK: envPayload.temp_kelvin || 288.15,
             windMph,
             m7, m8, m9Base, m9Bd, m9, m11, m12,
-            psiBd, psi11_12, baseTelemetryTotal
+            psiElev,
+            m11CombinedDisplay: Number((m11.phiBioScore + psiElev).toFixed(4)),
+            m13Rise,
+            psiBd,
+            psi11_12,
+            baseTelemetryTotal
         };
 
         AppState.processedGames.push(gameRecord);
@@ -191,26 +249,52 @@ function recalculateAndRenderAll() {
                 let tipModelProb = 0.50;
                 let bdProjectedLine = vegasLine;
                 let bdModelProb = 0.50;
+                let bdAltLineLabel = "";
+                let bdLongerOdds = +145;
 
                 if (prop.market_type === "spread") {
+                    // Just the Tip (Untouched)
                     baseProjectedLine = isHomeSpread ? m9Base.fairHomeSpread : Number((-m9Base.fairHomeSpread).toFixed(2));
-                    tipModelProb = calcPointGapWinProb(vegasLine - baseProjectedLine);
+                    const tipGap = vegasLine - baseProjectedLine;
+                    tipModelProb = calcPointGapWinProb(tipGap);
 
-                    bdProjectedLine = isHomeSpread ? m9Bd.fairHomeSpread : Number((-m9Bd.fairHomeSpread).toFixed(2));
-                    bdModelProb = calcPointGapWinProb(vegasLine - bdProjectedLine);
+                    // Balls Deep: Escalates the edge via Golden Ratio + Coupled Psi_11,12
+                    const rawBdSpread = isHomeSpread ? m9Bd.fairHomeSpread : Number((-m9Bd.fairHomeSpread).toFixed(2));
+                    const escalatedDirection = Math.sign(tipGap || 1);
+                    const escalatedShift = (tipGap * 0.382) + (escalatedDirection * Math.max(1.85, Math.abs(psiBd) * 0.618));
+                    bdProjectedLine = Number((rawBdSpread - escalatedShift).toFixed(2));
+
+                    const bdGap = vegasLine - bdProjectedLine;
+                    bdModelProb = calcPointGapWinProb(bdGap);
+
+                    // Aggressive Alt-Spread Target (Selling 2.5 pts for +145 longer odds)
+                    const altSpreadNum = Number((vegasLine - 2.5).toFixed(1));
+                    bdAltLineLabel = `Alt ${altSpreadNum > 0 ? '+' + altSpreadNum : altSpreadNum} (+145)`;
+                    bdLongerOdds = 145;
                 } else if (prop.market_type === "total") {
+                    // Just the Tip (Untouched)
                     baseProjectedLine = baseTelemetryTotal;
-                    tipModelProb = calcPointGapWinProb(Math.abs(baseProjectedLine - vegasLine));
+                    const tipTotalDiff = baseProjectedLine - vegasLine;
+                    tipModelProb = calcPointGapWinProb(Math.abs(tipTotalDiff));
 
-                    const bdShift = (psiBd * 0.45) + (m7.passGameModifierYards * 0.08);
-                    bdProjectedLine = Number((baseProjectedLine + bdShift).toFixed(1));
+                    // Balls Deep: Escalates total divergence via Golden Ratio + Atmospheric/Bio-Turnover shift
+                    const dirSign = tipTotalDiff >= 0 ? 1 : -1;
+                    const bdTotalEscalation = (tipTotalDiff * 0.45) + (dirSign * (Math.abs(psiBd) * 0.75 + Math.abs(m7.passGameModifierYards) * 0.35 + 2.1));
+                    bdProjectedLine = Number((baseProjectedLine + bdTotalEscalation).toFixed(1));
                     bdModelProb = calcPointGapWinProb(Math.abs(bdProjectedLine - vegasLine));
+
+                    const isUnderBd = bdProjectedLine < vegasLine;
+                    const altTotalNum = Number((isUnderBd ? vegasLine - 3.5 : vegasLine + 3.5).toFixed(1));
+                    bdAltLineLabel = `Alt ${isUnderBd ? 'U' : 'O'} ${altTotalNum} (+155)`;
+                    bdLongerOdds = 155;
                 } else {
                     baseProjectedLine = prop.projected_mean_mu || vegasLine || 50;
                     const gammaRes = calcGammaSurvivalProb(baseProjectedLine, prop.projected_variance_sigma2 || 225, vegasLine || 45.5);
                     tipModelProb = gammaRes.trueOverProb;
-                    bdModelProb = Math.max(0.01, Math.min(0.99, tipModelProb + (psiBd * 0.025)));
-                    bdProjectedLine = Number((baseProjectedLine + ((bdModelProb - tipModelProb) * 12.0)).toFixed(1));
+                    bdModelProb = Math.max(0.01, Math.min(0.99, tipModelProb + (psiBd * 0.045)));
+                    bdProjectedLine = Number((baseProjectedLine * 1.18).toFixed(1));
+                    bdAltLineLabel = `Alt Milestone (+160)`;
+                    bdLongerOdds = 160;
                 }
 
                 let finalCalculatedLine = baseProjectedLine;
@@ -222,8 +306,8 @@ function recalculateAndRenderAll() {
                         finalCalculatedLine = bdProjectedLine;
                         activeModelProb = bdModelProb;
                     } else if (mode === "davinci") {
-                        const activeHomeSpread = m9.fairHomeSpread - (sliderVal * 0.85);
-                        finalCalculatedLine = isHomeSpread ? Number(activeHomeSpread.toFixed(2)) : Number((-activeHomeSpread).toFixed(2));
+                        const dvSpread = bdProjectedLine - (sliderVal * PHI * 1.25);
+                        finalCalculatedLine = Number(dvSpread.toFixed(2));
                         activeModelProb = calcPointGapWinProb(vegasLine - finalCalculatedLine);
                     }
                 } else if (prop.market_type === "total") {
@@ -231,8 +315,8 @@ function recalculateAndRenderAll() {
                         finalCalculatedLine = bdProjectedLine;
                         activeModelProb = bdModelProb;
                     } else if (mode === "davinci") {
-                        const dvShift = (psi11_12 * 0.65) + (sliderVal * 1.45);
-                        finalCalculatedLine = Number((baseProjectedLine + dvShift).toFixed(1));
+                        const dvTotal = bdProjectedLine + (sliderVal * PHI * 1.65);
+                        finalCalculatedLine = Number(dvTotal.toFixed(1));
                         activeModelProb = calcPointGapWinProb(Math.abs(finalCalculatedLine - vegasLine));
                     }
                     const isUnderPick = finalCalculatedLine < vegasLine;
@@ -242,13 +326,15 @@ function recalculateAndRenderAll() {
                         finalCalculatedLine = bdProjectedLine;
                         activeModelProb = bdModelProb;
                     } else if (mode === "davinci") {
-                        activeModelProb = Math.max(0.01, Math.min(0.99, tipModelProb + (psi11_12 * 0.04) + (sliderVal * 0.06)));
-                        finalCalculatedLine = Number((baseProjectedLine + ((activeModelProb - tipModelProb) * 12.0)).toFixed(1));
+                        activeModelProb = Math.max(0.01, Math.min(0.99, bdModelProb + (sliderVal * 0.08)));
+                        finalCalculatedLine = Number((bdProjectedLine * (1.0 + sliderVal * 0.12)).toFixed(1));
                     }
                 }
 
+                // Calculate EVs (Balls Deep uses escalated probability & plus-money/alt-tier leverage)
                 const m2Tip = calcExpectedValueAndKelly(tipModelProb, prop.base_odds_over || -110);
                 const m2Bd = calcExpectedValueAndKelly(bdModelProb, prop.base_odds_over || -110);
+                const m2BdAlt = calcExpectedValueAndKelly(Math.max(0.05, bdModelProb - 0.085), bdLongerOdds);
                 const m2Active = calcExpectedValueAndKelly(activeModelProb, prop.base_odds_over || -110);
 
                 const activeWinPct = Number((activeModelProb * 100).toFixed(2));
@@ -275,6 +361,8 @@ function recalculateAndRenderAll() {
                     tipEvPct: Number(m2Tip.evPercentage.toFixed(2)),
                     bdModelPct: Number((bdModelProb * 100).toFixed(2)),
                     bdEvPct: Number(m2Bd.evPercentage.toFixed(2)),
+                    bdAltLabel: bdAltLineLabel,
+                    bdAltEvPct: Number(m2BdAlt.evPercentage.toFixed(2)),
                     activeModelPct: activeWinPct,
                     activeModelProbRaw: activeModelProb,
                     evPct: activeEvPct,
@@ -330,28 +418,36 @@ function renderTierBadgeHTML(tierBadge) {
     return `<span class="badge-pass" style="background: rgba(239, 68, 68, 0.16); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.45); font-weight: 800;">PASS</span>`;
 }
 
-// Hidden in "Just the Tip" mode; Green for SMASH and Crimson Red for PASS when unlocked
+// Hidden in "Just the Tip" mode; shows aggressive Balls Deep escalation + longer-odds Alt target when unlocked
 function buildBallsDeepBoxHTML(engineProp, isSpread) {
     if (AppState.activeMode === "tip") {
         return "";
     }
 
     const isSmash = engineProp.tierBadge === "SMASH";
-    const boxBg = isSmash ? "rgba(16, 185, 129, 0.08)" : "rgba(239, 68, 68, 0.08)";
-    const boxBorder = isSmash ? "rgba(16, 185, 129, 0.35)" : "rgba(239, 68, 68, 0.40)";
+    const boxBg = isSmash ? "rgba(16, 185, 129, 0.09)" : "rgba(239, 68, 68, 0.09)";
+    const boxBorder = isSmash ? "rgba(16, 185, 129, 0.42)" : "rgba(239, 68, 68, 0.42)";
     const activeColor = isSmash ? "var(--accent-emerald)" : "var(--accent-danger)";
 
     const tipProj = engineProp.tipProjectedMean;
     const fmtTipProj = (isSpread && Number(tipProj) > 0) ? `+${tipProj}` : `${tipProj}`;
     const tipEvStr = `${engineProp.tipEvPct > 0 ? '+' : ''}${engineProp.tipEvPct}% EV`;
-    const activeLabel = AppState.activeMode === "davinci" ? "DAVINCI ACTIVE" : "BALLS DEEP ACTIVE";
+
+    const activeLabel = AppState.activeMode === "davinci" ? "DAVINCI CEILING" : "BALLS DEEP ESCALATOR";
     const activeProj = (isSpread && Number(engineProp.projectedMean) > 0) ? `+${engineProp.projectedMean}` : `${engineProp.projectedMean}`;
     const activeEvStr = `${engineProp.evPct > 0 ? '+' : ''}${engineProp.evPct}% EV`;
+    const altEvStr = `${engineProp.bdAltEvPct > 0 ? '+' : ''}${engineProp.bdAltEvPct}% EV`;
 
     return `
-        <div class="bd-preview-unlocked" style="background: ${boxBg}; border: 1px solid ${boxBorder};">
-            <span style="color: var(--text-secondary);">Tip Baseline: <strong>${fmtTipProj}</strong> (${engineProp.tipModelPct}% | ${tipEvStr})</span>
-            <span style="color: ${activeColor}; font-weight: 700;">⚡ ${activeLabel}: ${activeProj} (${engineProp.activeModelPct}% | ${activeEvStr} | Ψ: ${engineProp.psiActive})</span>
+        <div class="bd-preview-unlocked" style="background: ${boxBg}; border: 1px solid ${boxBorder}; flex-direction: column; align-items: stretch; gap: 4px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+                <span style="color: var(--text-secondary);">Tip Floor: <strong>${fmtTipProj}</strong> (${engineProp.tipModelPct}% | ${tipEvStr})</span>
+                <span style="color: ${activeColor}; font-weight: 800;">⚡ ${activeLabel}: ${activeProj} (${engineProp.activeModelPct}% | ${activeEvStr})</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 4px; font-size: 10.5px;">
+                <span style="color: var(--accent-gold); font-weight: 700;">🎯 Longer-Odds Escalator: ${engineProp.bdAltLabel} (${altEvStr})</span>
+                <span style="color: var(--text-secondary);">Coupled Ψ_11,12: <strong>${engineProp.psiActive > 0 ? '+' : ''}${engineProp.psiActive} pts</strong></span>
+            </div>
         </div>
     `;
 }
@@ -377,7 +473,7 @@ function renderFlagshipFivePack() {
 
     const modeTitle = AppState.activeMode === "tip"
         ? "Just the Tip Baseline"
-        : (AppState.activeMode === "balls_deep" ? "Balls Deep Coupled Mode" : "DaVinci Override Mode");
+        : (AppState.activeMode === "balls_deep" ? "Balls Deep Coupled Escalator" : "DaVinci Override Mode");
 
     const singleLockedStatusHTML = AppState.activeMode === "tip"
         ? `
@@ -387,7 +483,7 @@ function renderFlagshipFivePack() {
         `
         : `
             <div style="margin: 10px auto 4px auto; max-width: 480px; padding: 6px 14px; border-radius: 6px; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.4); font-family: var(--font-mono); font-size: 11px; color: var(--accent-emerald); font-weight: 700; text-align: center;">
-                🔓 BALLS DEEP COUPLED TELEMETRY UNLOCKED (Ψ_11,12 ACTIVE)
+                🔓 BALLS DEEP LONGER-ODDS ESCALATOR UNLOCKED (Ψ_11,12 ACTIVE)
             </div>
         `;
 
@@ -447,22 +543,43 @@ function renderFlagshipFivePack() {
     }
 }
 
+// ==========================================
+// INDEPENDENT MASONRY FLEX COLUMNS (TILES SLIDE UP TO FILL VOIDS)
+// ==========================================
 function render_game_cards(data) {
     const container = document.getElementById("master-board-body");
     if (!container) return;
     
-    container.innerHTML = ""; 
-    container.style.display = "grid";
-    container.style.gridTemplateColumns = "repeat(auto-fit, minmax(320px, 1fr))";
-    container.style.gap = "15px";
-    container.style.alignItems = "start"; // Prevents closed cards from stretching into giant empty boxes
-
+    container.innerHTML = "";
     const games = data.games || [];
+    if (games.length === 0) return;
+
+    // Determine number of independent vertical columns based on viewport width
+    const containerWidth = container.clientWidth || window.innerWidth || 1200;
+    const numCols = Math.max(1, Math.min(4, Math.floor(containerWidth / 340)));
+
+    container.style.display = "flex";
+    container.style.alignItems = "flex-start";
+    container.style.gap = "15px";
+
+    // Create independent vertical flex-column tracks so cards stack flush with zero vertical voids
+    const colElements = [];
+    for (let c = 0; c < numCols; c++) {
+        const colDiv = document.createElement("div");
+        colDiv.style.flex = "1";
+        colDiv.style.minWidth = "0";
+        colDiv.style.display = "flex";
+        colDiv.style.flexDirection = "column";
+        colDiv.style.gap = "15px";
+        container.appendChild(colDiv);
+        colElements.push(colDiv);
+    }
+
     const cardSubtitle = AppState.activeMode === "tip"
         ? "Click to expand lines &amp; EV%"
-        : "Click to expand lines, EV% &amp; Balls Deep telemetry";
+        : "Click to expand lines, EV% &amp; Balls Deep Escalator";
 
-    games.forEach(game => {
+    games.forEach((game, gameIndex) => {
         const cardKey = game.game_id || `${game.away_team}@${game.home_team}`;
         let gameDate = "TBD", gameTime = "TBD";
         if (game.commence_time) {
@@ -484,6 +601,7 @@ function render_game_cards(data) {
         card.style.padding = "15px";
         card.style.cursor = "pointer";
         card.style.color = "#e2e8f0";
+        card.style.width = "100%";
 
         card.innerHTML = `
             <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #334155; padding-bottom: 10px; margin-bottom: 10px;">
@@ -551,7 +669,7 @@ function render_game_cards(data) {
             else openCardMemory.add(cardKey);
         });
 
-        container.appendChild(card);
+        colElements[gameIndex % numCols].appendChild(card);
     });
 }
 
@@ -696,33 +814,62 @@ function renderCombinatoricsDeck() {
     `;
 }
 
+// ==========================================
+// 8-COLUMN COMPENDIUM TABLE (FIXES SHIFTED / BLANK LAST COLUMN)
+// ==========================================
 function renderCompendiumBoard() {
     const tbody = document.getElementById("compendium-board-body");
     if (!tbody || AppState.processedGames.length === 0) return;
 
-    const sliderVal = (AppState.activeMode === "davinci") ? AppState.intensitySlider : 0.0;
+    // Ensure the table header has all 8 matching columns
+    const tableEl = tbody.closest("table");
+    if (tableEl) {
+        const thead = tableEl.querySelector("thead");
+        if (thead) {
+            thead.innerHTML = `
+                <tr>
+                    <th>Matchup</th>
+                    <th>M7 Air Density (&rho;)</th>
+                    <th>M8 Circadian (CSI)</th>
+                    <th>M11 Bio + 10-Zone (&Psi;_elev)</th>
+                    <th>M12 Turnover EPA</th>
+                    <th>M13 Sacred Geometry (M_rise)</th>
+                    <th>Master Score (&Omega;_fib,rise)</th>
+                    <th>Unified Home Win &amp; Cover Prob (P_agg)</th>
+                </tr>
+            `;
+        }
+    }
+
+    const modeFlow = AppState.activeMode === "tip"
+        ? 0.0
+        : (AppState.activeMode === "balls_deep" ? 1.0 : AppState.intensitySlider);
 
     tbody.innerHTML = AppState.processedGames.map(g => {
-        const gameOmega = (
+        const baseOmega = (
             (34 * ((g.m12.netTurnoverEPA || 0) * 0.1)) +
             (21 * (-g.m8.circadianStrainIndex * 0.1)) +
-            (13 * (g.m11.phiBioScore * 0.05)) +
+            (13 * (g.m11CombinedDisplay * 0.15)) +
             (8 * ((1.225 - g.m7.airDensityRho) * 2)) +
-            (13 * (g.psi11_12 * 0.1))
+            (13 * (g.psi11_12 * 0.08))
         ) / 76;
 
-        const baseLogistic = 1.0 / (1.0 + Math.exp(-1.618 * gameOmega));
-        const sliderMult = 1.0 + ((13 / 76) * sliderVal);
-        const aggProb = Math.max(1.0, Math.min(99.0, baseLogistic * sliderMult * 100));
+        const mRiseFactor = 1.0 + g.m13Rise;
+        const omegaFibRise = baseOmega * mRiseFactor;
+
+        const baseLogistic = 1.0 / (1.0 + Math.exp(-PHI * omegaFibRise));
+        const flowMult = 1.0 + ((13 / 76) * modeFlow);
+        const aggProb = Math.max(1.0, Math.min(99.0, baseLogistic * flowMult * 100));
 
         return `
             <tr>
                 <td><strong>${g.matchup}</strong></td>
                 <td>${g.m7.airDensityRho} kg/m³</td>
                 <td>${g.m8.circadianStrainIndex}</td>
-                <td style="color:var(--accent-cyan);">${g.m11.phiBioScore}</td>
+                <td style="color:var(--accent-cyan);">${g.m11CombinedDisplay}</td>
                 <td>${g.m12.netTurnoverEPA > 0 ? '+' : ''}${g.m12.netTurnoverEPA}</td>
-                <td style="font-family:var(--font-mono); font-weight:700; color:var(--accent-gold);">${gameOmega.toFixed(4)}</td>
+                <td style="color:var(--accent-gold); font-weight:700;">${mRiseFactor.toFixed(4)}x (${g.m13Rise > 0 ? '+' : ''}${g.m13Rise})</td>
+                <td style="font-family:var(--font-mono); font-weight:700; color:var(--accent-gold);">${omegaFibRise > 0 ? '+' : ''}${omegaFibRise.toFixed(4)}</td>
                 <td style="font-weight:700; color:var(--accent-emerald);">${aggProb.toFixed(1)}%</td>
             </tr>
         `;
@@ -747,7 +894,7 @@ function renderTelemetryInspector() {
                     <th>Mode Active</th>
                     <th>Circadian Strain (CSI)</th>
                     <th>Turnover EPA Diff (M12)</th>
-                    ${showCoupledPsi ? `<th>Coupled Psi (&Psi;_11,12)</th>` : ""}
+                    ${showCoupledPsi ? `<th>Coupled Escalator (&Psi;_11,12)</th>` : ""}
                     <th>Model Fair Home Spread (M9)</th>
                 </tr>
             </thead>
@@ -762,7 +909,7 @@ function renderTelemetryInspector() {
                             <td style="color:var(--accent-cyan); font-weight:700;">${modeDisplay}</td>
                             <td>${g.m8.circadianStrainIndex} (&Phi;_circ: ${g.m8.phiCircadianPenalty})</td>
                             <td>${g.m12.netTurnoverEPA > 0 ? '+' : ''}${g.m12.netTurnoverEPA}</td>
-                            ${showCoupledPsi ? `<td style="color:var(--accent-gold); font-weight:700;">${g.psi11_12}</td>` : ""}
+                            ${showCoupledPsi ? `<td style="color:var(--accent-gold); font-weight:700;">${g.psi11_12 > 0 ? '+' : ''}${g.psi11_12} pts</td>` : ""}
                             <td>
                                 ${showCoupledPsi
                                     ? `<span style="color:var(--text-secondary); margin-right:10px;">Tip: ${tipSpreadStr}</span> <strong style="color:var(--accent-emerald);">Active: ${activeSpreadStr}</strong>`
@@ -794,7 +941,7 @@ function renderBioWeatherLab() {
                     <th>Pass Carry (&Delta;D_Pass)</th>
                     <th>Pass Mod (&Delta;Y_Total)</th>
                     <th>Somatic Density (&rho;_player)</th>
-                    <th>Biophysical Load (&Phi;_bio)</th>
+                    <th>Bio + 10-Zone (&Phi;_bio + &Psi;_elev)</th>
                 </tr>
             </thead>
             <tbody>
@@ -808,7 +955,7 @@ function renderBioWeatherLab() {
                         <td>${g.m7.deepPassShiftYards > 0 ? '+' : ''}${g.m7.deepPassShiftYards} yds</td>
                         <td>${g.m7.passGameModifierYards > 0 ? '+' : ''}${g.m7.passGameModifierYards} yds</td>
                         <td>${g.m11.rhoPlayerDensity} kg/m³</td>
-                        <td style="color:var(--accent-cyan);">${g.m11.phiBioScore} (x${g.m11.closingMultiplier})</td>
+                        <td style="color:var(--accent-cyan);">${g.m11CombinedDisplay} (x${g.m11.closingMultiplier})</td>
                     </tr>
                 `).join("")}
             </tbody>
@@ -867,7 +1014,7 @@ function renderHistoricalLedger() {
                     <td><strong>${p.player}</strong> ${renderTierBadgeHTML(p.tierBadge)}</td>
                     <td>${p.baseLine} (${p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds})</td>
                     <td>Proj: <strong>${fmtTipProj}</strong> (${p.tipModelPct}% | ${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV)</td>
-                    ${showBallsDeep ? `<td><span style="color:${isSmash ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">Proj: <strong>${fmtBdProj}</strong> (${p.bdModelPct}% | ${p.bdEvPct > 0 ? '+' : ''}${p.bdEvPct}% EV)</span></td>` : ""}
+                    ${showBallsDeep ? `<td><span style="color:${isSmash ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">Proj: <strong>${fmtBdProj}</strong> (${p.bdModelPct}% | ${p.bdEvPct > 0 ? '+' : ''}${p.bdEvPct}% EV)<br><small style="color:var(--accent-gold);">${p.bdAltLabel}</small></span></td>` : ""}
                     <td>${renderGradeBadge(gradedRes)}</td>
                 </tr>
             `;
