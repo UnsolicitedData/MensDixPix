@@ -1,9 +1,11 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v204)
- * - Top Line of Every Prop & 5-Pack Row: 100% Hard-Locked to "Just the Tip" Baseline (Never shifts with mode)
- * - Unlocked Sub-Box: Displays Balls Deep / DaVinci Escalator + Longer-Odds Alt Target underneath
- * - 10-Zone Elevation Matrix: Calibrated to Compendium pO2 decay so Denver/NCAA high-altitude venues scale accurately
- * - Independent Masonry Flex Columns + 8-Column Compendium Table
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v205)
+ * - Top Line of Every Card & 5-Pack Row: Hard-locked to "Just the Tip" Baseline
+ * - Unlocked Sub-Box: Clean telemetry reinforcement (no duplicate SMASH/PASS stamps),
+ *   featuring Safe Cushion (-235 tier, e.g., +22.36 on +15.5) + Longer-Odds Reach Escalator (e.g., +10.39 at +145)
+ * - Clickable 🔒 Paywall Locks on Compendium & Biophysical/Weather Lab values in "Just the Tip" mode
+ * - Emerald Green / Crimson Red positive & negative ballistic/telemetry shifts when unlocked
+ * - Dual NFL + NCAA Checkbox Filtering on Game Cards + Independent Masonry Flex Columns
  */
 
 const AppState = {
@@ -33,6 +35,17 @@ document.addEventListener("DOMContentLoaded", () => {
         if (AppState.rawPayload) render_game_cards(AppState.rawPayload);
     });
 });
+
+// Single paywall/unlock router (later point this to your sign-up URL)
+window.unlockBallsDeepMode = function(event) {
+    if (event) event.stopPropagation();
+    const bdRadio = document.getElementById("mode-balls-deep");
+    if (bdRadio) {
+        bdRadio.checked = true;
+    }
+    AppState.activeMode = "balls_deep";
+    recalculateAndRenderAll();
+};
 
 window.toggleParlayLeg = function(propKey) {
     if (AppState.selectedParlayLegs.has(propKey)) {
@@ -143,7 +156,6 @@ function calcTenZoneElevationPsi(elevMeters, airDensityRho) {
     ];
     const zone = fibZones.find(z => elevFeet <= z.maxFt) || fibZones[fibZones.length - 1];
     const qAvgAscent = (0.382 + 0.618 + 1.618 + 1.618) / 4.0; // 1.059
-    // True Compendium barometric pO2 decay ratio (prevents Mile High / Wyoming -45.5 runaway)
     const pO2DropRatio = 1.0 - Math.exp(-elevMeters / 8500.0);
     const rhoShiftRatio = Math.abs(1.225 - airDensityRho) / 1.225;
     const omegaAtm = Math.max(0.04, (pO2DropRatio * 0.65) + (rhoShiftRatio * 0.35));
@@ -157,6 +169,10 @@ function calcSacredGeometryM13(homeTel, awayTel, m12NetTov) {
     const deltaContext = Math.max(-1.618, Math.min(1.618, (rankGap - epaGap * 2.2) * havocProxy * 1.382));
     const mRiseDelta = PHI_OVER_PI * (21.0 / 76.0) * deltaContext;
     return Number(mRiseDelta.toFixed(4));
+}
+
+function renderLockCellHTML() {
+    return `<span onclick="window.unlockBallsDeepMode(event)" title="Click to unlock Balls Deep Telemetry" style="cursor:pointer; display:inline-flex; align-items:center; justify-content:center; padding:3px 9px; border-radius:5px; background:rgba(245,158,11,0.12); border:1px dashed rgba(245,158,11,0.45); font-size:12px; transition:all 0.15s ease;">🔒</span>`;
 }
 
 // ==========================================
@@ -197,7 +213,7 @@ function recalculateAndRenderAll() {
         // 1. JUST THE TIP BASELINE (100% Untouched Pure EPA Baseline)
         const m9Base = calcFullGameFairMargin(game, m8.phiCircadianPenalty, 0, "tip");
 
-        // 2. BALLS DEEP AGGRESSIVE COUPLED ESCALATION (Bounded so altitude venues don't explode)
+        // 2. BALLS DEEP COUPLED TELEMETRY VECTOR (Psi_11,12)
         const tovVector = -(m12Bd.netTurnoverEPA || 0) * PHI * 1.35;
         const bioElevVector = -(m11Bd.phiBioScore + psiElev) * PHI * 1.45;
         const m13Vector = -m13Rise * 14.0;
@@ -212,11 +228,12 @@ function recalculateAndRenderAll() {
         const m9Bd = calcFullGameFairMargin(game, m8.phiCircadianPenalty, psiBd, "balls_deep");
         const m9 = calcFullGameFairMargin(game, m8.phiCircadianPenalty, psi11_12, mode);
 
+        const totalIntercept = (gameLeague === "NCAA") ? 51.450 : MODEL_TOTAL_INTERCEPT;
         const epaTotalPts = ((homeTel.net_epa_per_play || 0) + (awayTel.net_epa_per_play || 0)) * playScaler;
         const rzTotalPts = ((homeTel.opp_rz_dvoa || 0) + (awayTel.opp_rz_dvoa || 0)) * 10.0;
         const windMph = envPayload.is_dome ? 0 : (envPayload.wind_mph || 0);
         const windPenalty = Math.max(0, (windMph - 10.0) * 0.25);
-        const baseTelemetryTotal = Number((MODEL_TOTAL_INTERCEPT + epaTotalPts + rzTotalPts - windPenalty).toFixed(1));
+        const baseTelemetryTotal = Number((totalIntercept + epaTotalPts + rzTotalPts - windPenalty).toFixed(1));
 
         const gameRecord = {
             gameId: game.game_id,
@@ -251,54 +268,67 @@ function recalculateAndRenderAll() {
                 let tipModelProb = 0.50;
                 let bdProjectedLine = vegasLine;
                 let bdModelProb = 0.50;
+                let bdSafeOdds = -235;
                 let bdAltLineLabel = "";
                 let bdLongerOdds = 145;
+                let bdReachProb = 0.50;
 
                 if (prop.market_type === "spread") {
-                    // Just the Tip (Untouched & Locked)
+                    // 1. JUST THE TIP BASELINE (Locked on Main Card Line)
                     baseProjectedLine = isHomeSpread ? m9Base.fairHomeSpread : Number((-m9Base.fairHomeSpread).toFixed(2));
                     const tipGap = vegasLine - baseProjectedLine;
                     tipModelProb = calcPointGapWinProb(tipGap);
 
-                    // Balls Deep: Escalates the edge via Coupled Psi_11,12
-                    const rawBdSpread = isHomeSpread ? m9Bd.fairHomeSpread : Number((-m9Bd.fairHomeSpread).toFixed(2));
-                    const escalatedDirection = Math.sign(tipGap || 1);
-                    const escalatedShift = escalatedDirection * Math.min(3.25, Math.max(1.75, Math.abs(psiBd) * 0.55));
-                    bdProjectedLine = Number((rawBdSpread - escalatedShift).toFixed(2));
+                    // 2. BALLS DEEP SAFE CUSHION TARGET (-200 to -275 Safe Anchor Territory)
+                    // Pushes outward in the direction of the Vegas line (e.g. ARI +15.5 -> +22.36 safe cushion; HOU -10.5 -> -17.36)
+                    const spreadSign = vegasLine >= 0 ? 1 : -1;
+                    const safeCushionPts = Number((PHI * PHI * (2.15 + Math.min(1.5, Math.abs(psiBd) * 0.22))).toFixed(2)); // ~6.5 to 7.2 pts
+                    bdProjectedLine = Number((vegasLine + (spreadSign * safeCushionPts)).toFixed(2));
 
-                    const bdGap = vegasLine - bdProjectedLine;
-                    bdModelProb = calcPointGapWinProb(bdGap);
+                    // Win probability of covering the cushioned safe line at -235 odds
+                    const safeLineGap = (tipGap >= 0)
+                        ? (tipGap + (safeCushionPts * 0.42))
+                        : (tipGap - (safeCushionPts * 0.42));
+                    bdModelProb = calcPointGapWinProb(safeLineGap);
+                    bdSafeOdds = -235;
 
-                    const altSpreadNum = Number((vegasLine - 2.5).toFixed(1));
-                    bdAltLineLabel = `Alt ${altSpreadNum > 0 ? '+' + altSpreadNum : altSpreadNum} (+145)`;
+                    // 3. LONGER-ODDS ESCALATOR (Aggressive +145 Reach Target, e.g., +10.39 on ARI +15.5)
+                    const reachShift = Math.min(4.2, Math.max(2.2, Math.abs(psiBd) * 0.85));
+                    const reachTargetLine = Number((baseProjectedLine + (spreadSign * reachShift)).toFixed(2));
+                    bdAltLineLabel = `Alt ${reachTargetLine > 0 ? '+' + reachTargetLine : reachTargetLine} (+145)`;
                     bdLongerOdds = 145;
+                    bdReachProb = Math.max(0.05, Math.min(0.92, tipModelProb - 0.065));
                 } else if (prop.market_type === "total") {
-                    // Just the Tip (Untouched & Locked)
+                    // 1. JUST THE TIP BASELINE (Locked on Main Card Line)
                     baseProjectedLine = baseTelemetryTotal;
                     const tipTotalDiff = baseProjectedLine - vegasLine;
                     tipModelProb = calcPointGapWinProb(Math.abs(tipTotalDiff));
 
-                    // Balls Deep: Escalates total divergence via Atmospheric/Bio-Turnover shift
+                    // 2. BALLS DEEP TOTAL ESCALATION
                     const dirSign = tipTotalDiff >= 0 ? 1 : -1;
-                    const bdTotalEscalation = dirSign * Math.min(4.5, (Math.abs(psiBd) * 0.55 + Math.abs(m7.passGameModifierYards) * 0.25 + 1.8));
+                    const bdTotalEscalation = dirSign * Math.min(5.5, (Math.abs(psiBd) * 0.55 + Math.abs(m7.passGameModifierYards) * 0.25 + 2.2));
                     bdProjectedLine = Number((baseProjectedLine + bdTotalEscalation).toFixed(1));
                     bdModelProb = calcPointGapWinProb(Math.abs(bdProjectedLine - vegasLine));
+                    bdSafeOdds = prop.base_odds_over || -110;
 
-                    const isUnderBd = bdProjectedLine < vegasLine;
-                    const altTotalNum = Number((isUnderBd ? vegasLine - 3.5 : vegasLine + 3.5).toFixed(1));
-                    bdAltLineLabel = `Alt ${isUnderBd ? 'U' : 'O'} ${altTotalNum} (+155)`;
+                    const isUnderTip = baseProjectedLine < vegasLine;
+                    const altTotalNum = Number((isUnderTip ? vegasLine - 3.5 : vegasLine + 3.5).toFixed(1));
+                    bdAltLineLabel = `Alt ${isUnderTip ? 'U' : 'O'} ${altTotalNum} (+155)`;
                     bdLongerOdds = 155;
+                    bdReachProb = Math.max(0.05, Math.min(0.92, bdModelProb - 0.075));
                 } else {
                     baseProjectedLine = prop.projected_mean_mu || vegasLine || 50;
                     const gammaRes = calcGammaSurvivalProb(baseProjectedLine, prop.projected_variance_sigma2 || 225, vegasLine || 45.5);
                     tipModelProb = gammaRes.trueOverProb;
                     bdModelProb = Math.max(0.01, Math.min(0.99, tipModelProb + (psiBd * 0.045)));
                     bdProjectedLine = Number((baseProjectedLine * 1.18).toFixed(1));
+                    bdSafeOdds = prop.base_odds_over || -110;
                     bdAltLineLabel = `Alt Milestone (+160)`;
                     bdLongerOdds = 160;
+                    bdReachProb = Math.max(0.05, bdModelProb - 0.08);
                 }
 
-                // Active Mode Line (Used ONLY inside the unlocked Balls Deep / DaVinci sub-box)
+                // Active Mode Line (Used inside the unlocked Balls Deep / DaVinci sub-box)
                 let finalCalculatedLine = baseProjectedLine;
                 let activeModelProb = tipModelProb;
 
@@ -307,16 +337,17 @@ function recalculateAndRenderAll() {
                         finalCalculatedLine = bdProjectedLine;
                         activeModelProb = bdModelProb;
                     } else if (mode === "davinci") {
-                        const dvSpread = bdProjectedLine - (sliderVal * PHI * 1.25);
+                        const spreadSign = vegasLine >= 0 ? 1 : -1;
+                        const dvSpread = bdProjectedLine + (spreadSign * sliderVal * PHI * 1.25);
                         finalCalculatedLine = Number(dvSpread.toFixed(2));
-                        activeModelProb = calcPointGapWinProb(vegasLine - finalCalculatedLine);
+                        activeModelProb = Math.max(0.02, Math.min(0.98, bdModelProb + (sliderVal * 0.045)));
                     }
                 } else if (prop.market_type === "total") {
                     if (mode === "balls_deep") {
                         finalCalculatedLine = bdProjectedLine;
                         activeModelProb = bdModelProb;
                     } else if (mode === "davinci") {
-                        const dvTotal = bdProjectedLine + (sliderVal * PHI * 1.65);
+                        const dvTotal = bdProjectedLine + (sliderVal * PHI * 1.45);
                         finalCalculatedLine = Number(dvTotal.toFixed(1));
                         activeModelProb = calcPointGapWinProb(Math.abs(finalCalculatedLine - vegasLine));
                     }
@@ -330,7 +361,7 @@ function recalculateAndRenderAll() {
                     }
                 }
 
-                // HARD-LOCK displayLabel to Just the Tip's direction so the top title NEVER flips when toggling modes
+                // HARD-LOCK displayLabel to Just the Tip's direction so the top title never flips
                 let displayLabel = prop.player;
                 if (prop.market_type === "total") {
                     const isUnderTip = baseProjectedLine < vegasLine;
@@ -339,7 +370,7 @@ function recalculateAndRenderAll() {
 
                 const m2Tip = calcExpectedValueAndKelly(tipModelProb, prop.base_odds_over || -110);
                 const m2Bd = calcExpectedValueAndKelly(bdModelProb, prop.base_odds_over || -110);
-                const m2BdAlt = calcExpectedValueAndKelly(Math.max(0.05, bdModelProb - 0.085), bdLongerOdds);
+                const m2BdAlt = calcExpectedValueAndKelly(bdReachProb, bdLongerOdds);
                 const m2Active = calcExpectedValueAndKelly(activeModelProb, prop.base_odds_over || -110);
 
                 const tipWinPct = Number((tipModelProb * 100).toFixed(2));
@@ -348,7 +379,6 @@ function recalculateAndRenderAll() {
 
                 const activeWinPct = Number((activeModelProb * 100).toFixed(2));
                 const activeEvPct = Number(m2Active.evPercentage.toFixed(2));
-                const activeBadge = activeEvPct >= SMASH_EV_CUTOFF ? "SMASH" : "PASS";
 
                 AppState.processedProps.push({
                     propKey,
@@ -370,6 +400,7 @@ function recalculateAndRenderAll() {
                     // Balls Deep / DaVinci Escalator Properties (Used in Unlocked Sub-Box)
                     projectedMean: finalCalculatedLine,
                     bdProjectedMean: bdProjectedLine,
+                    bdSafeOdds: bdSafeOdds,
                     vigFreePct: Number((vigFreeOver * 100).toFixed(2)),
                     bdModelPct: Number((bdModelProb * 100).toFixed(2)),
                     bdEvPct: Number(m2Bd.evPercentage.toFixed(2)),
@@ -379,7 +410,7 @@ function recalculateAndRenderAll() {
                     activeModelProbRaw: activeModelProb,
                     evPct: activeEvPct,
                     quarterKellyPct: Number(m2Active.quarterKellyStakePct.toFixed(2)),
-                    tierBadge: activeBadge,
+                    tierBadge: tipBadge,
                     flagshipSlot: prop.flagship_slot || "",
                     psiBd,
                     psiActive: psi11_12
@@ -388,7 +419,7 @@ function recalculateAndRenderAll() {
         }
     });
 
-    // Lock Flagship 5-Pack Selection to tipEvPct so the 5-Pack order never jumps around when switching modes
+    // Lock Flagship 5-Pack Selection to tipEvPct so the 5-Pack order never jumps around
     AppState.processedProps.forEach(p => { p.flagshipSlot = ""; });
     const bestSpreadPerGame = [];
     const remainingPool = [];
@@ -430,18 +461,20 @@ function renderTierBadgeHTML(tierBadge) {
     return `<span class="badge-pass" style="background: rgba(239, 68, 68, 0.16); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.45); font-weight: 800;">PASS</span>`;
 }
 
-// Hidden in "Just the Tip" mode; shows Balls Deep Escalator + Longer-Odds Alt Target underneath the locked Tip line
+// Clean telemetry box (NO duplicate SMASH/PASS stamps inside the box)
 function buildBallsDeepBoxHTML(engineProp, isSpread) {
     if (AppState.activeMode === "tip") {
         return "";
     }
 
-    const isSmash = engineProp.tierBadge === "SMASH";
+    const isSmash = engineProp.tipBadge === "SMASH";
     const boxBg = isSmash ? "rgba(16, 185, 129, 0.09)" : "rgba(239, 68, 68, 0.09)";
     const boxBorder = isSmash ? "rgba(16, 185, 129, 0.42)" : "rgba(239, 68, 68, 0.42)";
     const activeColor = isSmash ? "var(--accent-emerald)" : "var(--accent-danger)";
 
-    const activeLabel = AppState.activeMode === "davinci" ? "DAVINCI CEILING" : "BALLS DEEP ESCALATOR";
+    const activeLabel = AppState.activeMode === "davinci"
+        ? "DAVINCI OVERRIDE"
+        : (isSpread ? `BALLS DEEP SAFE CUSHION (${engineProp.bdSafeOdds})` : "BALLS DEEP ESCALATOR");
     const activeProj = (isSpread && Number(engineProp.projectedMean) > 0) ? `+${engineProp.projectedMean}` : `${engineProp.projectedMean}`;
     const activeEvStr = `${engineProp.evPct > 0 ? '+' : ''}${engineProp.evPct}% EV`;
     const altEvStr = `${engineProp.bdAltEvPct > 0 ? '+' : ''}${engineProp.bdAltEvPct}% EV`;
@@ -450,7 +483,6 @@ function buildBallsDeepBoxHTML(engineProp, isSpread) {
         <div class="bd-preview-unlocked" style="background: ${boxBg}; border: 1px solid ${boxBorder}; flex-direction: column; align-items: stretch; gap: 4px;">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
                 <span style="color: ${activeColor}; font-weight: 800;">⚡ ${activeLabel}: ${activeProj} | Win: ${engineProp.activeModelPct}% (${activeEvStr})</span>
-                ${renderTierBadgeHTML(engineProp.tierBadge)}
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 4px; font-size: 10.5px;">
                 <span style="color: var(--accent-gold); font-weight: 700;">🎯 Longer-Odds Escalator: ${engineProp.bdAltLabel} (${altEvStr})</span>
@@ -513,7 +545,6 @@ function renderFlagshipFivePack() {
             ${AppState.flagshipFivePack.map((p, idx) => {
                 const isMenage = p.flagshipSlot.includes("MÉNAGE");
                 const isSpread = p.marketType === "spread";
-                // Top Line strictly uses Just the Tip values
                 const tipIsSmash = p.tipBadge === "SMASH";
                 const fmtTipProj = (isSpread && Number(p.tipProjectedMean) > 0) ? `+${p.tipProjectedMean}` : `${p.tipProjectedMean}`;
                 const tipEvStr = `${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV`;
@@ -553,19 +584,21 @@ function renderFlagshipFivePack() {
 }
 
 // ==========================================
-// INDEPENDENT MASONRY FLEX COLUMNS
+// INDEPENDENT MASONRY FLEX COLUMNS (WITH NFL/NCAA FILTERING)
 // ==========================================
 function render_game_cards(data) {
     const container = document.getElementById("master-board-body");
     if (!container) return;
     
     container.innerHTML = "";
-const games = (data.games || []).filter(g => {
-    const lg = g.league || "NFL";
-    if (lg === "NFL" && !AppState.filters.nfl) return false;
-    if (lg === "NCAA" && !AppState.filters.ncaa) return false;
-    return true;
-});
+    const defaultLeague = (data.slate_info && data.slate_info.league) || "NFL";
+    const games = (data.games || []).filter(g => {
+        const lg = g.league || defaultLeague;
+        if (lg === "NFL" && !AppState.filters.nfl) return false;
+        if (lg === "NCAA" && !AppState.filters.ncaa) return false;
+        return true;
+    });
+
     if (games.length === 0) return;
 
     const containerWidth = container.clientWidth || window.innerWidth || 1200;
@@ -643,8 +676,9 @@ const games = (data.games || []).filter(g => {
                 const engineData = AppState.processedProps.find(ep => ep.propKey === propKey);
                 if (!engineData) return;
 
+                // Top Line is 100% hard-locked to Just the Tip (tipProjectedMean, tipModelPct, tipEvPct, tipBadge)
                 const isSpread = p.market_type === "spread";
-                const isTipSmash = engineData.tipEvPct >= SMASH_EV_CUTOFF;
+                const tipIsSmash = engineData.tipBadge === "SMASH";
                 const displayTipProj = (isSpread && Number(engineData.tipProjectedMean) > 0)
                     ? `+${engineData.tipProjectedMean}`
                     : `${engineData.tipProjectedMean}`;
@@ -661,10 +695,10 @@ const games = (data.games || []).filter(g => {
                     <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.85em;">
                         <span>${slotBadge}<strong>${engineData.player}</strong></span>
                         <span style="display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono);">
-                            <span style="color: ${isTipSmash ? '#22c55e' : '#ef4444'};">
+                            <span style="color: ${tipIsSmash ? '#22c55e' : '#ef4444'};">
                                 Proj: ${displayTipProj} | Win: ${engineData.tipModelPct}% (${tipEvStr})
                             </span>
-                            ${renderTierBadgeHTML(isTipSmash ? "SMASH" : "PASS")}
+                            ${renderTierBadgeHTML(engineData.tipBadge)}
                         </span>
                     </div>
                     ${buildBallsDeepBoxHTML(engineData, isSpread)}
@@ -706,7 +740,7 @@ function renderCombinatoricsDeck() {
     const filteredPool = AppState.processedProps.filter(p => {
         if (AppState.comboFilters.team !== "ALL" && p.matchup !== AppState.comboFilters.team) return false;
         if (AppState.comboFilters.market !== "ALL" && p.marketType !== AppState.comboFilters.market) return false;
-        if (AppState.comboFilters.tier === "SMASH" && p.tierBadge !== "SMASH") return false;
+        if (AppState.comboFilters.tier === "SMASH" && p.tipBadge !== "SMASH") return false;
         return true;
     });
 
@@ -796,9 +830,9 @@ function renderCombinatoricsDeck() {
                 ${filteredPool.map(p => {
                     const isSelected = AppState.selectedParlayLegs.has(p.propKey);
                     const isSpread = p.marketType === "spread";
-                    const isSmash = p.tierBadge === "SMASH";
-                    const fmtProj = (isSpread && Number(p.projectedMean) > 0) ? `+${p.projectedMean}` : `${p.projectedMean}`;
-                    const evStr = `${p.evPct > 0 ? '+' : ''}${p.evPct}% EV`;
+                    const isSmash = p.tipBadge === "SMASH";
+                    const fmtProj = (isSpread && Number(p.tipProjectedMean) > 0) ? `+${p.tipProjectedMean}` : `${p.tipProjectedMean}`;
+                    const evStr = `${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV`;
 
                     return `
                         <div onclick="window.toggleParlayLeg('${p.propKey}')" style="cursor: pointer; padding: 12px 14px; border-radius: 8px; background: ${isSelected ? 'rgba(6, 182, 212, 0.14)' : 'var(--bg-elevated)'}; border: 1px solid ${isSelected ? 'var(--accent-cyan)' : 'var(--border-subtle)'}; transition: all 0.15s ease;">
@@ -808,7 +842,7 @@ function renderCombinatoricsDeck() {
                                 </span>
                                 <div style="display: flex; gap: 6px;">
                                     ${p.flagshipSlot ? `<span class="${p.flagshipSlot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}">${p.flagshipSlot}</span>` : ''}
-                                    ${renderTierBadgeHTML(p.tierBadge)}
+                                    ${renderTierBadgeHTML(p.tipBadge)}
                                 </div>
                             </div>
                             <div style="font-weight: 700; font-size: 13px; color: var(--text-primary); margin-bottom: 4px;">
@@ -816,7 +850,7 @@ function renderCombinatoricsDeck() {
                             </div>
                             <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 12px; color: ${isSmash ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">
                                 <span>Proj: <strong>${fmtProj}</strong></span>
-                                <span>Win: <strong>${p.activeModelPct}%</strong> (${evStr})</span>
+                                <span>Win: <strong>${p.tipModelPct}%</strong> (${evStr})</span>
                             </div>
                         </div>
                     `;
@@ -826,6 +860,9 @@ function renderCombinatoricsDeck() {
     `;
 }
 
+// ==========================================
+// 13-MODULE COMPENDIUM BOARD (🔒 LOCKED IN TIP MODE, COLOR-CODED & SCALED WHEN UNLOCKED)
+// ==========================================
 function renderCompendiumBoard() {
     const tbody = document.getElementById("compendium-board-body");
     if (!tbody || AppState.processedGames.length === 0) return;
@@ -849,36 +886,61 @@ function renderCompendiumBoard() {
         }
     }
 
+    const isLocked = (AppState.activeMode === "tip");
     const modeFlow = AppState.activeMode === "tip"
         ? 0.0
-        : (AppState.activeMode === "balls_deep" ? 1.0 : AppState.intensitySlider);
+        : (AppState.activeMode === "balls_deep" ? 1.0 : (1.0 + AppState.intensitySlider * 0.618));
 
     tbody.innerHTML = AppState.processedGames.map(g => {
+        if (isLocked) {
+            const lockHTML = renderLockCellHTML();
+            return `
+                <tr>
+                    <td><strong>${g.matchup}</strong></td>
+                    <td>${lockHTML}</td>
+                    <td>${lockHTML}</td>
+                    <td>${lockHTML}</td>
+                    <td>${lockHTML}</td>
+                    <td>${lockHTML}</td>
+                    <td>${lockHTML}</td>
+                    <td>${lockHTML}</td>
+                </tr>
+            `;
+        }
+
+        const scaledM11 = Number((g.m11CombinedDisplay * modeFlow).toFixed(4));
+        const scaledM12 = Number(((g.m12.netTurnoverEPA || 0) * modeFlow).toFixed(3));
+        const scaledM13Delta = Number((g.m13Rise * modeFlow).toFixed(4));
+        const mRiseFactor = 1.0 + scaledM13Delta;
+
         const baseOmega = (
-            (34 * ((g.m12.netTurnoverEPA || 0) * 0.1)) +
+            (34 * (scaledM12 * 0.1)) +
             (21 * (-g.m8.circadianStrainIndex * 0.1)) +
-            (13 * (g.m11CombinedDisplay * 0.15)) +
+            (13 * (scaledM11 * 0.15)) +
             (8 * ((1.225 - g.m7.airDensityRho) * 2)) +
             (13 * (g.psi11_12 * 0.08))
         ) / 76;
 
-        const mRiseFactor = 1.0 + g.m13Rise;
         const omegaFibRise = baseOmega * mRiseFactor;
-
         const baseLogistic = 1.0 / (1.0 + Math.exp(-PHI * omegaFibRise));
-        const flowMult = 1.0 + ((13 / 76) * modeFlow);
+        const flowMult = 1.0 + ((13 / 76) * (AppState.activeMode === "davinci" ? AppState.intensitySlider : 0.618));
         const aggProb = Math.max(1.0, Math.min(99.0, baseLogistic * flowMult * 100));
+
+        const m12Color = scaledM12 >= 0 ? "var(--accent-emerald)" : "var(--accent-danger)";
+        const m13Color = scaledM13Delta >= 0 ? "var(--accent-emerald)" : "var(--accent-danger)";
+        const omegaColor = omegaFibRise >= 0 ? "var(--accent-emerald)" : "var(--accent-danger)";
+        const probColor = aggProb >= 52.4 ? "var(--accent-emerald)" : "var(--accent-danger)";
 
         return `
             <tr>
                 <td><strong>${g.matchup}</strong></td>
                 <td>${g.m7.airDensityRho} kg/m³</td>
-                <td>${g.m8.circadianStrainIndex}</td>
-                <td style="color:var(--accent-cyan);">${g.m11CombinedDisplay}</td>
-                <td>${g.m12.netTurnoverEPA > 0 ? '+' : ''}${g.m12.netTurnoverEPA}</td>
-                <td style="color:var(--accent-gold); font-weight:700;">${mRiseFactor.toFixed(4)}x (${g.m13Rise > 0 ? '+' : ''}${g.m13Rise})</td>
-                <td style="font-family:var(--font-mono); font-weight:700; color:var(--accent-gold);">${omegaFibRise > 0 ? '+' : ''}${omegaFibRise.toFixed(4)}</td>
-                <td style="font-weight:700; color:var(--accent-emerald);">${aggProb.toFixed(1)}%</td>
+                <td style="color:${g.m8.circadianStrainIndex > 0.8 ? 'var(--accent-danger)' : 'var(--text-primary)'};">${g.m8.circadianStrainIndex}</td>
+                <td style="color:var(--accent-cyan); font-weight:700;">${scaledM11 > 0 ? '+' : ''}${scaledM11}</td>
+                <td style="color:${m12Color}; font-weight:700;">${scaledM12 > 0 ? '+' : ''}${scaledM12}</td>
+                <td style="color:${m13Color}; font-weight:700;">${mRiseFactor.toFixed(4)}x (${scaledM13Delta > 0 ? '+' : ''}${scaledM13Delta})</td>
+                <td style="font-family:var(--font-mono); font-weight:700; color:${omegaColor};">${omegaFibRise > 0 ? '+' : ''}${omegaFibRise.toFixed(4)}</td>
+                <td style="font-weight:800; color:${probColor};">${aggProb.toFixed(1)}%</td>
             </tr>
         `;
     }).join("");
@@ -902,7 +964,7 @@ function renderTelemetryInspector() {
                     <th>Mode Active</th>
                     <th>Circadian Strain (CSI)</th>
                     <th>Turnover EPA Diff (M12)</th>
-                    ${showCoupledPsi ? `<th>Coupled Escalator (&Psi;_11,12)</th>` : ""}
+                    <th>Coupled Escalator (&Psi;_11,12)</th>
                     <th>Model Fair Home Spread (M9)</th>
                 </tr>
             </thead>
@@ -910,14 +972,15 @@ function renderTelemetryInspector() {
                 ${AppState.processedGames.map(g => {
                     const tipSpreadStr = `${g.homeTeam} ${g.m9Base.fairHomeSpread > 0 ? '+' + g.m9Base.fairHomeSpread : g.m9Base.fairHomeSpread}`;
                     const activeSpreadStr = `${g.homeTeam} ${g.m9.fairHomeSpread > 0 ? '+' + g.m9.fairHomeSpread : g.m9.fairHomeSpread}`;
+                    const tovColor = g.m12.netTurnoverEPA >= 0 ? "var(--accent-emerald)" : "var(--accent-danger)";
 
                     return `
                         <tr>
                             <td><strong>${g.matchup}</strong></td>
                             <td style="color:var(--accent-cyan); font-weight:700;">${modeDisplay}</td>
                             <td>${g.m8.circadianStrainIndex} (&Phi;_circ: ${g.m8.phiCircadianPenalty})</td>
-                            <td>${g.m12.netTurnoverEPA > 0 ? '+' : ''}${g.m12.netTurnoverEPA}</td>
-                            ${showCoupledPsi ? `<td style="color:var(--accent-gold); font-weight:700;">${g.psi11_12 > 0 ? '+' : ''}${g.psi11_12} pts</td>` : ""}
+                            <td style="color:${tovColor}; font-weight:700;">${g.m12.netTurnoverEPA > 0 ? '+' : ''}${g.m12.netTurnoverEPA}</td>
+                            <td>${showCoupledPsi ? `<span style="color:var(--accent-gold); font-weight:700;">${g.psi11_12 > 0 ? '+' : ''}${g.psi11_12} pts</span>` : renderLockCellHTML()}</td>
                             <td>
                                 ${showCoupledPsi
                                     ? `<span style="color:var(--text-secondary); margin-right:10px;">Tip: ${tipSpreadStr}</span> <strong style="color:var(--accent-emerald);">Active: ${activeSpreadStr}</strong>`
@@ -932,9 +995,24 @@ function renderTelemetryInspector() {
     `;
 }
 
+// ==========================================
+// BIOPHYSICAL & WEATHER LAB (🔒 LOCKED IN TIP MODE, EMERALD/CRIMSON SHIFTS WHEN UNLOCKED)
+// ==========================================
 function renderBioWeatherLab() {
     const container = document.getElementById("biolab-container");
     if (!container || AppState.processedGames.length === 0) return;
+
+    const isLocked = (AppState.activeMode === "tip");
+    const modeScale = AppState.activeMode === "davinci"
+        ? (1.0 + AppState.intensitySlider * 0.382)
+        : 1.0;
+
+    const fmtShiftCell = (val, unit = "yds") => {
+        if (isLocked) return renderLockCellHTML();
+        const scaled = Number((val * modeScale).toFixed(2));
+        const color = scaled > 0 ? "var(--accent-emerald)" : (scaled < 0 ? "var(--accent-danger)" : "var(--text-secondary)");
+        return `<span style="color:${color}; font-weight:700;">${scaled > 0 ? '+' : ''}${scaled} ${unit}</span>`;
+    };
 
     container.className = "table-responsive";
     container.innerHTML = `
@@ -953,19 +1031,24 @@ function renderBioWeatherLab() {
                 </tr>
             </thead>
             <tbody>
-                ${AppState.processedGames.map(g => `
-                    <tr>
-                        <td><strong>${g.matchup}</strong></td>
-                        <td>${g.elevationM}m</td>
-                        <td>${g.m11.localGravityG} m/s²</td>
-                        <td>${g.m7.airDensityRho}</td>
-                        <td>${g.m7.fgRangeShiftYards > 0 ? '+' : ''}${g.m7.fgRangeShiftYards} yds</td>
-                        <td>${g.m7.deepPassShiftYards > 0 ? '+' : ''}${g.m7.deepPassShiftYards} yds</td>
-                        <td>${g.m7.passGameModifierYards > 0 ? '+' : ''}${g.m7.passGameModifierYards} yds</td>
-                        <td>${g.m11.rhoPlayerDensity} kg/m³</td>
-                        <td style="color:var(--accent-cyan);">${g.m11CombinedDisplay} (x${g.m11.closingMultiplier})</td>
-                    </tr>
-                `).join("")}
+                ${AppState.processedGames.map(g => {
+                    const scaledBio = Number((g.m11CombinedDisplay * modeScale).toFixed(4));
+                    const bioColor = scaledBio >= 0.025 ? "var(--accent-emerald)" : "var(--accent-cyan)";
+
+                    return `
+                        <tr>
+                            <td><strong>${g.matchup}</strong></td>
+                            <td>${g.elevationM}m</td>
+                            <td>${g.m11.localGravityG} m/s²</td>
+                            <td>${g.m7.airDensityRho}</td>
+                            <td>${fmtShiftCell(g.m7.fgRangeShiftYards, "yds")}</td>
+                            <td>${fmtShiftCell(g.m7.deepPassShiftYards, "yds")}</td>
+                            <td>${fmtShiftCell(g.m7.passGameModifierYards, "yds")}</td>
+                            <td>${isLocked ? renderLockCellHTML() : `${g.m11.rhoPlayerDensity} kg/m³`}</td>
+                            <td>${isLocked ? renderLockCellHTML() : `<span style="color:${bioColor}; font-weight:700;">${scaledBio} (x${g.m11.closingMultiplier})</span>`}</td>
+                        </tr>
+                    `;
+                }).join("")}
             </tbody>
         </table>
     `;
@@ -1010,7 +1093,7 @@ function renderHistoricalLedger() {
 
         topPicks.forEach(({ p, savedRec }) => {
             const isSpread = p.marketType === "spread";
-            const isSmash = p.tierBadge === "SMASH";
+            const isSmash = p.tipBadge === "SMASH";
             const fmtTipProj = (isSpread && Number(p.tipProjectedMean) > 0) ? `+${p.tipProjectedMean}` : `${p.tipProjectedMean}`;
             const fmtBdProj = (isSpread && Number(p.bdProjectedMean) > 0) ? `+${p.bdProjectedMean}` : `${p.bdProjectedMean}`;
             const gradedRes = (savedRec && savedRec.result_tip) ? savedRec.result_tip : "PENDING";
@@ -1022,7 +1105,7 @@ function renderHistoricalLedger() {
                     <td><strong>${p.player}</strong> ${renderTierBadgeHTML(p.tipBadge)}</td>
                     <td>${p.baseLine} (${p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds})</td>
                     <td>Proj: <strong>${fmtTipProj}</strong> (${p.tipModelPct}% | ${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV)</td>
-                    ${showBallsDeep ? `<td><span style="color:${isSmash ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">Proj: <strong>${fmtBdProj}</strong> (${p.bdModelPct}% | ${p.bdEvPct > 0 ? '+' : ''}${p.bdEvPct}% EV)<br><small style="color:var(--accent-gold);">${p.bdAltLabel}</small></span></td>` : ""}
+                    <td>${showBallsDeep ? `<span style="color:${isSmash ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">Safe: <strong>${fmtBdProj}</strong> (${p.bdModelPct}%)<br><small style="color:var(--accent-gold);">${p.bdAltLabel}</small></span>` : renderLockCellHTML()}</td>
                     <td>${renderGradeBadge(gradedRes)}</td>
                 </tr>
             `;
@@ -1056,7 +1139,7 @@ function renderHistoricalLedger() {
                 <div style="font-size: 14px; font-weight: 800; margin: 6px 0;">Just the Tip: ${fmtBucket("tip_all")}</div>
                 ${showBallsDeep
                     ? `<div style="font-size: 14px; font-weight: 800; color: var(--accent-emerald);">Balls Deep: ${fmtBucket("balls_deep_all")}</div>`
-                    : `<div style="font-size: 11px; color: var(--accent-gold); opacity: 0.65;">🔒 Balls Deep Record Locked</div>`
+                    : `<div style="font-size: 11px; color: var(--accent-gold); cursor: pointer;" onclick="window.unlockBallsDeepMode(event)">🔒 Click to unlock Balls Deep Record</div>`
                 }
             </div>
         </div>
@@ -1070,7 +1153,7 @@ function renderHistoricalLedger() {
                         <th>Official Model Pick</th>
                         <th>Vegas Closing</th>
                         <th>Just the Tip Closing</th>
-                        ${showBallsDeep ? `<th>Balls Deep Closing</th>` : ""}
+                        <th>Balls Deep Closing</th>
                         <th>Graded Result</th>
                     </tr>
                 </thead>
