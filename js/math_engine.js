@@ -1,13 +1,13 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — CORE MATH MODULES
- * Modules 1-12: Efficiency, EV & Staking, Key Number Spreads, Biophysical & Fibonacci Synthesis
+ * DIXPIX QUANTITATIVE ENGINE — CORE MATH MODULES (v200)
+ * Pure EPA Baseline (No QB Delta Double-Counting) & +10.0% EV SMASH Threshold
  */
 
 const GOLDEN_RATIO_PHI = 1.6180339887;
 const PI_OVER_PHI_HFA = 1.9416110252;
 const GOLDEN_PLAY_SCALER = 38.5145;
 const LOGISTIC_K_TIGHT = GOLDEN_RATIO_PHI / (4.0 * Math.PI); // ~0.12875903
-const SMASH_PROB_THRESHOLD = 0.545; // 54.5% Win Prob (+4.05% EV at -110)
+const SMASH_EV_THRESHOLD = 10.0; // +10.0% EV (~57.62% Win Prob at -110)
 
 const FIBONACCI_TIERS = {
     TIER_1: 34,
@@ -17,9 +17,7 @@ const FIBONACCI_TIERS = {
     SUM_F: 76
 };
 
-// ==========================================
 // MODULE 1: IMPLIED BREAK-EVEN & VIG-FREE PROBABILITY
-// ==========================================
 function calcImpliedProbability(americanOdds) {
     if (americanOdds < 0) {
         return Math.abs(americanOdds) / (Math.abs(americanOdds) + 100);
@@ -33,18 +31,10 @@ function calcVigFreeProbability(oddsA, oddsB) {
     const probB = calcImpliedProbability(oddsB);
     const trueProbA = probA / (probA + probB);
     const trueProbB = probB / (probA + probB);
-    
-    return {
-        impliedA: probA,
-        impliedB: probB,
-        trueProbA: trueProbA,
-        trueProbB: trueProbB
-    };
+    return { impliedA: probA, impliedB: probB, trueProbA, trueProbB };
 }
 
-// ==========================================
 // MODULE 2: EXPECTED VALUE & QUARTER-KELLY SIZING
-// ==========================================
 function americanToDecimal(americanOdds) {
     if (americanOdds > 0) {
         return (americanOdds / 100) + 1;
@@ -56,40 +46,27 @@ function americanToDecimal(americanOdds) {
 function calcExpectedValueAndKelly(modelProb, americanOdds) {
     const decimalOdds = americanToDecimal(americanOdds);
     const b = decimalOdds - 1;
-    
     const expectedValue = (modelProb * b) - (1 - modelProb);
     const fullKelly = ((modelProb * b) - (1 - modelProb)) / b;
     const quarterKelly = fullKelly > 0 ? (fullKelly * 0.25) : 0;
-    
     return {
         evPercentage: expectedValue * 100,
         quarterKellyStakePct: quarterKelly * 100
     };
 }
 
-// ==========================================
 // MODULE 3: SPREAD POINT-BUY / SELL MARGINAL EFFICIENCY RATIO
-// ==========================================
 function calcSpreadMER(baseTrueProb, altTrueProb, baseOdds, altOdds) {
     const baseImplied = calcImpliedProbability(baseOdds);
     const altImplied = calcImpliedProbability(altOdds);
-    
     const trueProbGain = altTrueProb - baseTrueProb;
     const juiceTax = altImplied - baseImplied;
-    
     if (juiceTax === 0) return { merRatio: 0, isApproved: false };
-    
     const mer = trueProbGain / juiceTax;
-    
-    return {
-        merRatio: mer,
-        isApproved: mer > 1.15
-    };
+    return { merRatio: mer, isApproved: mer > 1.15 };
 }
 
-// ==========================================
 // MODULE 4: DISCRETE COUNT PROPS (POISSON & NEGATIVE BINOMIAL)
-// ==========================================
 function factorial(n) {
     if (n <= 1) return 1;
     let res = 1;
@@ -109,9 +86,7 @@ function logGamma(z) {
     }
     z -= 1;
     let x = p[0];
-    for (let i = 1; i < g + 2; i++) {
-        x += p[i] / (z + i);
-    }
+    for (let i = 1; i < g + 2; i++) x += p[i] / (z + i);
     const t = z + g + 0.5;
     return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(x);
 }
@@ -124,9 +99,7 @@ function calcPoissonPMF(lambda, k) {
 function calcPoissonOverProb(lambda, thresholdLine) {
     const minK = Math.floor(thresholdLine) + 1;
     let cdf = 0;
-    for (let k = 0; k < minK; k++) {
-        cdf += calcPoissonPMF(lambda, k);
-    }
+    for (let k = 0; k < minK; k++) cdf += calcPoissonPMF(lambda, k);
     return Math.max(0, Math.min(1, 1 - cdf));
 }
 
@@ -140,20 +113,15 @@ function calcNegBinPMF(mu, r, x) {
 function calcNegBinOverProb(mu, r, thresholdLine) {
     const minX = Math.floor(thresholdLine) + 1;
     let cdf = 0;
-    for (let x = 0; x < minX; x++) {
-        cdf += calcNegBinPMF(mu, r, x);
-    }
+    for (let x = 0; x < minX; x++) cdf += calcNegBinPMF(mu, r, x);
     return Math.max(0, Math.min(1, 1 - cdf));
 }
 
-// ==========================================
 // MODULE 5: CONTINUOUS YARDAGE PROPS (GAMMA SURVIVAL)
-// ==========================================
 function lowerIncompleteGammaRatio(alpha, x) {
     if (x <= 0) return 0;
     const eps = 1e-10;
     const maxIter = 200;
-
     if (x < alpha + 1) {
         let ap = alpha;
         let sum = 1.0 / alpha;
@@ -192,47 +160,26 @@ function lowerIncompleteGammaRatio(alpha, x) {
 function calcGammaSurvivalProb(meanMu, varianceSigma2, milestoneLine) {
     if (meanMu <= 0 || varianceSigma2 <= 0) return { alpha: 0, beta: 0, trueOverProb: 0.5, trueUnderProb: 0.5 };
     if (milestoneLine <= 0) return { alpha: 0, beta: 0, trueOverProb: 1, trueUnderProb: 0 };
-
     const alpha = Math.pow(meanMu, 2) / varianceSigma2;
     const beta = varianceSigma2 / meanMu;
     const scaledX = milestoneLine / beta;
-
     const cdf = lowerIncompleteGammaRatio(alpha, scaledX);
     const survivalProb = Math.max(0, Math.min(1, 1.0 - cdf));
-
-    return {
-        alpha: alpha,
-        beta: beta,
-        trueOverProb: survivalProb,
-        trueUnderProb: 1.0 - survivalProb
-    };
+    return { alpha, beta, trueOverProb: survivalProb, trueUnderProb: 1.0 - survivalProb };
 }
 
-// ==========================================
 // MODULE 6: PROP ALT-LINE ARBITRAGE EFFICIENCY
-// ==========================================
 function calcPropAltMER(baseTrueProb, altTrueProb, baseOdds, altOdds) {
     const baseBE = calcImpliedProbability(baseOdds);
     const altBE = calcImpliedProbability(altOdds);
-
     const deltaTrueProb = Math.abs(altTrueProb - baseTrueProb);
     const deltaBE = Math.abs(altBE - baseBE);
-
     if (deltaBE === 0) return { merProp: 0, isAuthorized: false };
-
     const merProp = deltaTrueProb / deltaBE;
-
-    return {
-        deltaTrueProb: deltaTrueProb,
-        deltaBreakEven: deltaBE,
-        merProp: merProp,
-        isAuthorized: merProp > 1.15
-    };
+    return { deltaTrueProb, deltaBreakEven: deltaBE, merProp, isAuthorized: merProp > 1.15 };
 }
 
-// ==========================================
 // MODULE 7: BAROMETRIC AIR DENSITY & BALLISTIC DRAG
-// ==========================================
 function calcBarometricBallistics(envPayload) {
     if (envPayload.is_dome) {
         return {
@@ -243,11 +190,9 @@ function calcBarometricBallistics(envPayload) {
             passGameModifierYards: 2.52
         };
     }
-
     const Rd = 287.058;
     const Rv = 461.495;
     const rho0 = 1.225;
-
     const T = envPayload.temp_kelvin !== undefined
         ? envPayload.temp_kelvin
         : (envPayload.temperature_f !== undefined ? ((envPayload.temperature_f - 32) * 5 / 9) + 273.15 : 288.15);
@@ -255,19 +200,14 @@ function calcBarometricBallistics(envPayload) {
     const pTotalPa = (envPayload.pressure_hpa || 1013.25) * 100;
     const pvPa = (envPayload.vapor_pressure || 10.0) * 100;
     const pdPa = Math.max(0, pTotalPa - pvPa);
-
     const rho = (pdPa / (Rd * T)) + (pvPa / (Rv * T));
 
-    const vRel = 27.0;
-    const Cd = 0.055;
-    const areaCross = 0.024;
+    const vRel = 27.0, Cd = 0.055, areaCross = 0.024;
     const dragForceFd = 0.5 * rho * Math.pow(vRel, 2) * Cd * areaCross;
 
     const windSpeed = envPayload.wind_mph !== undefined ? envPayload.wind_mph : (envPayload.wind_speed_mph || 0);
     const windType = envPayload.wind_direction_head_cross || "cross";
-    
-    let wHead = 0;
-    let wCross = 0;
+    let wHead = 0, wCross = 0;
     if (windType === "head") wHead = windSpeed;
     else if (windType === "tail") wHead = -windSpeed;
     else wCross = windSpeed;
@@ -285,14 +225,11 @@ function calcBarometricBallistics(envPayload) {
     };
 }
 
-// ==========================================
 // MODULE 8: CIRCADIAN FATIGUE PENALTY & REST STRAIN
-// ==========================================
 function calcCircadianStrain(circPayload, kickoffLocalHour) {
     const tzShift = circPayload.away_tz_shift || 0;
     const absTz = Math.abs(tzShift);
     const omegaDir = tzShift > 0 ? 1.35 : (tzShift < 0 ? 0.85 : 1.0);
-    
     const travelMiles = circPayload.away_travel_miles || 0;
     const restDelta = circPayload.rest_differential_days || 0;
     const mnfShortFlag = circPayload.short_week_flag ? 1.0 : 0.0;
@@ -312,24 +249,19 @@ function calcCircadianStrain(circPayload, kickoffLocalHour) {
     };
 }
 
-// ==========================================
-// MODULE 9: FULL-GAME FAIR MARGIN & LOGISTIC POINT-GAP PROBABILITY
-// ==========================================
+// MODULE 9: FULL-GAME FAIR MARGIN (PURE EPA BASELINE — NO QB DELTA DOUBLE-COUNT)
 function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "tip") {
     const hfaBase = gameData.hfa_base !== undefined ? gameData.hfa_base : PI_OVER_PHI_HFA;
-
     const home = (gameData.team_telemetry && gameData.team_telemetry.home) || {};
     const away = (gameData.team_telemetry && gameData.team_telemetry.away) || {};
 
     const epaDiff = (away.net_epa_per_play || 0) - (home.net_epa_per_play || 0);
-    const deltaQB = (away.qb_replacement_delta || 0) - (home.qb_replacement_delta || 0);
     const deltaTOReg = (away.turnover_reg_delta || 0) - (home.turnover_reg_delta || 0);
-
     const activePsi = (mode === "tip") ? 0 : psiCoupled11_12;
     const effectivePlays = GOLDEN_PLAY_SCALER;
 
     const fairMarginHomeSpread = (
-        (effectivePlays * epaDiff) + deltaQB + deltaTOReg - hfaBase - phiCirc + activePsi
+        (effectivePlays * epaDiff) + deltaTOReg - hfaBase - phiCirc + activePsi
     );
 
     return {
@@ -344,26 +276,20 @@ function calcPointGapWinProb(pointGap) {
     return Math.max(0.01, Math.min(0.99, prob));
 }
 
-// ==========================================
 // MODULE 10: 30% PROFIT BOOST PARLAY & ROUND ROBIN COMBINATORICS
-// ==========================================
 function calcProfitBoostParlayEV(legsArray, boostMultiplier = 1.30) {
     if (!legsArray || legsArray.length === 0) {
         return { dRaw: 1, dBoost: 1, trueParlayProb: 0, evBoostPct: 0 };
     }
-
     let dRaw = 1.0;
     let pTrueParlay = 1.0;
-
     for (let i = 0; i < legsArray.length; i++) {
         const dec = americanToDecimal(legsArray[i].americanOdds);
         dRaw *= dec;
         pTrueParlay *= legsArray[i].trueProb;
     }
-
     const dBoost = 1.0 + (boostMultiplier * (dRaw - 1.0));
     const evBoost = (pTrueParlay * dBoost) - 1.0;
-
     return {
         dRaw: Number(dRaw.toFixed(3)),
         dBoost: Number(dBoost.toFixed(3)),
@@ -391,17 +317,13 @@ function calcRoundRobinMatrix(legsArray) {
     const maxK = Math.min(n, 4);
     for (let k = 2; k <= maxK; k++) {
         const combos = getCombinations(legsArray, k);
-        let totalEv = 0;
-        let avgMult = 0;
-        let avgProb = 0;
-
+        let totalEv = 0, avgMult = 0, avgProb = 0;
         combos.forEach(c => {
             const res = calcProfitBoostParlayEV(c, 1.0);
             totalEv += res.evBoostPct;
             avgMult += res.dRaw;
             avgProb += res.trueParlayProb;
         });
-
         const count = combos.length;
         tiers.push({
             legSize: `${k}-Leg Round Robin (${count}x)`,
@@ -414,22 +336,16 @@ function calcRoundRobinMatrix(legsArray) {
     return tiers;
 }
 
-// ==========================================
 // MODULE 11: BIOPHYSICAL MASS DENSITY & CLOSING MULTIPLIERS
-// ==========================================
 function calcBiophysicalMassLoad(envPayload, homeTelemetry, playerMassKg = 95.0, fH2O = 0.62, mode = "balls_deep", intensitySlider = 0.0) {
     const h = envPayload.elevation_m || 0;
-    const Re = 6371000;
-    const gSea = 9.80665;
-
+    const Re = 6371000, gSea = 9.80665;
     const gAlt = gSea * Math.pow(Re / (Re + h), 2);
     const deltaG = gAlt - gSea;
 
-    const rhoH2O = 997.0;
-    const rhoLean = 1100.0;
+    const rhoH2O = 997.0, rhoLean = 1100.0;
     const fLean = 1.0 - fH2O - 0.015;
     const traceSum = (0.00006 / 7874) + (0.0005 / 1738) + (0.012 / 1550) + (0.002 / 862) + (0.0015 / 968);
-    
     const ballistics = calcBarometricBallistics(envPayload);
     const rhoAirH = ballistics.airDensityRho;
 
@@ -437,20 +353,17 @@ function calcBiophysicalMassLoad(envPayload, homeTelemetry, playerMassKg = 95.0,
     const rhoPlayerH = (1.0 / invBaseDensity) - rhoAirH;
     const rhoPlayer0 = (1.0 / invBaseDensity) - 1.225;
 
-    const traceGammaSum = 0.014;
-    const deltaFgBio = playerMassKg * (fH2O + traceGammaSum) * deltaG;
-
+    const deltaFgBio = playerMassKg * (fH2O + 0.014) * deltaG;
     const pO2RatioDrop = 1.0 - Math.exp(-h / 8500);
     const hypoxicTerm = 1.45 * pO2RatioDrop;
 
-    const eta1 = 100.0, eta2 = 10.0, eta3 = 2.5;
-    const phiBioRaw = (eta1 * (deltaFgBio / (playerMassKg * gSea))) + 
-                      (eta2 * ((rhoPlayerH / rhoPlayer0) - 1.0)) + 
-                      (eta3 * hypoxicTerm);
+    const phiBioRaw = (100.0 * (deltaFgBio / (playerMassKg * gSea))) +
+                      (10.0 * ((rhoPlayerH / rhoPlayer0) - 1.0)) +
+                      (2.5 * hypoxicTerm);
 
     const rankPct = homeTelemetry.closing_rank_pct || 0.5;
     const winStreak = homeTelemetry.active_win_streak || 0;
-    let closingMultiplier = 0.382; // "tip" baseline
+    let closingMultiplier = 0.382;
 
     if (mode === "balls_deep" || mode === "unsolicited") {
         closingMultiplier = (rankPct >= 0.53) ? 0.786 : 0.618;
@@ -460,32 +373,25 @@ function calcBiophysicalMassLoad(envPayload, homeTelemetry, playerMassKg = 95.0,
     }
 
     const phiBioAdjusted = phiBioRaw * closingMultiplier;
-
     return {
         rhoPlayerDensity: Number(rhoPlayerH.toFixed(2)),
         localGravityG: Number(gAlt.toFixed(5)),
-        closingMultiplier: closingMultiplier,
+        closingMultiplier,
         phiBioScore: Number(phiBioAdjusted.toFixed(4))
     };
 }
 
-// ==========================================
 // MODULE 12: TURNOVER VALUE & EXPECTED POINTS MATRIX
-// ==========================================
 function calcTurnoverEPAMatrix(teamTelemetry, league = "NFL", mode = "balls_deep", intensitySlider = 0.0) {
     const N = (league === "NCAA") ? 138 : 32;
-    
-    const homeRankPct = teamTelemetry.home.closing_rank_pct !== undefined 
-        ? teamTelemetry.home.closing_rank_pct 
+    const homeRankPct = teamTelemetry.home.closing_rank_pct !== undefined
+        ? teamTelemetry.home.closing_rank_pct
         : 1.0 - (((teamTelemetry.home.closing_rank || 16) - 1) / (N - 1));
-        
-    const awayRankPct = teamTelemetry.away.closing_rank_pct !== undefined 
-        ? teamTelemetry.away.closing_rank_pct 
+    const awayRankPct = teamTelemetry.away.closing_rank_pct !== undefined
+        ? teamTelemetry.away.closing_rank_pct
         : 1.0 - (((teamTelemetry.away.closing_rank || 16) - 1) / (N - 1));
 
-    let home4QWeight = 0.382;
-    let away4QWeight = 0.382;
-
+    let home4QWeight = 0.382, away4QWeight = 0.382;
     if (mode === "balls_deep" || mode === "unsolicited") {
         home4QWeight = homeRankPct >= 0.53 ? 0.786 : 0.618;
         away4QWeight = awayRankPct >= 0.53 ? 0.786 : 0.618;
@@ -501,7 +407,6 @@ function calcTurnoverEPAMatrix(teamTelemetry, league = "NFL", mode = "balls_deep
 
     const homeTovEPA = baseEPConv * homeOppRzFactor * ((0.382 * homeRankPct) + (home4QWeight * homeRankPct));
     const awayTovEPA = baseEPConv * awayOppRzFactor * ((0.382 * awayRankPct) + (away4QWeight * awayRankPct));
-
     const netTovEPADiff = homeTovEPA - awayTovEPA;
 
     return {
@@ -513,26 +418,18 @@ function calcTurnoverEPAMatrix(teamTelemetry, league = "NFL", mode = "balls_deep
     };
 }
 
-// ==========================================
 // COUPLED MODULE 11 & 12 ROOTED INTERACTION (PSI_11,12)
-// ==========================================
 function calcCoupledInteractionPsi(phiBio, epaTov, intensitySlider = 0.0) {
     const sumVal = phiBio + epaTov;
     const sign = sumVal > 0 ? 1 : (sumVal < 0 ? -1 : 0);
     const rootProduct = Math.sqrt(Math.abs(phiBio * epaTov));
-    
     const scalar = 1.0 + (intensitySlider * 0.618);
-    const psi = sign * rootProduct * scalar;
-
-    return Number(psi.toFixed(4));
+    return Number((sign * rootProduct * scalar).toFixed(4));
 }
 
-// ==========================================
-// MASTER EQUATION: AGGREGATE FIBONACCI PROBABILITY (OMEGA_FIB & P_AGG)
-// ==========================================
+// MASTER EQUATION: AGGREGATE FIBONACCI PROBABILITY
 function calcMasterFibonacciAggregate(moduleScores, fibLookupFn = 13, intensitySlider = 0) {
     const m = moduleScores;
-    
     const tier1 = FIBONACCI_TIERS.TIER_1 * ((m.m1 || 0) + (m.m5 || 0) + (m.m7 || 0));
     const tier2 = FIBONACCI_TIERS.TIER_2 * ((m.m6 || 0) + (m.m10 || 0) + (m.m12 || 0));
     const tier3 = FIBONACCI_TIERS.TIER_3 * ((m.m2 || 0) + (m.m3 || 0) + (m.m11 || 0));
@@ -540,7 +437,6 @@ function calcMasterFibonacciAggregate(moduleScores, fibLookupFn = 13, intensityS
 
     const omegaFib = (tier1 + tier2 + tier3 + tier4) / FIBONACCI_TIERS.SUM_F;
     const baseLogisticProb = 1.0 / (1.0 + Math.exp(-GOLDEN_RATIO_PHI * omegaFib));
-
     const volatilityMultiplier = 1.0 + ((fibLookupFn / FIBONACCI_TIERS.SUM_F) * intensitySlider);
     const pAgg = Math.max(0.01, Math.min(0.99, baseLogisticProb * volatilityMultiplier));
 
