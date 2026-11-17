@@ -1216,19 +1216,103 @@ function renderBioWeatherLab() {
     `;
 }
 
+// ==========================================
+// ZERO-TOKEN ESPN SCOREBOARD SYNC & FILTERED HISTORICAL LEDGER
+// ==========================================
+const ESPN_SCORE_CACHE = {
+    lastFetchMs: 0,
+    gamesByMatchup: {}
+};
+
+async function syncEspnLiveScores() {
+    const now = Date.now();
+    // Poll ESPN at most once every 60 seconds
+    if (now - ESPN_SCORE_CACHE.lastFetchMs < 60000) return;
+    ESPN_SCORE_CACHE.lastFetchMs = now;
+
+    const endpoints = [
+        { league: "NFL", url: "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard" },
+        { league: "NCAA", url: "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?groups=80&limit=100" }
+    ];
+
+    for (const ep of endpoints) {
+        try {
+            const res = await fetch(ep.url, { cache: "no-store" });
+            if (!res.ok) continue;
+            const data = await res.json();
+            (data.events || []).forEach(ev => {
+                const comp = (ev.competitions && ev.competitions[0]) || {};
+                const competitors = comp.competitors || [];
+                const homeObj = competitors.find(c => c.homeAway === "home");
+                const awayObj = competitors.find(c => c.homeAway === "away");
+                if (!homeObj || !awayObj) return;
+
+                const homeCode = cleanTeamCode((homeObj.team && homeObj.team.abbreviation) || "");
+                const awayCode = cleanTeamCode((awayObj.team && awayObj.team.abbreviation) || "");
+                const homeScore = parseFloat(homeObj.score || "0");
+                const awayScore = parseFloat(awayObj.score || "0");
+
+                const state = (ev.status && ev.status.type && ev.status.type.state) || "pre"; // "pre" | "in" | "post"
+                const shortDetail = (ev.status && ev.status.type && ev.status.type.shortDetail) || "";
+
+                const key = `${awayCode} @ ${homeCode}`;
+                ESPN_SCORE_CACHE.gamesByMatchup[key] = {
+                    league: ep.league,
+                    homeCode,
+                    awayCode,
+                    homeScore,
+                    awayScore,
+                    state,
+                    shortDetail,
+                    scoreStr: `${awayCode} ${awayScore} - ${homeCode} ${homeScore}`
+                };
+            });
+        } catch (e) {
+            // Silent fallback if offline
+        }
+    }
+
+    renderHistoricalLedger();
+}
+
+function isRankedLedgerEntry(matchupStr, league) {
+    if (league === "NFL") return AppState.filters.nfl;
+    if (league === "NCAA") {
+        if (!AppState.filters.ncaa) return false;
+        const parts = (matchupStr || "").split("@").map(s => cleanTeamCode(s.trim()));
+        return parts.some(code => RANKED_NCAA_CODES.has(code));
+    }
+    return true;
+}
+
+function gradeSpreadPick(isHomeSpread, baseLine, homeScore, awayScore) {
+    const teamMargin = isHomeSpread ? (homeScore - awayScore) : (awayScore - homeScore);
+    const coverDiff = teamMargin + Number(baseLine);
+    if (coverDiff > 0) return "HIT";
+    if (coverDiff < 0) return "MISS";
+    return "PUSH";
+}
+
+function gradeTotalPick(projectedTotal, vegasTotal, homeScore, awayScore) {
+    const actualTotal = homeScore + awayScore;
+    if (actualTotal === Number(vegasTotal)) return "PUSH";
+    const takingUnder = Number(projectedTotal) < Number(vegasTotal);
+    if (takingUnder) return actualTotal < Number(vegasTotal) ? "HIT" : "MISS";
+    return actualTotal > Number(vegasTotal) ? "HIT" : "MISS";
+}
+
 function renderHistoricalLedger() {
     const container = document.getElementById("ledger-container");
     if (!container) return;
 
-    const ledgerObj = (AppState.rawPayload && AppState.rawPayload.historical_ledger) || {};
-    const summary = ledgerObj.summary || {};
-    const showBallsDeep = (AppState.activeMode === "balls_deep" || AppState.activeMode === "davinci");
+    // Trigger non-blocking background ESPN scoreboard sync
+    if (Date.now() - ESPN_SCORE_CACHE.lastFetchMs >= 60000) {
+        syncEspnLiveScores();
+    }
 
-    const fmtBucket = (key) => {
-        const b = summary[key];
-        if (!b || !b.total) return "0 / 0 (0.0%)";
-        return `${b.fraction} (${b.win_pct}%)`;
-    };
+    const ledgerObj = (AppState.rawPayload && AppState.rawPayload.historical_ledger) || {};
+    const entriesMap = ledgerObj.entries || {};
+    const showBallsDeep = (AppState.activeMode === "balls_deep" || AppState.activeMode === "davinci");
 
     const renderGradeBadge = (res) => {
         if (res === "HIT") return `<span class="badge-smash" style="font-size:11px;">✅ HIT</span>`;
@@ -1237,14 +1321,45 @@ function renderHistoricalLedger() {
         return `<span class="badge-pass" style="color:var(--accent-cyan);border-color:rgba(6,182,212,0.4);font-size:11px;">⏳ LOCKED / PENDING</span>`;
     };
 
-    let rowsHTML = "";
-    const entriesMap = ledgerObj.entries || {};
+    // Dynamic filtered summary counters (strictly NFL + Top-25 Ranked NCAA)
+    const buckets = {
+        flagship_5pack: { hits: 0, total: 0 },
+        menage_a_trois: { hits: 0, total: 0 },
+        overall_smash:  { hits: 0, total: 0 },
+        spread_smash:   { hits: 0, total: 0 },
+        total_smash:    { hits: 0, total: 0 },
+        pass_audit:     { hits: 0, total: 0 },
+        tip_all:        { hits: 0, total: 0 },
+        balls_deep_all: { hits: 0, total: 0 }
+    };
 
+    const tallyGrade = (bucketKey, res) => {
+        if (res !== "HIT" && res !== "MISS") return;
+        buckets[bucketKey].total += 1;
+        if (res === "HIT") buckets[bucketKey].hits += 1;
+    };
+
+    let rowsHTML = "";
+    const renderedGameIds = new Set();
+
+    // 1. Render active/upcoming games (and auto-grade if ESPN shows them IN-PLAY or FINAL)
     AppState.processedGames.forEach(g => {
+        if (!isRankedLedgerEntry(g.matchup, g.league)) return;
+        renderedGameIds.add(g.gameId);
+
         const savedEntry = entriesMap[g.gameId] || {};
-        const statusLabel = savedEntry.status === "FINAL"
-            ? `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${savedEntry.final_score})</span>`
-            : (savedEntry.is_locked ? `<span style="color:var(--accent-gold);font-weight:700;">🔒 IN-PLAY (CLOSING LOCKED)</span>` : `<span style="color:var(--text-secondary);">PRE-KICKOFF SNAPSHOT</span>`);
+        const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[g.matchup];
+        const kickedOffByClock = g.commenceTime ? (new Date(g.commenceTime).getTime() <= Date.now()) : false;
+
+        let isFinal = savedEntry.status === "FINAL" || (espnMatch && espnMatch.state === "post");
+        let isLocked = isFinal || savedEntry.is_locked || kickedOffByClock || (espnMatch && espnMatch.state === "in");
+        let scoreDisplay = savedEntry.final_score || (espnMatch ? espnMatch.scoreStr : "");
+
+        const statusLabel = isFinal
+            ? `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${scoreDisplay})</span>`
+            : (isLocked
+                ? `<span style="color:var(--accent-gold);font-weight:700;">🔒 IN-PLAY (${scoreDisplay || 'CLOSING LOCKED'})</span>`
+                : `<span style="color:var(--text-secondary);">PRE-KICKOFF SNAPSHOT</span>`);
 
         const gameSpreads = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "spread").sort((a, b) => b.tipEvPct - a.tipEvPct);
         const gameTotals = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "total");
@@ -1258,7 +1373,33 @@ function renderHistoricalLedger() {
             const isSmash = p.evPct >= SMASH_EV_CUTOFF;
             const fmtTipProj = (isSpread && Number(p.tipProjectedMean) > 0) ? `+${p.tipProjectedMean}` : `${p.tipProjectedMean}`;
             const fmtBdProj = (isSpread && Number(p.bdProjectedMean) > 0) ? `+${p.bdProjectedMean}` : `${p.bdProjectedMean}`;
-            const gradedRes = (savedRec && savedRec.result_tip) ? savedRec.result_tip : "PENDING";
+
+            let gradedTip = (savedRec && savedRec.result_tip) ? savedRec.result_tip : "PENDING";
+            let gradedBd = (savedRec && savedRec.result_bd) ? savedRec.result_bd : gradedTip;
+
+            if (isFinal && espnMatch && gradedTip === "PENDING") {
+                gradedTip = isSpread
+                    ? gradeSpreadPick(p.isHomeSpread, p.baseLine, espnMatch.homeScore, espnMatch.awayScore)
+                    : gradeTotalPick(p.tipProjectedMean, p.baseLine, espnMatch.homeScore, espnMatch.awayScore);
+                gradedBd = isSpread
+                    ? gradeSpreadPick(p.isHomeSpread, p.baseLine, espnMatch.homeScore, espnMatch.awayScore)
+                    : gradeTotalPick(p.bdProjectedMean, p.baseLine, espnMatch.homeScore, espnMatch.awayScore);
+            }
+
+            if (gradedTip === "HIT" || gradedTip === "MISS") {
+                tallyGrade("tip_all", gradedTip);
+                tallyGrade("balls_deep_all", gradedBd);
+                if (p.flagshipSlot) {
+                    tallyGrade("flagship_5pack", gradedTip);
+                    if (p.flagshipSlot.includes("MÉNAGE")) tallyGrade("menage_a_trois", gradedTip);
+                }
+                if (p.tipBadge === "SMASH") {
+                    tallyGrade("overall_smash", gradedTip);
+                    tallyGrade(isSpread ? "spread_smash" : "total_smash", gradedTip);
+                } else {
+                    tallyGrade("pass_audit", gradedTip);
+                }
+            }
 
             rowsHTML += `
                 <tr>
@@ -1268,11 +1409,94 @@ function renderHistoricalLedger() {
                     <td>${p.baseLine} (${p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds})</td>
                     <td>Proj: <strong>${fmtTipProj}</strong> (${p.tipModelPct}% | ${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV)</td>
                     <td>${showBallsDeep ? `<span style="color:${isSmash ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">Proj: <strong>${fmtBdProj}</strong> (${p.bdModelPct}% | ${p.bdEvPct > 0 ? '+' : ''}${p.bdEvPct}% EV)<br><small style="color:var(--accent-gold);">${p.bdAltLabel} (${p.bdAltEvPct > 0 ? '+' : ''}${p.bdAltEvPct}% EV)</small></span>` : renderLockCellHTML()}</td>
-                    <td>${renderGradeBadge(gradedRes)}</td>
+                    <td>${renderGradeBadge(gradedTip)}</td>
                 </tr>
             `;
         });
     });
+
+    // 2. Render completed/archived games from historical_ledger.entries that already dropped off the live odds feed (e.g., Ravens game)
+    Object.keys(entriesMap).forEach(archId => {
+        if (renderedGameIds.has(archId)) return;
+        const entry = entriesMap[archId];
+        if (!entry) return;
+
+        const cleanMatchup = cleanLabelCodes(entry.matchup || "");
+        const entryLeague = entry.league || "NFL";
+        // Strictly filter out unranked NCAA games from the archive
+        if (!isRankedLedgerEntry(cleanMatchup, entryLeague)) return;
+
+        const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[cleanMatchup];
+        const isFinal = entry.status === "FINAL" || (espnMatch && espnMatch.state === "post");
+        const scoreDisplay = entry.final_score || (espnMatch ? espnMatch.scoreStr : "COMPLETED");
+        const statusLabel = isFinal
+            ? `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${scoreDisplay})</span>`
+            : `<span style="color:var(--accent-gold);font-weight:700;">🔒 ARCHIVED SNAPSHOT</span>`;
+
+        const archivedRecords = [
+            { type: "SPREAD", rec: entry.spread_record },
+            { type: "TOTAL (O/U)", rec: entry.total_record }
+        ].filter(x => x.rec);
+
+        archivedRecords.forEach(({ type, rec }) => {
+            const isSpread = type === "SPREAD";
+            const pickLabel = cleanLabelCodes(rec.pick_label || rec.player || cleanMatchup);
+            const vegasLine = rec.vegas_line !== undefined ? rec.vegas_line : (rec.baseLine || 0);
+            const baseOdds = rec.odds !== undefined ? rec.odds : (rec.baseOdds || -110);
+            const tipProj = rec.tip_proj !== undefined ? rec.tip_proj : (rec.tipProjectedMean || vegasLine);
+            const tipWinPct = rec.tip_win_pct !== undefined ? rec.tip_win_pct : (rec.tipModelPct || 50);
+            const tipEvPct = rec.tip_ev_pct !== undefined ? rec.tip_ev_pct : (rec.tipEvPct || 0);
+            const tipBadge = rec.tip_badge || (Number(tipEvPct) >= SMASH_EV_CUTOFF ? "SMASH" : "PASS");
+
+            const bdProj = rec.bd_proj !== undefined ? rec.bd_proj : (rec.bdProjectedMean || tipProj);
+            const bdWinPct = rec.bd_win_pct !== undefined ? rec.bd_win_pct : (rec.bdModelPct || tipWinPct);
+            const bdEvPct = rec.bd_ev_pct !== undefined ? rec.bd_ev_pct : (rec.bdEvPct || tipEvPct);
+            const bdAltLabel = rec.bd_alt_label || rec.bdAltLabel || "Alt Escalator";
+            const bdAltEvPct = rec.bd_alt_ev_pct !== undefined ? rec.bd_alt_ev_pct : (rec.bdAltEvPct || 0);
+            const slot = rec.flagship_slot || rec.flagshipSlot || "";
+
+            let gradedTip = rec.result_tip || rec.result || "PENDING";
+            let gradedBd = rec.result_bd || gradedTip;
+
+            if (gradedTip === "HIT" || gradedTip === "MISS") {
+                tallyGrade("tip_all", gradedTip);
+                tallyGrade("balls_deep_all", gradedBd);
+                if (slot) {
+                    tallyGrade("flagship_5pack", gradedTip);
+                    if (slot.includes("MÉNAGE")) tallyGrade("menage_a_trois", gradedTip);
+                }
+                if (tipBadge === "SMASH") {
+                    tallyGrade("overall_smash", gradedTip);
+                    tallyGrade(isSpread ? "spread_smash" : "total_smash", gradedTip);
+                } else {
+                    tallyGrade("pass_audit", gradedTip);
+                }
+            }
+
+            const fmtTipProj = (isSpread && Number(tipProj) > 0) ? `+${tipProj}` : `${tipProj}`;
+            const fmtBdProj = (isSpread && Number(bdProj) > 0) ? `+${bdProj}` : `${bdProj}`;
+            const isSmash = Number(bdEvPct) >= SMASH_EV_CUTOFF;
+
+            rowsHTML += `
+                <tr>
+                    <td><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+                    <td>${type} ${slot ? `<br><span class="badge-menage">${slot}</span>` : ""}</td>
+                    <td><strong>${pickLabel}</strong> ${renderTierBadgeHTML(tipBadge)}</td>
+                    <td>${vegasLine} (${baseOdds > 0 ? '+' + baseOdds : baseOdds})</td>
+                    <td>Proj: <strong>${fmtTipProj}</strong> (${tipWinPct}% | ${tipEvPct > 0 ? '+' : ''}${tipEvPct}% EV)</td>
+                    <td>${showBallsDeep ? `<span style="color:${isSmash ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">Proj: <strong>${fmtBdProj}</strong> (${bdWinPct}% | ${bdEvPct > 0 ? '+' : ''}${bdEvPct}% EV)<br><small style="color:var(--accent-gold);">${bdAltLabel} (${bdAltEvPct > 0 ? '+' : ''}${bdAltEvPct}% EV)</small></span>` : renderLockCellHTML()}</td>
+                    <td>${renderGradeBadge(gradedTip)}</td>
+                </tr>
+            `;
+        });
+    });
+
+    const fmtBucket = (key) => {
+        const b = buckets[key];
+        if (!b || !b.total) return "0 / 0 (0.0%)";
+        const pct = ((b.hits / b.total) * 100).toFixed(1);
+        return `${b.hits} / ${b.total} (${pct}%)`;
+    };
 
     container.innerHTML = `
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-bottom: 20px; font-family: var(--font-mono);">
