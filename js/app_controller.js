@@ -1,9 +1,13 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v211)
- * - Flagship 5-Pack: All 5 Green SMASH plays with the SMASH badge placed directly next to the Vegas Spread
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v212)
+ * - 3-Tier EV System:
+ *     1. SMASH (>= +10.0% EV): Green SMASH badge + Emerald text
+ *     2. TOO CLOSE TO CALL (-9.99% to +9.99% EV): Blank (No badge) + Neutral Slate text
+ *     3. PASS (<= -10.0% EV): Red PASS badge + Crimson text
+ * - Flagship 5-Pack: All 5 Green SMASH plays with SMASH badge directly next to the Vegas Spread
  * - Single Lightning Bolt Rule in Balls Deep Cards: Only shows ⚡ BALLS DEEP PROJ on Totals and Spread sides with Win >= 50%
  * - Strict League Filter: Displays ONLY NFL and AP/CFP Top-25 Ranked NCAA Matchups
- * - Zero Page/Scroll Reset on Mode Switch + Dynamic Combinatorics Deck Updates Across Modes
+ * - Zero-Token ESPN Live Score Sync & Permanent Ledger Archive
  */
 
 const AppState = {
@@ -21,7 +25,8 @@ const AppState = {
 
 const openCardMemory = new Set();
 const MODEL_TOTAL_INTERCEPT = 42.986;
-const SMASH_EV_CUTOFF = 10.0; // +10.0% EV threshold for SMASH
+const SMASH_EV_CUTOFF = 10.0;  // >= +10.0% EV threshold for SMASH
+const PASS_EV_CUTOFF = -10.0;  // <= -10.0% EV threshold for definitive PASS
 const PHI = 1.6180339887;
 const PHI_OVER_PI = PHI / Math.PI; // ~0.5150362 (Module 13 Sacred Geometry Constant)
 
@@ -75,6 +80,30 @@ function cleanLabelCodes(labelStr) {
         out = out.replace(new RegExp(`\\b${bad}\\b`, "g"), good);
     });
     return out;
+}
+
+function getTierFromEv(evPct) {
+    const ev = Number(evPct);
+    if (ev >= SMASH_EV_CUTOFF) return "SMASH";
+    if (ev <= PASS_EV_CUTOFF) return "PASS";
+    return "TOO_CLOSE"; // -9.99% to +9.99% EV
+}
+
+function getTierColor(tierBadge, useHex = false) {
+    if (tierBadge === "SMASH") return useHex ? "#22c55e" : "var(--accent-emerald)";
+    if (tierBadge === "PASS") return useHex ? "#ef4444" : "var(--accent-danger)";
+    return useHex ? "#94a3b8" : "var(--text-secondary)"; // Neutral slate for TOO_CLOSE
+}
+
+function renderTierBadgeHTML(tierBadge) {
+    if (tierBadge === "SMASH") {
+        return `<span class="badge-smash">SMASH</span>`;
+    }
+    if (tierBadge === "PASS") {
+        return `<span class="badge-pass" style="background: rgba(239, 68, 68, 0.16); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.45); font-weight: 800;">PASS</span>`;
+    }
+    // Blank (no badge) for TOO_CLOSE (-9.99% to +9.99% EV)
+    return "";
 }
 
 function isRankedNCAAGame(game) {
@@ -500,11 +529,11 @@ function recalculateAndRenderAll() {
 
                 const tipWinPct = Number((tipModelProb * 100).toFixed(2));
                 const tipEvPct = Number(m2Tip.evPercentage.toFixed(2));
-                const tipBadge = tipEvPct >= SMASH_EV_CUTOFF ? "SMASH" : "PASS";
+                const tipBadge = getTierFromEv(tipEvPct);
 
                 const activeWinPct = Number((activeModelProb * 100).toFixed(2));
                 const activeEvPct = Number(m2Active.evPercentage.toFixed(2));
-                const activeBadge = activeEvPct >= SMASH_EV_CUTOFF ? "SMASH" : "PASS";
+                const activeBadge = getTierFromEv(activeEvPct);
 
                 AppState.processedProps.push({
                     propKey,
@@ -584,23 +613,26 @@ function recalculateAndRenderAll() {
     });
 }
 
-function renderTierBadgeHTML(tierBadge) {
-    if (tierBadge === "SMASH") {
-        return `<span class="badge-smash">SMASH</span>`;
-    }
-    return `<span class="badge-pass" style="background: rgba(239, 68, 68, 0.16); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.45); font-weight: 800;">PASS</span>`;
-}
-
-// Single Lightning Bolt Rule: Only show ⚡ BALLS DEEP PROJ on Totals and the favored Spread cover side (Win >= 50%)
+// Single Lightning Bolt Rule + 3-Tier Styling (Emerald SMASH / Neutral Slate TOO_CLOSE / Crimson PASS)
 function buildBallsDeepBoxHTML(engineProp, isSpread) {
     if (AppState.activeMode === "tip") {
         return "";
     }
 
-    const isBdSmash = engineProp.evPct >= SMASH_EV_CUTOFF;
-    const boxBg = isBdSmash ? "rgba(16, 185, 129, 0.09)" : "rgba(239, 68, 68, 0.09)";
-    const boxBorder = isBdSmash ? "rgba(16, 185, 129, 0.42)" : "rgba(239, 68, 68, 0.42)";
-    const activeColor = isBdSmash ? "var(--accent-emerald)" : "var(--accent-danger)";
+    const activeTier = getTierFromEv(engineProp.evPct);
+    let boxBg = "rgba(148, 163, 184, 0.08)";
+    let boxBorder = "rgba(148, 163, 184, 0.35)";
+    let activeColor = "var(--text-secondary)";
+
+    if (activeTier === "SMASH") {
+        boxBg = "rgba(16, 185, 129, 0.09)";
+        boxBorder = "rgba(16, 185, 129, 0.42)";
+        activeColor = "var(--accent-emerald)";
+    } else if (activeTier === "PASS") {
+        boxBg = "rgba(239, 68, 68, 0.09)";
+        boxBorder = "rgba(239, 68, 68, 0.42)";
+        activeColor = "var(--accent-danger)";
+    }
 
     const activeLabel = AppState.activeMode === "davinci" ? "DAVINCI PROJ" : "BALLS DEEP PROJ";
     const activeProj = (isSpread && Number(engineProp.projectedMean) > 0) ? `+${engineProp.projectedMean}` : `${engineProp.projectedMean}`;
@@ -682,7 +714,6 @@ function renderFlagshipFivePack() {
             ${AppState.flagshipFivePack.map((p, idx) => {
                 const isMenage = p.flagshipSlot.includes("MÉNAGE");
                 const isSpread = p.marketType === "spread";
-                const tipIsSmash = p.tipBadge === "SMASH";
                 const fmtTipProj = (isSpread && Number(p.tipProjectedMean) > 0) ? `+${p.tipProjectedMean}` : `${p.tipProjectedMean}`;
                 const tipEvStr = `${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV`;
 
@@ -695,7 +726,7 @@ function renderFlagshipFivePack() {
                                 ${renderTierBadgeHTML(p.tipBadge)}
                             </div>
                             <div style="display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 12px;">
-                                <span style="color: ${tipIsSmash ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">
+                                <span style="color: ${getTierColor(p.tipBadge)};">
                                     Proj: <strong>${fmtTipProj}</strong> | Win: <strong>${p.tipModelPct}%</strong> (${tipEvStr})
                                 </span>
                             </div>
@@ -825,7 +856,7 @@ function render_game_cards(data) {
         } else {
             visibleGameProps.forEach((engineData) => {
                 const isSpread = engineData.marketType === "spread";
-                const tipIsSmash = engineData.tipBadge === "SMASH";
+                const lineColorHex = getTierColor(engineData.tipBadge, true);
                 const displayTipProj = (isSpread && Number(engineData.tipProjectedMean) > 0)
                     ? `+${engineData.tipProjectedMean}`
                     : `${engineData.tipProjectedMean}`;
@@ -843,7 +874,7 @@ function render_game_cards(data) {
                         <span>${slotBadge}<strong>${engineData.player}</strong></span>
                         ${renderTierBadgeHTML(engineData.tipBadge)}
                     </div>
-                    <div style="font-family: var(--font-mono); font-size: 0.82em; color: ${tipIsSmash ? '#22c55e' : '#ef4444'};">
+                    <div style="font-family: var(--font-mono); font-size: 0.82em; color: ${lineColorHex};">
                         Proj: ${displayTipProj} | Win: ${engineData.tipModelPct}% (${tipEvStr})
                     </div>
                     ${buildBallsDeepBoxHTML(engineData, isSpread)}
@@ -942,7 +973,7 @@ function renderCombinatoricsDeck() {
                 </div>
                 <div style="background: var(--bg-base); padding: 10px; border-radius: 6px; border: 1px solid var(--border-subtle);">
                     <div style="color: var(--text-secondary); font-size: 10px;">COMPOUND PARLAY EV%</div>
-                    <div style="font-size: 16px; font-weight: 800; color: ${m10.evBoostPct >= 0 ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">
+                    <div style="font-size: 16px; font-weight: 800; color: ${getTierColor(getTierFromEv(m10.evBoostPct))};">
                         ${selectedProps.length ? (m10.evBoostPct > 0 ? '+' : '') + m10.evBoostPct + '%' : '0.00%'}
                     </div>
                 </div>
@@ -954,7 +985,7 @@ function renderCombinatoricsDeck() {
                     ${rrTiers.map(t => `
                         <span>
                             <strong>${t.legSize}:</strong> Avg ${t.avgMultiplier}x | Win ${t.avgWinProbPct}% |
-                            <span style="color: ${t.expectedRoiPct >= 0 ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">
+                            <span style="color: ${getTierColor(getTierFromEv(t.expectedRoiPct))};">
                                 EV ${t.expectedRoiPct > 0 ? '+' : ''}${t.expectedRoiPct}%
                             </span>
                         </span>
@@ -985,7 +1016,7 @@ function renderCombinatoricsDeck() {
                 ${filteredPool.map(p => {
                     const isSelected = AppState.selectedParlayLegs.has(p.propKey);
                     const isSpread = p.marketType === "spread";
-                    const isSmash = p.tierBadge === "SMASH";
+                    const tierColor = getTierColor(p.tierBadge);
                     const fmtProj = (isSpread && Number(p.projectedMean) > 0) ? `+${p.projectedMean}` : `${p.projectedMean}`;
                     const evStr = `${p.evPct > 0 ? '+' : ''}${p.evPct}% EV`;
                     const altEvStr = `${p.bdAltEvPct > 0 ? '+' : ''}${p.bdAltEvPct}% EV`;
@@ -1004,7 +1035,7 @@ function renderCombinatoricsDeck() {
                             <div style="font-weight: 700; font-size: 13px; color: var(--text-primary); margin-bottom: 4px;">
                                 ${p.activePlayerLabel || p.player} <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);">(${p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds})</span>
                             </div>
-                            <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 12px; color: ${isSmash ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">
+                            <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 12px; color: ${tierColor};">
                                 <span>Proj: <strong>${fmtProj}</strong></span>
                                 <span>Win: <strong>${p.activeModelPct}%</strong> (${evStr})</span>
                             </div>
@@ -1217,8 +1248,52 @@ function renderBioWeatherLab() {
 }
 
 // ==========================================
-// ZERO-TOKEN ESPN SCOREBOARD SYNC & FILTERED HISTORICAL LEDGER
+// PERMANENT ARCHIVE SEED + ZERO-TOKEN ESPN SCOREBOARD SYNC & LEDGER
 // ==========================================
+const PERMANENT_LEDGER_ARCHIVE = {
+    "nfl_mnf_lac_bal_2026_w10": {
+        league: "NFL",
+        matchup: "LAC @ BAL",
+        status: "FINAL",
+        final_score: "LAC 23 - BAL 20",
+        is_locked: true,
+        spread_record: {
+            pick_label: "BAL Spread (+6.5) (BAL vs LAC)",
+            vegas_line: 6.5,
+            odds: -110,
+            tip_proj: 2.1,
+            tip_win_pct: 66.85,
+            tip_ev_pct: 27.62,
+            tip_badge: "SMASH",
+            bd_proj: 1.4,
+            bd_win_pct: 69.25,
+            bd_ev_pct: 32.20,
+            bd_alt_label: "Alt +3.5 (+145)",
+            bd_alt_ev_pct: 41.80,
+            flagship_slot: "",
+            result_tip: "HIT",
+            result_bd: "HIT"
+        },
+        total_record: {
+            pick_label: "LAC@BAL Total (O 44.5)",
+            vegas_line: 44.5,
+            odds: -110,
+            tip_proj: 46.1,
+            tip_win_pct: 55.80,
+            tip_ev_pct: 6.53,
+            tip_badge: "TOO_CLOSE",
+            bd_proj: 46.8,
+            bd_win_pct: 58.10,
+            bd_ev_pct: 10.92,
+            bd_alt_label: "Alt O 47.5 (+155)",
+            bd_alt_ev_pct: 14.20,
+            flagship_slot: "",
+            result_tip: "MISS",
+            result_bd: "MISS"
+        }
+    }
+};
+
 const ESPN_SCORE_CACHE = {
     lastFetchMs: 0,
     gamesByMatchup: {}
@@ -1226,7 +1301,6 @@ const ESPN_SCORE_CACHE = {
 
 async function syncEspnLiveScores() {
     const now = Date.now();
-    // Poll ESPN at most once every 60 seconds
     if (now - ESPN_SCORE_CACHE.lastFetchMs < 60000) return;
     ESPN_SCORE_CACHE.lastFetchMs = now;
 
@@ -1252,9 +1326,7 @@ async function syncEspnLiveScores() {
                 const homeScore = parseFloat(homeObj.score || "0");
                 const awayScore = parseFloat(awayObj.score || "0");
 
-                const state = (ev.status && ev.status.type && ev.status.type.state) || "pre"; // "pre" | "in" | "post"
-                const shortDetail = (ev.status && ev.status.type && ev.status.type.shortDetail) || "";
-
+                const state = (ev.status && ev.status.type && ev.status.type.state) || "pre";
                 const key = `${awayCode} @ ${homeCode}`;
                 ESPN_SCORE_CACHE.gamesByMatchup[key] = {
                     league: ep.league,
@@ -1263,12 +1335,11 @@ async function syncEspnLiveScores() {
                     homeScore,
                     awayScore,
                     state,
-                    shortDetail,
                     scoreStr: `${awayCode} ${awayScore} - ${homeCode} ${homeScore}`
                 };
             });
         } catch (e) {
-            // Silent fallback if offline
+            // Silent fallback
         }
     }
 
@@ -1305,13 +1376,12 @@ function renderHistoricalLedger() {
     const container = document.getElementById("ledger-container");
     if (!container) return;
 
-    // Trigger non-blocking background ESPN scoreboard sync
     if (Date.now() - ESPN_SCORE_CACHE.lastFetchMs >= 60000) {
         syncEspnLiveScores();
     }
 
     const ledgerObj = (AppState.rawPayload && AppState.rawPayload.historical_ledger) || {};
-    const entriesMap = ledgerObj.entries || {};
+    const entriesMap = Object.assign({}, PERMANENT_LEDGER_ARCHIVE, ledgerObj.entries || {});
     const showBallsDeep = (AppState.activeMode === "balls_deep" || AppState.activeMode === "davinci");
 
     const renderGradeBadge = (res) => {
@@ -1321,13 +1391,13 @@ function renderHistoricalLedger() {
         return `<span class="badge-pass" style="color:var(--accent-cyan);border-color:rgba(6,182,212,0.4);font-size:11px;">⏳ LOCKED / PENDING</span>`;
     };
 
-    // Dynamic filtered summary counters (strictly NFL + Top-25 Ranked NCAA)
     const buckets = {
         flagship_5pack: { hits: 0, total: 0 },
         menage_a_trois: { hits: 0, total: 0 },
         overall_smash:  { hits: 0, total: 0 },
         spread_smash:   { hits: 0, total: 0 },
         total_smash:    { hits: 0, total: 0 },
+        too_close:      { hits: 0, total: 0 },
         pass_audit:     { hits: 0, total: 0 },
         tip_all:        { hits: 0, total: 0 },
         balls_deep_all: { hits: 0, total: 0 }
@@ -1339,11 +1409,96 @@ function renderHistoricalLedger() {
         if (res === "HIT") buckets[bucketKey].hits += 1;
     };
 
-    let rowsHTML = "";
+    let archivedRowsHTML = "";
+    let upcomingRowsHTML = "";
     const renderedGameIds = new Set();
 
-    // 1. Render active/upcoming games (and auto-grade if ESPN shows them IN-PLAY or FINAL)
+    // 1. Render completed/archived games FIRST
+    Object.keys(entriesMap).forEach(archId => {
+        const entry = entriesMap[archId];
+        if (!entry) return;
+
+        const cleanMatchup = cleanLabelCodes(entry.matchup || "");
+        const entryLeague = entry.league || "NFL";
+        if (!isRankedLedgerEntry(cleanMatchup, entryLeague)) return;
+
+        const isStillUpcoming = AppState.processedGames.some(g => g.gameId === archId) && entry.status !== "FINAL";
+        if (isStillUpcoming) return;
+
+        renderedGameIds.add(archId);
+
+        const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[cleanMatchup];
+        const isFinal = entry.status === "FINAL" || (espnMatch && espnMatch.state === "post");
+        const scoreDisplay = entry.final_score || (espnMatch ? espnMatch.scoreStr : "COMPLETED");
+        const statusLabel = isFinal
+            ? `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${scoreDisplay})</span>`
+            : `<span style="color:var(--accent-gold);font-weight:700;">🔒 ARCHIVED SNAPSHOT</span>`;
+
+        const archivedRecords = [
+            { type: "SPREAD", rec: entry.spread_record },
+            { type: "TOTAL (O/U)", rec: entry.total_record }
+        ].filter(x => x.rec);
+
+        archivedRecords.forEach(({ type, rec }) => {
+            const isSpread = type === "SPREAD";
+            const pickLabel = cleanLabelCodes(rec.pick_label || rec.player || cleanMatchup);
+            const vegasLine = rec.vegas_line !== undefined ? rec.vegas_line : (rec.baseLine || 0);
+            const baseOdds = rec.odds !== undefined ? rec.odds : (rec.baseOdds || -110);
+            const tipProj = rec.tip_proj !== undefined ? rec.tip_proj : (rec.tipProjectedMean || vegasLine);
+            const tipWinPct = rec.tip_win_pct !== undefined ? rec.tip_win_pct : (rec.tipModelPct || 50);
+            const tipEvPct = rec.tip_ev_pct !== undefined ? rec.tip_ev_pct : (rec.tipEvPct || 0);
+            const ledgerTier = getTierFromEv(tipEvPct);
+            const tipColor = getTierColor(ledgerTier);
+
+            const bdProj = rec.bd_proj !== undefined ? rec.bd_proj : (rec.bdProjectedMean || tipProj);
+            const bdWinPct = rec.bd_win_pct !== undefined ? rec.bd_win_pct : (rec.bdModelPct || tipWinPct);
+            const bdEvPct = rec.bd_ev_pct !== undefined ? rec.bd_ev_pct : (rec.bdEvPct || tipEvPct);
+            const bdTier = getTierFromEv(bdEvPct);
+            const bdColor = getTierColor(bdTier);
+            const bdAltLabel = rec.bd_alt_label || rec.bdAltLabel || "Alt Escalator";
+            const bdAltEvPct = rec.bd_alt_ev_pct !== undefined ? rec.bd_alt_ev_pct : (rec.bdAltEvPct || 0);
+            const slot = rec.flagship_slot || rec.flagshipSlot || "";
+
+            let gradedTip = rec.result_tip || rec.result || "PENDING";
+            let gradedBd = rec.result_bd || gradedTip;
+
+            if (gradedTip === "HIT" || gradedTip === "MISS") {
+                tallyGrade("tip_all", gradedTip);
+                tallyGrade("balls_deep_all", gradedBd);
+                if (slot) {
+                    tallyGrade("flagship_5pack", gradedTip);
+                    if (slot.includes("MÉNAGE")) tallyGrade("menage_a_trois", gradedTip);
+                }
+                if (ledgerTier === "SMASH") {
+                    tallyGrade("overall_smash", gradedTip);
+                    tallyGrade(isSpread ? "spread_smash" : "total_smash", gradedTip);
+                } else if (ledgerTier === "TOO_CLOSE") {
+                    tallyGrade("too_close", gradedTip);
+                } else {
+                    tallyGrade("pass_audit", gradedTip);
+                }
+            }
+
+            const fmtTipProj = (isSpread && Number(tipProj) > 0) ? `+${tipProj}` : `${tipProj}`;
+            const fmtBdProj = (isSpread && Number(bdProj) > 0) ? `+${bdProj}` : `${bdProj}`;
+
+            archivedRowsHTML += `
+                <tr>
+                    <td><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+                    <td>${type} ${slot ? `<br><span class="badge-menage">${slot}</span>` : ""}</td>
+                    <td><strong>${pickLabel}</strong> ${renderTierBadgeHTML(ledgerTier)}</td>
+                    <td>${vegasLine} (${baseOdds > 0 ? '+' + baseOdds : baseOdds})</td>
+                    <td style="color:${tipColor};">Proj: <strong>${fmtTipProj}</strong> (${tipWinPct}% | ${tipEvPct > 0 ? '+' : ''}${tipEvPct}% EV)</td>
+                    <td>${showBallsDeep ? `<span style="color:${bdColor};">Proj: <strong>${fmtBdProj}</strong> (${bdWinPct}% | ${bdEvPct > 0 ? '+' : ''}${bdEvPct}% EV)<br><small style="color:var(--accent-gold);">${bdAltLabel} (${bdAltEvPct > 0 ? '+' : ''}${bdAltEvPct}% EV)</small></span>` : renderLockCellHTML()}</td>
+                    <td>${renderGradeBadge(gradedTip)}</td>
+                </tr>
+            `;
+        });
+    });
+
+    // 2. Render active/upcoming slate games
     AppState.processedGames.forEach(g => {
+        if (renderedGameIds.has(g.gameId)) return;
         if (!isRankedLedgerEntry(g.matchup, g.league)) return;
         renderedGameIds.add(g.gameId);
 
@@ -1370,9 +1525,12 @@ function renderHistoricalLedger() {
 
         topPicks.forEach(({ p, savedRec }) => {
             const isSpread = p.marketType === "spread";
-            const isSmash = p.evPct >= SMASH_EV_CUTOFF;
             const fmtTipProj = (isSpread && Number(p.tipProjectedMean) > 0) ? `+${p.tipProjectedMean}` : `${p.tipProjectedMean}`;
             const fmtBdProj = (isSpread && Number(p.bdProjectedMean) > 0) ? `+${p.bdProjectedMean}` : `${p.bdProjectedMean}`;
+            const ledgerTier = getTierFromEv(p.tipEvPct);
+            const tipColor = getTierColor(ledgerTier);
+            const bdTier = getTierFromEv(p.bdEvPct);
+            const bdColor = getTierColor(bdTier);
 
             let gradedTip = (savedRec && savedRec.result_tip) ? savedRec.result_tip : "PENDING";
             let gradedBd = (savedRec && savedRec.result_bd) ? savedRec.result_bd : gradedTip;
@@ -1393,98 +1551,24 @@ function renderHistoricalLedger() {
                     tallyGrade("flagship_5pack", gradedTip);
                     if (p.flagshipSlot.includes("MÉNAGE")) tallyGrade("menage_a_trois", gradedTip);
                 }
-                if (p.tipBadge === "SMASH") {
+                if (ledgerTier === "SMASH") {
                     tallyGrade("overall_smash", gradedTip);
                     tallyGrade(isSpread ? "spread_smash" : "total_smash", gradedTip);
+                } else if (ledgerTier === "TOO_CLOSE") {
+                    tallyGrade("too_close", gradedTip);
                 } else {
                     tallyGrade("pass_audit", gradedTip);
                 }
             }
 
-            rowsHTML += `
+            upcomingRowsHTML += `
                 <tr>
                     <td><strong>${g.matchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
                     <td>${isSpread ? 'SPREAD' : 'TOTAL (O/U)'} ${p.flagshipSlot ? `<br><span class="badge-menage">${p.flagshipSlot}</span>` : ""}</td>
-                    <td><strong>${p.player}</strong> ${renderTierBadgeHTML(p.tipBadge)}</td>
+                    <td><strong>${p.player}</strong> ${renderTierBadgeHTML(ledgerTier)}</td>
                     <td>${p.baseLine} (${p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds})</td>
-                    <td>Proj: <strong>${fmtTipProj}</strong> (${p.tipModelPct}% | ${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV)</td>
-                    <td>${showBallsDeep ? `<span style="color:${isSmash ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">Proj: <strong>${fmtBdProj}</strong> (${p.bdModelPct}% | ${p.bdEvPct > 0 ? '+' : ''}${p.bdEvPct}% EV)<br><small style="color:var(--accent-gold);">${p.bdAltLabel} (${p.bdAltEvPct > 0 ? '+' : ''}${p.bdAltEvPct}% EV)</small></span>` : renderLockCellHTML()}</td>
-                    <td>${renderGradeBadge(gradedTip)}</td>
-                </tr>
-            `;
-        });
-    });
-
-    // 2. Render completed/archived games from historical_ledger.entries that already dropped off the live odds feed (e.g., Ravens game)
-    Object.keys(entriesMap).forEach(archId => {
-        if (renderedGameIds.has(archId)) return;
-        const entry = entriesMap[archId];
-        if (!entry) return;
-
-        const cleanMatchup = cleanLabelCodes(entry.matchup || "");
-        const entryLeague = entry.league || "NFL";
-        // Strictly filter out unranked NCAA games from the archive
-        if (!isRankedLedgerEntry(cleanMatchup, entryLeague)) return;
-
-        const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[cleanMatchup];
-        const isFinal = entry.status === "FINAL" || (espnMatch && espnMatch.state === "post");
-        const scoreDisplay = entry.final_score || (espnMatch ? espnMatch.scoreStr : "COMPLETED");
-        const statusLabel = isFinal
-            ? `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${scoreDisplay})</span>`
-            : `<span style="color:var(--accent-gold);font-weight:700;">🔒 ARCHIVED SNAPSHOT</span>`;
-
-        const archivedRecords = [
-            { type: "SPREAD", rec: entry.spread_record },
-            { type: "TOTAL (O/U)", rec: entry.total_record }
-        ].filter(x => x.rec);
-
-        archivedRecords.forEach(({ type, rec }) => {
-            const isSpread = type === "SPREAD";
-            const pickLabel = cleanLabelCodes(rec.pick_label || rec.player || cleanMatchup);
-            const vegasLine = rec.vegas_line !== undefined ? rec.vegas_line : (rec.baseLine || 0);
-            const baseOdds = rec.odds !== undefined ? rec.odds : (rec.baseOdds || -110);
-            const tipProj = rec.tip_proj !== undefined ? rec.tip_proj : (rec.tipProjectedMean || vegasLine);
-            const tipWinPct = rec.tip_win_pct !== undefined ? rec.tip_win_pct : (rec.tipModelPct || 50);
-            const tipEvPct = rec.tip_ev_pct !== undefined ? rec.tip_ev_pct : (rec.tipEvPct || 0);
-            const tipBadge = rec.tip_badge || (Number(tipEvPct) >= SMASH_EV_CUTOFF ? "SMASH" : "PASS");
-
-            const bdProj = rec.bd_proj !== undefined ? rec.bd_proj : (rec.bdProjectedMean || tipProj);
-            const bdWinPct = rec.bd_win_pct !== undefined ? rec.bd_win_pct : (rec.bdModelPct || tipWinPct);
-            const bdEvPct = rec.bd_ev_pct !== undefined ? rec.bd_ev_pct : (rec.bdEvPct || tipEvPct);
-            const bdAltLabel = rec.bd_alt_label || rec.bdAltLabel || "Alt Escalator";
-            const bdAltEvPct = rec.bd_alt_ev_pct !== undefined ? rec.bd_alt_ev_pct : (rec.bdAltEvPct || 0);
-            const slot = rec.flagship_slot || rec.flagshipSlot || "";
-
-            let gradedTip = rec.result_tip || rec.result || "PENDING";
-            let gradedBd = rec.result_bd || gradedTip;
-
-            if (gradedTip === "HIT" || gradedTip === "MISS") {
-                tallyGrade("tip_all", gradedTip);
-                tallyGrade("balls_deep_all", gradedBd);
-                if (slot) {
-                    tallyGrade("flagship_5pack", gradedTip);
-                    if (slot.includes("MÉNAGE")) tallyGrade("menage_a_trois", gradedTip);
-                }
-                if (tipBadge === "SMASH") {
-                    tallyGrade("overall_smash", gradedTip);
-                    tallyGrade(isSpread ? "spread_smash" : "total_smash", gradedTip);
-                } else {
-                    tallyGrade("pass_audit", gradedTip);
-                }
-            }
-
-            const fmtTipProj = (isSpread && Number(tipProj) > 0) ? `+${tipProj}` : `${tipProj}`;
-            const fmtBdProj = (isSpread && Number(bdProj) > 0) ? `+${bdProj}` : `${bdProj}`;
-            const isSmash = Number(bdEvPct) >= SMASH_EV_CUTOFF;
-
-            rowsHTML += `
-                <tr>
-                    <td><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
-                    <td>${type} ${slot ? `<br><span class="badge-menage">${slot}</span>` : ""}</td>
-                    <td><strong>${pickLabel}</strong> ${renderTierBadgeHTML(tipBadge)}</td>
-                    <td>${vegasLine} (${baseOdds > 0 ? '+' + baseOdds : baseOdds})</td>
-                    <td>Proj: <strong>${fmtTipProj}</strong> (${tipWinPct}% | ${tipEvPct > 0 ? '+' : ''}${tipEvPct}% EV)</td>
-                    <td>${showBallsDeep ? `<span style="color:${isSmash ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">Proj: <strong>${fmtBdProj}</strong> (${bdWinPct}% | ${bdEvPct > 0 ? '+' : ''}${bdEvPct}% EV)<br><small style="color:var(--accent-gold);">${bdAltLabel} (${bdAltEvPct > 0 ? '+' : ''}${bdAltEvPct}% EV)</small></span>` : renderLockCellHTML()}</td>
+                    <td style="color:${tipColor};">Proj: <strong>${fmtTipProj}</strong> (${p.tipModelPct}% | ${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV)</td>
+                    <td>${showBallsDeep ? `<span style="color:${bdColor};">Proj: <strong>${fmtBdProj}</strong> (${p.bdModelPct}% | ${p.bdEvPct > 0 ? '+' : ''}${p.bdEvPct}% EV)<br><small style="color:var(--accent-gold);">${p.bdAltLabel} (${p.bdAltEvPct > 0 ? '+' : ''}${p.bdAltEvPct}% EV)</small></span>` : renderLockCellHTML()}</td>
                     <td>${renderGradeBadge(gradedTip)}</td>
                 </tr>
             `;
@@ -1499,11 +1583,11 @@ function renderHistoricalLedger() {
     };
 
     container.innerHTML = `
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-bottom: 20px; font-family: var(--font-mono);">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 20px; font-family: var(--font-mono);">
             <div style="background: var(--bg-elevated); border: 1px solid rgba(245, 158, 11, 0.5); border-radius: 8px; padding: 14px;">
                 <div style="font-size: 11px; color: var(--accent-gold); font-weight: 800;">👑 FLAGSHIP 5-PACK &amp; MÉNAGE À TROIS</div>
                 <div style="font-size: 18px; font-weight: 800; margin: 6px 0;">5-Pack: ${fmtBucket("flagship_5pack")}</div>
-                <div style="font-size: 12px; color: var(--text-secondary);">Ménage à Trois (Top 3 Spreads): <strong>${fmtBucket("menage_a_trois")}</strong></div>
+                <div style="font-size: 12px; color: var(--text-secondary);">Ménage à Trois: <strong>${fmtBucket("menage_a_trois")}</strong></div>
             </div>
 
             <div style="background: var(--bg-elevated); border: 1px solid rgba(16, 185, 129, 0.45); border-radius: 8px; padding: 14px;">
@@ -1514,10 +1598,16 @@ function renderHistoricalLedger() {
                 </div>
             </div>
 
+            <div style="background: var(--bg-elevated); border: 1px solid rgba(148, 163, 184, 0.45); border-radius: 8px; padding: 14px;">
+                <div style="font-size: 11px; color: #94a3b8; font-weight: 800;">⚖️ TOO CLOSE TO CALL (-9.9% to +9.9% EV)</div>
+                <div style="font-size: 18px; font-weight: 800; margin: 6px 0; color: var(--text-primary);">${fmtBucket("too_close")}</div>
+                <div style="font-size: 11px; color: var(--text-muted);">Coin-flip zone inside the &plusmn;10% EV buffer</div>
+            </div>
+
             <div style="background: var(--bg-elevated); border: 1px solid rgba(239, 68, 68, 0.45); border-radius: 8px; padding: 14px;">
-                <div style="font-size: 11px; color: var(--accent-danger); font-weight: 800;">🛡️ PASS AUDIT (&lt;+10.0% EV LEANS)</div>
+                <div style="font-size: 11px; color: var(--accent-danger); font-weight: 800;">🛡️ PASS AUDIT (&le;-10.0% EV NO-BET)</div>
                 <div style="font-size: 18px; font-weight: 800; margin: 6px 0; color: var(--text-secondary);">${fmtBucket("pass_audit")}</div>
-                <div style="font-size: 11px; color: var(--text-muted);">Tracks lower-edge games we passed on</div>
+                <div style="font-size: 11px; color: var(--text-muted);">Definitive trap lines (&le;-10% EV) avoided</div>
             </div>
 
             <div style="background: var(--bg-elevated); border: 1px solid rgba(6, 182, 212, 0.45); border-radius: 8px; padding: 14px;">
@@ -1544,7 +1634,8 @@ function renderHistoricalLedger() {
                     </tr>
                 </thead>
                 <tbody>
-                    ${rowsHTML}
+                    ${archivedRowsHTML}
+                    ${upcomingRowsHTML}
                 </tbody>
             </table>
         </div>
