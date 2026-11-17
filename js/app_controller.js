@@ -690,25 +690,35 @@ function renderFlagshipFivePack() {
             ${AppState.flagshipFivePack.map((p, idx) => {
                 const isMenage = p.flagshipSlot.includes("MÉNAGE");
                 const isSpread = p.marketType === "spread";
-                const tipIsSmash = p.tipBadge === "SMASH";
-                const fmtTipProj = (isSpread && Number(p.tipProjectedMean) > 0) ? `+${p.tipProjectedMean}` : `${p.tipProjectedMean}`;
-                const tipEvStr = `${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV`;
+
+                // In "Just the Tip" mode, show the Vegas Favorite side (matching the game cards) so underdog projections aren't misread
+                let displayProp = p;
+                if (AppState.activeMode === "tip" && isSpread && p.baseLine > 0) {
+                    const favSide = AppState.processedProps.find(
+                        ep => ep.gameId === p.gameId && ep.marketType === "spread" && ep.baseLine <= 0
+                    );
+                    if (favSide) displayProp = favSide;
+                }
+
+                const tipIsSmash = displayProp.tipBadge === "SMASH";
+                const fmtTipProj = (isSpread && Number(displayProp.tipProjectedMean) > 0)
+                    ? `+${displayProp.tipProjectedMean}`
+                    : `${displayProp.tipProjectedMean}`;
+                const tipEvStr = `${displayProp.tipEvPct > 0 ? '+' : ''}${displayProp.tipEvPct}% EV`;
 
                 return `
                     <div style="padding: 10px 0; ${idx < AppState.flagshipFivePack.length - 1 ? 'border-bottom: 1px solid #1e293b;' : ''}">
-                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px;">
                             <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                                 <span class="${isMenage ? 'badge-menage' : 'badge-flex'}">${p.flagshipSlot}</span>
-                                <strong style="font-size: 13px; color: var(--text-primary);">${p.player}</strong>
+                                <strong style="font-size: 13px; color: var(--text-primary);">${displayProp.player}</strong>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 12px;">
-                                <span style="color: ${tipIsSmash ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">
-                                    Proj: <strong>${fmtTipProj}</strong> | Win: <strong>${p.tipModelPct}%</strong> (${tipEvStr})
-                                </span>
-                                ${renderTierBadgeHTML(p.tipBadge)}
-                            </div>
+                            ${renderTierBadgeHTML(displayProp.tipBadge)}
                         </div>
-                        ${buildBallsDeepBoxHTML(p, isSpread)}
+                        <div style="font-family: var(--font-mono); font-size: 12px; color: ${tipIsSmash ? 'var(--accent-emerald)' : 'var(--accent-danger)'};">
+                            Proj: <strong>${fmtTipProj}</strong> | Win: <strong>${displayProp.tipModelPct}%</strong> (${tipEvStr})
+                        </div>
+                        ${buildBallsDeepBoxHTML(displayProp, isSpread)}
                     </div>
                 `;
             }).join("")}
