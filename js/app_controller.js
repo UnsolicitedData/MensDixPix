@@ -1,10 +1,8 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — PHASE 7: MASTER UI & COMBINATORICS CONTROLLER
- * - Supports "Just the Tip", "Balls Deep", and "DaVinci" modes.
- * - Renders Translucent Locked "You gotta pay to go balls deep..." boxes in Tip mode,
- *   and unlocks side-by-side comparison in Balls Deep & DaVinci modes.
- * - Computes Flagship 5-Pack (Mandatory Top 3 Spreads "Ménage à Trois" + 2 Flex Plays).
- * - Powers Sticky Combinatorics Calculator & Automated Historical Ledger.
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v200)
+ * - Pure EPA Baseline (No QB Delta double-counting)
+ * - Objective SMASH threshold >= +10.0% EV (~57.62% Win Prob at -110)
+ * - Centered single-card Flagship 5-Pack sub-banner & embedded mobile-friendly Combinatorics calculator
  */
 
 const AppState = {
@@ -12,15 +10,8 @@ const AppState = {
     lastDataHash: "",
     activeMode: "tip",        // "tip" | "balls_deep" | "davinci"
     intensitySlider: 0.0,     // -1.618 to +1.618
-    filters: {
-        nfl: true,
-        ncaa: true
-    },
-    comboFilters: {
-        team: "ALL",
-        market: "ALL",        // "ALL" | "spread" | "total"
-        tier: "ALL"           // "ALL" | "SMASH"
-    },
+    filters: { nfl: true, ncaa: true },
+    comboFilters: { team: "ALL", market: "ALL", tier: "ALL" },
     selectedParlayLegs: new Set(),
     processedGames: [],
     processedProps: [],
@@ -29,11 +20,8 @@ const AppState = {
 
 const openCardMemory = new Set();
 const MODEL_TOTAL_INTERCEPT = 42.986;
-const SMASH_WIN_PCT_CUTOFF = 54.5; // 54.5% Win Prob (+4.05% EV at -110)
+const SMASH_EV_CUTOFF = 10.0; // +10.0% EV threshold for SMASH
 
-// ==========================================
-// 1. INITIALIZATION & GLOBAL MODE UNLOCKER
-// ==========================================
 document.addEventListener("DOMContentLoaded", () => {
     bindUIControls();
     pollDataFeed();
@@ -103,9 +91,7 @@ function bindUIControls() {
         if (e.target && e.target.id === "davinci-intensity-slider") {
             const readout = document.getElementById("davinci-readout");
             const val = parseFloat(e.target.value) || 0.0;
-            if (readout) {
-                readout.textContent = val > 0 ? "+" + val : val;
-            }
+            if (readout) readout.textContent = val > 0 ? "+" + val : val;
             AppState.intensitySlider = val;
             recalculateAndRenderAll();
         }
@@ -113,7 +99,6 @@ function bindUIControls() {
 
     const nflCheck = document.getElementById("filter-nfl");
     const ncaaCheck = document.getElementById("filter-ncaa");
-
     if (nflCheck) {
         nflCheck.addEventListener("change", (e) => {
             AppState.filters.nfl = e.target.checked;
@@ -128,14 +113,10 @@ function bindUIControls() {
     }
 }
 
-// ==========================================
-// 2. LIVE 5-SECOND POLLING LOOP
-// ==========================================
 async function pollDataFeed() {
     try {
         const response = await fetch(`./data.json?t=${Date.now()}`, { cache: "no-store" });
         if (!response.ok) return;
-
         const textData = await response.text();
         if (textData !== AppState.lastDataHash) {
             AppState.lastDataHash = textData;
@@ -147,9 +128,6 @@ async function pollDataFeed() {
     }
 }
 
-// ==========================================
-// 3. MASTER 12-MODULE CALCULATION PIPELINE
-// ==========================================
 function recalculateAndRenderAll() {
     if (!AppState.rawPayload || !AppState.rawPayload.games) return;
 
@@ -163,7 +141,6 @@ function recalculateAndRenderAll() {
 
     AppState.rawPayload.games.forEach(game => {
         const gameLeague = game.league || defaultLeague;
-
         if (gameLeague === "NFL" && !AppState.filters.nfl) return;
         if (gameLeague === "NCAA" && !AppState.filters.ncaa) return;
 
@@ -175,7 +152,6 @@ function recalculateAndRenderAll() {
         const m7 = calcBarometricBallistics(envPayload);
         const m8 = calcCircadianStrain(circPayload, game.kickoff_local_hour);
 
-        // Compute both Balls Deep baseline and Active Mode (Tip / Balls Deep / DaVinci)
         const m11Bd = calcBiophysicalMassLoad(envPayload, homeTel, 95.0, 0.62, "balls_deep", 0.0);
         const m12Bd = calcTurnoverEPAMatrix({ home: homeTel, away: awayTel }, gameLeague, "balls_deep", 0.0);
         const psiBd = calcCoupledInteractionPsi(m11Bd.phiBioScore, m12Bd.netTurnoverEPA, 0.0);
@@ -190,12 +166,12 @@ function recalculateAndRenderAll() {
         const m9Bd = calcFullGameFairMargin(game, m8.phiCircadianPenalty, psiBd, "balls_deep");
         const m9 = calcFullGameFairMargin(game, m8.phiCircadianPenalty, psi11_12, mode);
 
+        // Pure EPA + Red-Zone DVOA + Wind Penalty (No QB Delta double-counting)
         const epaTotalPts = ((homeTel.net_epa_per_play || 0) + (awayTel.net_epa_per_play || 0)) * playScaler;
-        const qbTotalPts = (homeTel.qb_replacement_delta || 0) + (awayTel.qb_replacement_delta || 0);
         const rzTotalPts = ((homeTel.opp_rz_dvoa || 0) + (awayTel.opp_rz_dvoa || 0)) * 10.0;
         const windMph = envPayload.is_dome ? 0 : (envPayload.wind_mph || 0);
         const windPenalty = Math.max(0, (windMph - 10.0) * 0.25);
-        const baseTelemetryTotal = Number((MODEL_TOTAL_INTERCEPT + epaTotalPts + qbTotalPts + rzTotalPts - windPenalty).toFixed(1));
+        const baseTelemetryTotal = Number((MODEL_TOTAL_INTERCEPT + epaTotalPts + rzTotalPts - windPenalty).toFixed(1));
 
         const gameRecord = {
             gameId: game.game_id,
@@ -206,17 +182,9 @@ function recalculateAndRenderAll() {
             commenceTime: game.commence_time,
             elevationM: envPayload.elevation_m || 0,
             tempK: envPayload.temp_kelvin || 288.15,
-            windMph: windMph,
-            m7,
-            m8,
-            m9Base,
-            m9Bd,
-            m9,
-            m11,
-            m12,
-            psiBd,
-            psi11_12,
-            baseTelemetryTotal
+            windMph,
+            m7, m8, m9Base, m9Bd, m9, m11, m12,
+            psiBd, psi11_12, baseTelemetryTotal
         };
 
         AppState.processedGames.push(gameRecord);
@@ -229,7 +197,6 @@ function recalculateAndRenderAll() {
                 const vegasLine = (prop.base_line !== undefined && prop.base_line !== null) ? Number(prop.base_line) : 0;
                 const isHomeSpread = prop.market_type === "spread" && prop.player.startsWith(`${game.home_team} `);
 
-                // 1. Locked ("Just the Tip") Baseline Projection & Probability
                 let baseProjectedLine = vegasLine;
                 let tipModelProb = 0.50;
                 let bdProjectedLine = vegasLine;
@@ -237,21 +204,17 @@ function recalculateAndRenderAll() {
 
                 if (prop.market_type === "spread") {
                     baseProjectedLine = isHomeSpread ? m9Base.fairHomeSpread : Number((-m9Base.fairHomeSpread).toFixed(2));
-                    const tipGap = vegasLine - baseProjectedLine;
-                    tipModelProb = calcPointGapWinProb(tipGap);
+                    tipModelProb = calcPointGapWinProb(vegasLine - baseProjectedLine);
 
                     bdProjectedLine = isHomeSpread ? m9Bd.fairHomeSpread : Number((-m9Bd.fairHomeSpread).toFixed(2));
-                    const bdGap = vegasLine - bdProjectedLine;
-                    bdModelProb = calcPointGapWinProb(bdGap);
+                    bdModelProb = calcPointGapWinProb(vegasLine - bdProjectedLine);
                 } else if (prop.market_type === "total") {
                     baseProjectedLine = baseTelemetryTotal;
-                    const tipTotalGap = Math.abs(baseProjectedLine - vegasLine);
-                    tipModelProb = calcPointGapWinProb(tipTotalGap);
+                    tipModelProb = calcPointGapWinProb(Math.abs(baseProjectedLine - vegasLine));
 
                     const bdShift = (psiBd * 0.45) + (m7.passGameModifierYards * 0.08);
                     bdProjectedLine = Number((baseProjectedLine + bdShift).toFixed(1));
-                    const bdTotalGap = Math.abs(bdProjectedLine - vegasLine);
-                    bdModelProb = calcPointGapWinProb(bdTotalGap);
+                    bdModelProb = calcPointGapWinProb(Math.abs(bdProjectedLine - vegasLine));
                 } else {
                     baseProjectedLine = prop.projected_mean_mu || vegasLine || 50;
                     const gammaRes = calcGammaSurvivalProb(baseProjectedLine, prop.projected_variance_sigma2 || 225, vegasLine || 45.5);
@@ -260,7 +223,6 @@ function recalculateAndRenderAll() {
                     bdProjectedLine = Number((baseProjectedLine + ((bdModelProb - tipModelProb) * 12.0)).toFixed(1));
                 }
 
-                // 2. Active Mode (Just the Tip / Balls Deep / DaVinci) Projection
                 let finalCalculatedLine = baseProjectedLine;
                 let activeModelProb = tipModelProb;
                 let displayLabel = prop.player;
@@ -284,8 +246,7 @@ function recalculateAndRenderAll() {
                         activeModelProb = calcPointGapWinProb(Math.abs(finalCalculatedLine - vegasLine));
                     }
                     const isUnderPick = finalCalculatedLine < vegasLine;
-                    const dirTag = isUnderPick ? "U" : "O";
-                    displayLabel = `${game.away_team}@${game.home_team} Total (${dirTag} ${vegasLine})`;
+                    displayLabel = `${game.away_team}@${game.home_team} Total (${isUnderPick ? "U" : "O"} ${vegasLine})`;
                 } else {
                     if (mode === "balls_deep") {
                         finalCalculatedLine = bdProjectedLine;
@@ -301,7 +262,8 @@ function recalculateAndRenderAll() {
                 const m2Active = calcExpectedValueAndKelly(activeModelProb, prop.base_odds_over || -110);
 
                 const activeWinPct = Number((activeModelProb * 100).toFixed(2));
-                const tierBadge = activeWinPct >= SMASH_WIN_PCT_CUTOFF ? "SMASH" : "PASS";
+                const activeEvPct = Number(m2Active.evPercentage.toFixed(2));
+                const tierBadge = activeEvPct >= SMASH_EV_CUTOFF ? "SMASH" : "PASS";
 
                 AppState.processedProps.push({
                     propKey,
@@ -325,18 +287,18 @@ function recalculateAndRenderAll() {
                     bdEvPct: Number(m2Bd.evPercentage.toFixed(2)),
                     activeModelPct: activeWinPct,
                     activeModelProbRaw: activeModelProb,
-                    evPct: Number(m2Active.evPercentage.toFixed(2)),
+                    evPct: activeEvPct,
                     quarterKellyPct: Number(m2Active.quarterKellyStakePct.toFixed(2)),
-                    tierBadge: tierBadge,
+                    tierBadge,
                     flagshipSlot: prop.flagship_slot || "",
-                    psiBd: psiBd,
+                    psiBd,
                     psiActive: psi11_12
                 });
             });
         }
     });
 
-    // 3. Dynamically Tag Flagship 5-Pack: Mandatory Top 3 Spreads ("Ménage à Trois") + Top 2 Flex
+    // Tag Flagship 5-Pack: Mandatory Top 3 Spreads ("Ménage à Trois") + Top 2 Flex
     AppState.processedProps.forEach(p => { p.flagshipSlot = ""; });
     const bestSpreadPerGame = [];
     const remainingPool = [];
@@ -344,25 +306,21 @@ function recalculateAndRenderAll() {
     AppState.processedGames.forEach(g => {
         const gameSpreads = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "spread");
         if (gameSpreads.length > 0) {
-            gameSpreads.sort((a, b) => b.activeModelPct - a.activeModelPct);
+            gameSpreads.sort((a, b) => b.evPct - a.evPct);
             bestSpreadPerGame.push(gameSpreads[0]);
         }
         const gameTotals = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType !== "spread");
         remainingPool.push(...gameTotals);
     });
 
-    bestSpreadPerGame.sort((a, b) => b.activeModelPct - a.activeModelPct);
+    bestSpreadPerGame.sort((a, b) => b.evPct - a.evPct);
     const menageTop3 = bestSpreadPerGame.slice(0, 3);
-    menageTop3.forEach((p, idx) => {
-        p.flagshipSlot = `MÉNAGE À TROIS #${idx + 1}`;
-    });
+    menageTop3.forEach((p, idx) => { p.flagshipSlot = `MÉNAGE À TROIS #${idx + 1}`; });
 
     const leftoverSpreads = bestSpreadPerGame.slice(3);
-    const flexCandidates = [...leftoverSpreads, ...remainingPool].sort((a, b) => b.activeModelPct - a.activeModelPct);
+    const flexCandidates = [...leftoverSpreads, ...remainingPool].sort((a, b) => b.evPct - a.evPct);
     const flexTop2 = flexCandidates.slice(0, 2);
-    flexTop2.forEach((p, idx) => {
-        p.flagshipSlot = `5-PACK FLEX #${idx + 4}`;
-    });
+    flexTop2.forEach((p, idx) => { p.flagshipSlot = `5-PACK FLEX #${idx + 4}`; });
 
     AppState.flagshipFivePack = [...menageTop3, ...flexTop2];
 
@@ -375,9 +333,6 @@ function recalculateAndRenderAll() {
     renderHistoricalLedger();
 }
 
-// ==========================================
-// 4. HELPER: TRANSLUCENT vs UNLOCKED BALLS DEEP BOX
-// ==========================================
 function buildBallsDeepBoxHTML(engineProp, isSpread) {
     const bdProj = engineProp.bdProjectedMean;
     const fmtBdProj = (isSpread && Number(bdProj) > 0) ? `+${bdProj}` : `${bdProj}`;
@@ -407,9 +362,6 @@ function buildBallsDeepBoxHTML(engineProp, isSpread) {
     }
 }
 
-// ==========================================
-// 5. TAB 1: FLAGSHIP 5-PACK & MASTER PICK BOARD
-// ==========================================
 function renderFlagshipFivePack() {
     const container = document.getElementById("flagship-five-pack-container");
     if (!container) return;
@@ -419,40 +371,53 @@ function renderFlagshipFivePack() {
         return;
     }
 
+    container.style.maxWidth = "820px";
+    container.style.margin = "0 auto 24px auto";
+    container.style.border = "1px solid rgba(245, 158, 11, 0.55)";
+    container.style.borderRadius = "8px";
+    container.style.backgroundColor = "#111827";
+    container.style.boxShadow = "0 8px 24px rgba(0, 0, 0, 0.5)";
+
+    const bannerKey = "FLAGSHIP_5_PACK_DRAWER";
+    const isExpanded = openCardMemory.has(bannerKey);
+
     const modeTitle = AppState.activeMode === "tip"
         ? "Just the Tip Baseline"
         : (AppState.activeMode === "balls_deep" ? "Balls Deep Coupled Mode" : "DaVinci Override Mode");
 
     container.innerHTML = `
-        <div class="panel-header" style="background: linear-gradient(90deg, rgba(245, 158, 11, 0.14), rgba(6, 182, 212, 0.08));">
-            <div>
-                <h2 class="panel-title" style="color: var(--accent-gold); font-size: 16px;">
-                    👑 THE DIXPIX FLAGSHIP 5-PACK // FEATURING "THE MÉNAGE À TROIS" (TOP 3 SPREADS)
-                </h2>
-                <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 2px;">
-                    Mandatory 3 Spread Anchors + Top 2 Board Flex Edges // Active Engine: <strong style="color: var(--accent-cyan);">${modeTitle}</strong>
-                </div>
+        <div id="flagship-banner-toggle" style="cursor: pointer; padding: 14px 20px; text-align: center; background: linear-gradient(90deg, rgba(245, 158, 11, 0.16), rgba(6, 182, 212, 0.10), rgba(245, 158, 11, 0.16)); user-select: none;">
+            <div style="font-size: 15px; font-weight: 800; color: var(--accent-gold); letter-spacing: 0.04em;">
+                👑 THE DIXPIX FLAGSHIP 5-PACK // FEATURING "THE MÉNAGE À TROIS"
+            </div>
+            <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
+                Active Engine: <strong style="color: var(--accent-cyan);">${modeTitle}</strong> &bull; 
+                <span style="color: var(--text-primary); text-decoration: underline;">
+                    ${isExpanded ? 'Click to collapse 5-Pack ▲' : 'Click to unlock &amp; expand all 5 Flagship Plays ▼'}
+                </span>
             </div>
         </div>
-        <div style="padding: 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px;">
-            ${AppState.flagshipFivePack.map(p => {
+
+        <div id="flagship-banner-drawer" style="display: ${isExpanded ? 'block' : 'none'}; padding: 14px 18px; border-top: 1px solid var(--border-subtle); background: var(--bg-surface);">
+            ${AppState.flagshipFivePack.map((p, idx) => {
                 const isMenage = p.flagshipSlot.includes("MÉNAGE");
                 const isSpread = p.marketType === "spread";
                 const fmtProj = (isSpread && Number(p.projectedMean) > 0) ? `+${p.projectedMean}` : `${p.projectedMean}`;
                 const evStr = `${p.evPct > 0 ? '+' : ''}${p.evPct}% EV`;
 
                 return `
-                    <div style="background: var(--bg-elevated); border: 1px solid ${isMenage ? 'rgba(245, 158, 11, 0.5)' : 'rgba(6, 182, 212, 0.45)'}; border-radius: 8px; padding: 14px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                            <span class="${isMenage ? 'badge-menage' : 'badge-flex'}">${p.flagshipSlot}</span>
-                            <span class="${p.tierBadge === 'SMASH' ? 'badge-smash' : 'badge-pass'}">${p.tierBadge}</span>
-                        </div>
-                        <div style="font-weight: 700; font-size: 14px; color: var(--text-primary); margin-bottom: 4px;">
-                            ${p.player}
-                        </div>
-                        <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 12px; color: var(--accent-emerald);">
-                            <span>Model Proj: <strong>${fmtProj}</strong></span>
-                            <span>Win: <strong>${p.activeModelPct}%</strong> (${evStr})</span>
+                    <div style="padding: 10px 0; ${idx < AppState.flagshipFivePack.length - 1 ? 'border-bottom: 1px solid #1e293b;' : ''}">
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                <span class="${isMenage ? 'badge-menage' : 'badge-flex'}">${p.flagshipSlot}</span>
+                                <strong style="font-size: 13px; color: var(--text-primary);">${p.player}</strong>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 12px;">
+                                <span style="color: var(--accent-emerald);">
+                                    Proj: <strong>${fmtProj}</strong> | Win: <strong>${p.activeModelPct}%</strong> (${evStr})
+                                </span>
+                                <span class="${p.tierBadge === 'SMASH' ? 'badge-smash' : 'badge-pass'}">${p.tierBadge}</span>
+                            </div>
                         </div>
                         ${buildBallsDeepBoxHTML(p, isSpread)}
                     </div>
@@ -460,6 +425,18 @@ function renderFlagshipFivePack() {
             }).join("")}
         </div>
     `;
+
+    const toggleHeader = document.getElementById("flagship-banner-toggle");
+    const drawer = document.getElementById("flagship-banner-drawer");
+    if (toggleHeader && drawer) {
+        toggleHeader.addEventListener("click", () => {
+            const closing = drawer.style.display === "block";
+            drawer.style.display = closing ? "none" : "block";
+            if (closing) openCardMemory.delete(bannerKey);
+            else openCardMemory.add(bannerKey);
+            renderFlagshipFivePack();
+        });
+    }
 }
 
 function render_game_cards(data) {
@@ -475,9 +452,7 @@ function render_game_cards(data) {
 
     games.forEach(game => {
         const cardKey = game.game_id || `${game.away_team}@${game.home_team}`;
-
-        let gameDate = "TBD";
-        let gameTime = "TBD";
+        let gameDate = "TBD", gameTime = "TBD";
         if (game.commence_time) {
             const dt = new Date(game.commence_time);
             gameDate = dt.toLocaleDateString("en-US", { weekday: 'short', month: 'short', day: 'numeric' });
@@ -543,7 +518,7 @@ function render_game_cards(data) {
                     <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.85em;">
                         <span>${slotBadge}<strong>${engineData.player}</strong></span>
                         <span style="display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono);">
-                            <span style="color: ${engineData.activeModelPct >= SMASH_WIN_PCT_CUTOFF ? '#22c55e' : '#cbd5e1'};">
+                            <span style="color: ${engineData.evPct >= SMASH_EV_CUTOFF ? '#22c55e' : '#cbd5e1'};">
                                 Proj: ${displayProj} | Win: ${engineData.activeModelPct}% (${evStr})
                             </span>
                             <span class="${engineData.tierBadge === 'SMASH' ? 'badge-smash' : 'badge-pass'}">${engineData.tierBadge}</span>
@@ -556,24 +531,17 @@ function render_game_cards(data) {
         }
 
         card.appendChild(drawer);
-
         card.addEventListener("click", () => {
             const isClosing = drawer.style.display === "block";
             drawer.style.display = isClosing ? "none" : "block";
-            if (isClosing) {
-                openCardMemory.delete(cardKey);
-            } else {
-                openCardMemory.add(cardKey);
-            }
+            if (isClosing) openCardMemory.delete(cardKey);
+            else openCardMemory.add(cardKey);
         });
 
         container.appendChild(card);
     });
 }
 
-// ==========================================
-// 6. TAB 2: STICKY PARLAY & ROUND ROBIN WORKSTATION
-// ==========================================
 function renderCombinatoricsDeck() {
     const container = document.getElementById("combinatorics-container");
     if (!container) return;
@@ -600,15 +568,14 @@ function renderCombinatoricsDeck() {
     });
 
     container.innerHTML = `
-        <!-- Sticky Parlay & Round Robin Calculator -->
-        <div class="combinatorics-sticky-calc">
+        <div class="combinatorics-embedded-calc">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 10px;">
                 <div>
                     <span style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-cyan); font-size: 14px;">
-                        📌 PINNED PARLAY &amp; ROUND ROBIN CALCULATOR
+                        🧮 PARLAY &amp; ROUND ROBIN CALCULATOR
                     </span>
                     <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-left: 10px;">
-                        Click any pick below to stack legs in real time
+                        Tap any pick below to stack legs
                     </span>
                 </div>
                 <div style="display: flex; gap: 8px; flex-wrap: wrap;">
@@ -664,7 +631,6 @@ function renderCombinatoricsDeck() {
             ` : ""}
         </div>
 
-        <!-- Filter Controls & Interactive Pick Selector Grid -->
         <div class="panel-card">
             <div class="panel-header">
                 <h2 class="panel-title">Interactive Parlay &amp; Round Robin Pick Builder</h2>
@@ -678,7 +644,7 @@ function renderCombinatoricsDeck() {
                     <button class="calc-action-btn" onclick="window.setComboFilter('market', 'spread')" style="${AppState.comboFilters.market === 'spread' ? 'border-color:var(--accent-cyan);color:var(--accent-cyan);' : ''}">Spreads</button>
                     <button class="calc-action-btn" onclick="window.setComboFilter('market', 'total')" style="${AppState.comboFilters.market === 'total' ? 'border-color:var(--accent-cyan);color:var(--accent-cyan);' : ''}">Totals (O/U)</button>
                     <button class="calc-action-btn" onclick="window.setComboFilter('tier', AppState.comboFilters.tier === 'SMASH' ? 'ALL' : 'SMASH')" style="${AppState.comboFilters.tier === 'SMASH' ? 'border-color:var(--accent-emerald);color:var(--accent-emerald);' : ''}">
-                        SMASH Only
+                        SMASH Only (&ge;+10% EV)
                     </button>
                 </div>
             </div>
@@ -716,9 +682,6 @@ function renderCombinatoricsDeck() {
     `;
 }
 
-// ==========================================
-// 7. COMPENDIUM, TELEMETRY (DYNAMIC PSI) & BIOLAB
-// ==========================================
 function renderCompendiumBoard() {
     const tbody = document.getElementById("compendium-board-body");
     if (!tbody || AppState.processedGames.length === 0) return;
@@ -847,26 +810,18 @@ function renderBioWeatherLab() {
     `;
 }
 
-// ==========================================
-// 8. TAB 5: AUTOMATED HISTORICAL LEDGER & SCORECARD
-// ==========================================
 function renderHistoricalLedger() {
     const container = document.getElementById("ledger-container");
     if (!container) return;
 
     const ledgerObj = (AppState.rawPayload && AppState.rawPayload.historical_ledger) || {};
     const summary = ledgerObj.summary || {};
-    const entriesMap = ledgerObj.entries || {};
 
     const fmtBucket = (key) => {
         const b = summary[key];
         if (!b || !b.total) return "0 / 0 (0.0%)";
         return `${b.fraction} (${b.win_pct}%)`;
     };
-
-    // Build rows from saved historical_ledger entries, or live preview from current slate if ledger is awaiting first scrape
-    let rowsHTML = "";
-    const entryKeys = Object.keys(entriesMap);
 
     const renderGradeBadge = (res) => {
         if (res === "HIT") return `<span class="badge-smash" style="font-size:11px;">✅ HIT</span>`;
@@ -875,69 +830,50 @@ function renderHistoricalLedger() {
         return `<span class="badge-pass" style="color:var(--accent-cyan);border-color:rgba(6,182,212,0.4);font-size:11px;">⏳ LOCKED / PENDING</span>`;
     };
 
-    if (entryKeys.length > 0) {
-        entryKeys.forEach(gid => {
-            const e = entriesMap[gid];
-            const statusLabel = e.status === "FINAL"
-                ? `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${e.final_score})</span>`
-                : (e.is_locked ? `<span style="color:var(--accent-gold);font-weight:700;">🔒 IN-PLAY (CLOSING LOCKED)</span>` : `<span style="color:var(--text-secondary);">PRE-KICKOFF SNAPSHOT</span>`);
+    let rowsHTML = "";
+    const entriesMap = ledgerObj.entries || {};
 
-            [
-                { type: "SPREAD", rec: e.spread_record },
-                { type: "TOTAL (O/U)", rec: e.total_record }
-            ].forEach(item => {
-                if (!item.rec) return;
-                const r = item.rec;
-                const bdCell = AppState.activeMode === "tip"
-                    ? `<div class="bd-preview-locked" onclick="window.unlockBallsDeepMode(event)" style="margin:0;padding:4px 8px;">
-                         <span style="color:var(--accent-gold);">🔒 "You gotta pay to go balls deep..."</span>
-                       </div>`
-                    : `<span style="color:var(--accent-emerald);">Proj: <strong>${r.balls_deep_proj}</strong> (${r.balls_deep_win_pct}% | ${r.balls_deep_ev_pct > 0 ? '+' : ''}${r.balls_deep_ev_pct}% EV) [${r.result_balls_deep}]</span>`;
+    AppState.processedGames.forEach(g => {
+        const savedEntry = entriesMap[g.gameId] || {};
+        const statusLabel = savedEntry.status === "FINAL"
+            ? `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${savedEntry.final_score})</span>`
+            : (savedEntry.is_locked ? `<span style="color:var(--accent-gold);font-weight:700;">🔒 IN-PLAY (CLOSING LOCKED)</span>` : `<span style="color:var(--text-secondary);">PRE-KICKOFF SNAPSHOT</span>`);
 
-                rowsHTML += `
-                    <tr>
-                        <td><strong>${e.matchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
-                        <td>${item.type} ${r.flagship_slot ? `<br><span class="badge-menage">${r.flagship_slot}</span>` : ""}</td>
-                        <td><strong>${r.pick_label}</strong> <span class="${r.tier_badge === 'SMASH' ? 'badge-smash' : 'badge-pass'}">${r.tier_badge}</span></td>
-                        <td>${r.vegas_closing_line} (${r.odds > 0 ? '+' + r.odds : r.odds})</td>
-                        <td>Proj: <strong>${r.tip_proj}</strong> (${r.tip_win_pct}% | ${r.tip_ev_pct > 0 ? '+' : ''}${r.tip_ev_pct}% EV)</td>
-                        <td>${bdCell}</td>
-                        <td>${renderGradeBadge(r.result_tip)}</td>
-                    </tr>
-                `;
-            });
+        const gameSpreads = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "spread").sort((a, b) => b.evPct - a.evPct);
+        const gameTotals = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "total");
+        const topPicks = [
+            { p: gameSpreads[0], savedRec: savedEntry.spread_record },
+            { p: gameTotals[0], savedRec: savedEntry.total_record }
+        ].filter(item => item.p);
+
+        topPicks.forEach(({ p, savedRec }) => {
+            const isSpread = p.marketType === "spread";
+            const fmtTipProj = (isSpread && Number(p.tipProjectedMean) > 0) ? `+${p.tipProjectedMean}` : `${p.tipProjectedMean}`;
+            const fmtBdProj = (isSpread && Number(p.bdProjectedMean) > 0) ? `+${p.bdProjectedMean}` : `${p.bdProjectedMean}`;
+
+            const bdCell = AppState.activeMode === "tip"
+                ? `<div class="bd-preview-locked" onclick="window.unlockBallsDeepMode(event)" style="margin:0;padding:4px 8px;">
+                     <span style="color:var(--accent-gold);">🔒 "You gotta pay to go balls deep..."</span>
+                   </div>`
+                : `<span style="color:var(--accent-emerald);">Proj: <strong>${fmtBdProj}</strong> (${p.bdModelPct}% | ${p.bdEvPct > 0 ? '+' : ''}${p.bdEvPct}% EV)</span>`;
+
+            const gradedRes = (savedRec && savedRec.result_tip) ? savedRec.result_tip : "PENDING";
+
+            rowsHTML += `
+                <tr>
+                    <td><strong>${g.matchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+                    <td>${isSpread ? 'SPREAD' : 'TOTAL (O/U)'} ${p.flagshipSlot ? `<br><span class="badge-menage">${p.flagshipSlot}</span>` : ""}</td>
+                    <td><strong>${p.player}</strong> <span class="${p.tierBadge === 'SMASH' ? 'badge-smash' : 'badge-pass'}">${p.tierBadge}</span></td>
+                    <td>${p.baseLine} (${p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds})</td>
+                    <td>Proj: <strong>${fmtTipProj}</strong> (${p.tipModelPct}% | ${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV)</td>
+                    <td>${bdCell}</td>
+                    <td>${renderGradeBadge(gradedRes)}</td>
+                </tr>
+            `;
         });
-    } else {
-        // Immediate live fallback before next cloud scrape writes historical_ledger
-        AppState.processedGames.forEach(g => {
-            const gameSpreads = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "spread").sort((a, b) => b.activeModelPct - a.activeModelPct);
-            const gameTotals = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "total");
-            const topPicks = [gameSpreads[0], gameTotals[0]].filter(Boolean);
-
-            topPicks.forEach(p => {
-                const bdCell = AppState.activeMode === "tip"
-                    ? `<div class="bd-preview-locked" onclick="window.unlockBallsDeepMode(event)" style="margin:0;padding:4px 8px;">
-                         <span style="color:var(--accent-gold);">🔒 "You gotta pay to go balls deep..."</span>
-                       </div>`
-                    : `<span style="color:var(--accent-emerald);">Proj: <strong>${p.bdProjectedMean}</strong> (${p.bdModelPct}% | ${p.bdEvPct > 0 ? '+' : ''}${p.bdEvPct}% EV)</span>`;
-
-                rowsHTML += `
-                    <tr>
-                        <td><strong>${g.matchup}</strong><br><span style="font-size:11px;color:var(--text-secondary);">TRACKING CLOSING LINE</span></td>
-                        <td>${p.marketType.toUpperCase()} ${p.flagshipSlot ? `<br><span class="badge-menage">${p.flagshipSlot}</span>` : ""}</td>
-                        <td><strong>${p.player}</strong> <span class="${p.tierBadge === 'SMASH' ? 'badge-smash' : 'badge-pass'}">${p.tierBadge}</span></td>
-                        <td>${p.baseLine} (${p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds})</td>
-                        <td>Proj: <strong>${p.tipProjectedMean}</strong> (${p.tipModelPct}% | ${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV)</td>
-                        <td>${bdCell}</td>
-                        <td><span class="badge-pass" style="color:var(--accent-cyan);">⏳ AWAITING KICKOFF</span></td>
-                    </tr>
-                `;
-            });
-        });
-    }
+    });
 
     container.innerHTML = `
-        <!-- 4-Card Diagnostic Hit-Rate Scoreboard -->
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-bottom: 20px; font-family: var(--font-mono);">
             <div style="background: var(--bg-elevated); border: 1px solid rgba(245, 158, 11, 0.5); border-radius: 8px; padding: 14px;">
                 <div style="font-size: 11px; color: var(--accent-gold); font-weight: 800;">👑 FLAGSHIP 5-PACK &amp; MÉNAGE À TROIS</div>
@@ -946,7 +882,7 @@ function renderHistoricalLedger() {
             </div>
 
             <div style="background: var(--bg-elevated); border: 1px solid rgba(16, 185, 129, 0.45); border-radius: 8px; padding: 14px;">
-                <div style="font-size: 11px; color: var(--accent-emerald); font-weight: 800;">🔥 OFFICIAL SMASH RECORD (&ge;54.5%)</div>
+                <div style="font-size: 11px; color: var(--accent-emerald); font-weight: 800;">🔥 OFFICIAL SMASH RECORD (&ge;+10.0% EV)</div>
                 <div style="font-size: 18px; font-weight: 800; margin: 6px 0;">Overall: ${fmtBucket("overall_smash")}</div>
                 <div style="font-size: 12px; color: var(--text-secondary);">
                     Spreads: <strong>${fmtBucket("spread_smash")}</strong> | Totals: <strong>${fmtBucket("total_smash")}</strong>
@@ -954,9 +890,9 @@ function renderHistoricalLedger() {
             </div>
 
             <div style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 14px;">
-                <div style="font-size: 11px; color: var(--text-secondary); font-weight: 800;">🛡️ PASS AUDIT (&lt;54.5% LEANS)</div>
+                <div style="font-size: 11px; color: var(--text-secondary); font-weight: 800;">🛡️ PASS AUDIT (&lt;+10.0% EV LEANS)</div>
                 <div style="font-size: 18px; font-weight: 800; margin: 6px 0; color: var(--text-secondary);">${fmtBucket("pass_audit")}</div>
-                <div style="font-size: 11px; color: var(--text-muted);">Tracks low-edge games we passed on</div>
+                <div style="font-size: 11px; color: var(--text-muted);">Tracks lower-edge games we passed on</div>
             </div>
 
             <div style="background: var(--bg-elevated); border: 1px solid rgba(6, 182, 212, 0.45); border-radius: 8px; padding: 14px;">
