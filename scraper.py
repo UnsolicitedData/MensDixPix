@@ -1,8 +1,8 @@
 """
-DIXPIX QUANTITATIVE ENGINE — PHASE 7: FLUID QB DELTAS, ZERO-CREDIT ESPN AUTO-GRADER & LIVE ODDS SCRAPER
+DIXPIX QUANTITATIVE ENGINE — PURE EPA BASELINE & ZERO-CREDIT ESPN AUTO-GRADER (v200)
 - Pulls live spreads & totals from The Odds API (player props disabled to protect 500-credit limit).
-- Pulls live & trailing 3-week NFL scores/records from ESPN's free API (0 tokens used) to compute
-  fluid QB/Offensive rolling form deltas and auto-grade completed games in historical_ledger.
+- Uses Pure EPA + 38.5145 Play Scaler + Pi/Phi HFA (1.9416110252) without QB Delta double-counting.
+- Tags SMASH at >= +10.0% EV and auto-grades completed games via ESPN's free scoreboard API.
 """
 
 import json
@@ -21,7 +21,7 @@ ODDS_API_KEY = os.environ.get("DIXPIX_ODDS_API_KEY", "44660163df1724ea28bfc8022e
 API_KEY = ODDS_API_KEY
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) DixPixQuantEngine/3.0",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) DixPixQuantEngine/3.2",
     "Accept": "application/json"
 }
 
@@ -30,52 +30,45 @@ GOLDEN_PLAY_SCALER = 38.5145
 MODEL_TOTAL_INTERCEPT = 42.986
 PI_OVER_PHI_HFA = 1.9416110252
 LOGISTIC_K_TIGHT = GOLDEN_RATIO_PHI / (4.0 * math.pi)  # ~0.12875903
-SMASH_PROB_THRESHOLD = 0.545  # 54.5% Win Prob (+4.05% EV at -110)
+SMASH_EV_THRESHOLD = 10.0  # +10.0% EV cutoff (~57.62% Win Prob at -110)
 
-# ==============================================================================
-# 1. MASTER 32-TEAM NFL TELEMETRY, STADIUM BAROMETRICS & POWER RATING REGISTRY
-# ==============================================================================
 NFL_TEAM_REGISTRY = {
-    "Arizona Cardinals":     {"code": "ARI", "lat": 33.5276, "lon": -112.2626, "elev_m": 328,  "is_dome": True,  "tz": -7, "epa": -0.015, "qb_delta": 0.0,  "to_reg": 0.1,  "close_pct": 0.480, "streak": 1, "rz_dvoa": 0.02},
-    "Atlanta Falcons":       {"code": "ATL", "lat": 33.7554, "lon": -84.4010,  "elev_m": 305,  "is_dome": True,  "tz": -5, "epa": 0.035,  "qb_delta": 0.0,  "to_reg": -0.2, "close_pct": 0.610, "streak": 2, "rz_dvoa": -0.05},
-    "Baltimore Ravens":      {"code": "BAL", "lat": 39.2780, "lon": -76.6227,  "elev_m": 10,   "is_dome": False, "tz": -5, "epa": 0.145,  "qb_delta": 0.0,  "to_reg": -0.3, "close_pct": 0.890, "streak": 3, "rz_dvoa": -0.18},
-    "Buffalo Bills":         {"code": "BUF", "lat": 42.7738, "lon": -78.7870,  "elev_m": 182,  "is_dome": False, "tz": -5, "epa": 0.125,  "qb_delta": 0.0,  "to_reg": -0.4, "close_pct": 0.865, "streak": 4, "rz_dvoa": -0.16},
-    "Carolina Panthers":     {"code": "CAR", "lat": 35.2258, "lon": -80.8528,  "elev_m": 215,  "is_dome": False, "tz": -5, "epa": -0.110, "qb_delta": -2.5, "to_reg": 0.6,  "close_pct": 0.220, "streak": 0, "rz_dvoa": 0.14},
-    "Chicago Bears":         {"code": "CHI", "lat": 41.8623, "lon": -87.6167,  "elev_m": 181,  "is_dome": False, "tz": -6, "epa": 0.012,  "qb_delta": 0.0,  "to_reg": 0.5,  "close_pct": 0.450, "streak": 0, "rz_dvoa": 0.04},
-    "Cincinnati Bengals":    {"code": "CIN", "lat": 39.0955, "lon": -84.5161,  "elev_m": 148,  "is_dome": False, "tz": -5, "epa": 0.068,  "qb_delta": 0.0,  "to_reg": -0.1, "close_pct": 0.640, "streak": 1, "rz_dvoa": -0.08},
-    "Cleveland Browns":      {"code": "CLE", "lat": 41.5061, "lon": -81.6995,  "elev_m": 177,  "is_dome": False, "tz": -5, "epa": -0.075, "qb_delta": -3.0, "to_reg": 0.4,  "close_pct": 0.350, "streak": 0, "rz_dvoa": 0.09},
-    "Dallas Cowboys":        {"code": "DAL", "lat": 32.7473, "lon": -97.0945,  "elev_m": 184,  "is_dome": True,  "tz": -6, "epa": -0.020, "qb_delta": -3.5, "to_reg": 0.3,  "close_pct": 0.490, "streak": 0, "rz_dvoa": 0.06},
-    "Denver Broncos":        {"code": "DEN", "lat": 39.7439, "lon": -105.0201, "elev_m": 1609, "is_dome": False, "tz": -7, "epa": 0.042,  "qb_delta": 0.0,  "to_reg": 0.2,  "close_pct": 0.781, "streak": 2, "rz_dvoa": -0.18},
-    "Detroit Lions":         {"code": "DET", "lat": 42.3400, "lon": -83.0456,  "elev_m": 183,  "is_dome": True,  "tz": -5, "epa": 0.155,  "qb_delta": 0.0,  "to_reg": -0.5, "close_pct": 0.920, "streak": 5, "rz_dvoa": -0.21},
-    "Green Bay Packers":     {"code": "GB",  "lat": 44.5013, "lon": -88.0622,  "elev_m": 195,  "is_dome": False, "tz": -6, "epa": 0.078,  "qb_delta": 0.0,  "to_reg": -0.2, "close_pct": 0.740, "streak": 1, "rz_dvoa": -0.11},
-    "Houston Texans":        {"code": "HOU", "lat": 29.6847, "lon": -95.4107,  "elev_m": 15,   "is_dome": True,  "tz": -6, "epa": 0.052,  "qb_delta": 0.0,  "to_reg": -0.3, "close_pct": 0.710, "streak": 1, "rz_dvoa": -0.09},
-    "Indianapolis Colts":    {"code": "IND", "lat": 39.7601, "lon": -86.1639,  "elev_m": 218,  "is_dome": True,  "tz": -5, "epa": -0.010, "qb_delta": 0.0,  "to_reg": 0.1,  "close_pct": 0.520, "streak": 0, "rz_dvoa": 0.01},
-    "Jacksonville Jaguars":  {"code": "JAX", "lat": 30.3240, "lon": -81.6373,  "elev_m": 5,    "is_dome": False, "tz": -5, "epa": -0.045, "qb_delta": -1.5, "to_reg": 0.4,  "close_pct": 0.380, "streak": 0, "rz_dvoa": 0.08},
-    "Kansas City Chiefs":    {"code": "KC",  "lat": 39.0489, "lon": -94.4839,  "elev_m": 250,  "is_dome": False, "tz": -6, "epa": 0.115,  "qb_delta": 0.0,  "to_reg": -0.1, "close_pct": 0.906, "streak": 4, "rz_dvoa": -0.14},
-    "Las Vegas Raiders":     {"code": "LV",  "lat": 36.0909, "lon": -115.1833, "elev_m": 610,  "is_dome": True,  "tz": -8, "epa": -0.085, "qb_delta": -2.0, "to_reg": 0.5,  "close_pct": 0.290, "streak": 0, "rz_dvoa": 0.11},
-    "Los Angeles Chargers":  {"code": "LAC", "lat": 33.9535, "lon": -118.3390, "elev_m": 40,   "is_dome": True,  "tz": -8, "epa": 0.048,  "qb_delta": 0.0,  "to_reg": -0.4, "close_pct": 0.760, "streak": 3, "rz_dvoa": -0.15},
-    "Los Angeles Rams":      {"code": "LAR", "lat": 33.9535, "lon": -118.3390, "elev_m": 40,   "is_dome": True,  "tz": -8, "epa": 0.038,  "qb_delta": 0.0,  "to_reg": 0.0,  "close_pct": 0.620, "streak": 2, "rz_dvoa": -0.04},
-    "Miami Dolphins":        {"code": "MIA", "lat": 25.9580, "lon": -80.2389,  "elev_m": 3,    "is_dome": False, "tz": -5, "epa": 0.025,  "qb_delta": 0.0,  "to_reg": 0.1,  "close_pct": 0.550, "streak": 1, "rz_dvoa": -0.03},
-    "Minnesota Vikings":     {"code": "MIN", "lat": 44.9736, "lon": -93.2575,  "elev_m": 255,  "is_dome": True,  "tz": -6, "epa": 0.092,  "qb_delta": 0.0,  "to_reg": -0.3, "close_pct": 0.830, "streak": 2, "rz_dvoa": -0.17},
-    "New England Patriots":  {"code": "NE",  "lat": 42.0909, "lon": -71.2643,  "elev_m": 78,   "is_dome": False, "tz": -5, "epa": -0.095, "qb_delta": 0.0,  "to_reg": 0.2,  "close_pct": 0.310, "streak": 0, "rz_dvoa": 0.10},
-    "New Orleans Saints":    {"code": "NO",  "lat": 29.9511, "lon": -90.0812,  "elev_m": 2,    "is_dome": True,  "tz": -6, "epa": -0.055, "qb_delta": 0.0,  "to_reg": 0.2,  "close_pct": 0.410, "streak": 0, "rz_dvoa": 0.05},
-    "New York Giants":       {"code": "NYG", "lat": 40.8128, "lon": -74.0742,  "elev_m": 2,    "is_dome": False, "tz": -5, "epa": -0.088, "qb_delta": -1.5, "to_reg": 0.3,  "close_pct": 0.280, "streak": 0, "rz_dvoa": 0.09},
-    "New York Jets":         {"code": "NYJ", "lat": 40.8128, "lon": -74.0742,  "elev_m": 2,    "is_dome": False, "tz": -5, "epa": -0.030, "qb_delta": 0.0,  "to_reg": 0.1,  "close_pct": 0.460, "streak": 0, "rz_dvoa": 0.02},
-    "Philadelphia Eagles":   {"code": "PHI", "lat": 39.9008, "lon": -75.1675,  "elev_m": 12,   "is_dome": False, "tz": -5, "epa": 0.118,  "qb_delta": 0.0,  "to_reg": -0.2, "close_pct": 0.850, "streak": 4, "rz_dvoa": -0.15},
-    "Pittsburgh Steelers":   {"code": "PIT", "lat": 40.4468, "lon": -80.0158,  "elev_m": 223,  "is_dome": False, "tz": -5, "epa": 0.065,  "qb_delta": 0.0,  "to_reg": -0.6, "close_pct": 0.840, "streak": 3, "rz_dvoa": -0.19},
-    "San Francisco 49ers":   {"code": "SF",  "lat": 37.4032, "lon": -121.9698, "elev_m": 7,    "is_dome": False, "tz": -8, "epa": 0.105,  "qb_delta": 0.0,  "to_reg": 0.1,  "close_pct": 0.790, "streak": 2, "rz_dvoa": -0.12},
-    "Seattle Seahawks":      {"code": "SEA", "lat": 47.5952, "lon": -122.3316, "elev_m": 4,    "is_dome": False, "tz": -8, "epa": 0.015,  "qb_delta": 0.0,  "to_reg": 0.2,  "close_pct": 0.560, "streak": 1, "rz_dvoa": 0.01},
-    "Tampa Bay Buccaneers":  {"code": "TB",  "lat": 27.9759, "lon": -82.5033,  "elev_m": 12,   "is_dome": False, "tz": -5, "epa": 0.085,  "qb_delta": 0.0,  "to_reg": -0.4, "close_pct": 0.812, "streak": 2, "rz_dvoa": -0.12},
-    "Tennessee Titans":      {"code": "TEN", "lat": 36.1665, "lon": -86.7713,  "elev_m": 130,  "is_dome": False, "tz": -6, "epa": -0.090, "qb_delta": -2.0, "to_reg": 0.5,  "close_pct": 0.260, "streak": 0, "rz_dvoa": 0.12},
-    "Washington Commanders": {"code": "WAS", "lat": 38.9076, "lon": -76.8645,  "elev_m": 60,   "is_dome": False, "tz": -5, "epa": 0.110,  "qb_delta": 0.0,  "to_reg": -0.3, "close_pct": 0.805, "streak": 3, "rz_dvoa": -0.13}
+    "Arizona Cardinals":     {"code": "ARI", "lat": 33.5276, "lon": -112.2626, "elev_m": 328,  "is_dome": True,  "tz": -7, "epa": -0.015, "qb_delta": 0.0, "to_reg": 0.1,  "close_pct": 0.480, "streak": 1, "rz_dvoa": 0.02},
+    "Atlanta Falcons":       {"code": "ATL", "lat": 33.7554, "lon": -84.4010,  "elev_m": 305,  "is_dome": True,  "tz": -5, "epa": 0.035,  "qb_delta": 0.0, "to_reg": -0.2, "close_pct": 0.610, "streak": 2, "rz_dvoa": -0.05},
+    "Baltimore Ravens":      {"code": "BAL", "lat": 39.2780, "lon": -76.6227,  "elev_m": 10,   "is_dome": False, "tz": -5, "epa": 0.145,  "qb_delta": 0.0, "to_reg": -0.3, "close_pct": 0.890, "streak": 3, "rz_dvoa": -0.18},
+    "Buffalo Bills":         {"code": "BUF", "lat": 42.7738, "lon": -78.7870,  "elev_m": 182,  "is_dome": False, "tz": -5, "epa": 0.125,  "qb_delta": 0.0, "to_reg": -0.4, "close_pct": 0.865, "streak": 4, "rz_dvoa": -0.16},
+    "Carolina Panthers":     {"code": "CAR", "lat": 35.2258, "lon": -80.8528,  "elev_m": 215,  "is_dome": False, "tz": -5, "epa": -0.110, "qb_delta": 0.0, "to_reg": 0.6,  "close_pct": 0.220, "streak": 0, "rz_dvoa": 0.14},
+    "Chicago Bears":         {"code": "CHI", "lat": 41.8623, "lon": -87.6167,  "elev_m": 181,  "is_dome": False, "tz": -6, "epa": 0.012,  "qb_delta": 0.0, "to_reg": 0.5,  "close_pct": 0.450, "streak": 0, "rz_dvoa": 0.04},
+    "Cincinnati Bengals":    {"code": "CIN", "lat": 39.0955, "lon": -84.5161,  "elev_m": 148,  "is_dome": False, "tz": -5, "epa": 0.068,  "qb_delta": 0.0, "to_reg": -0.1, "close_pct": 0.640, "streak": 1, "rz_dvoa": -0.08},
+    "Cleveland Browns":      {"code": "CLE", "lat": 41.5061, "lon": -81.6995,  "elev_m": 177,  "is_dome": False, "tz": -5, "epa": -0.075, "qb_delta": 0.0, "to_reg": 0.4,  "close_pct": 0.350, "streak": 0, "rz_dvoa": 0.09},
+    "Dallas Cowboys":        {"code": "DAL", "lat": 32.7473, "lon": -97.0945,  "elev_m": 184,  "is_dome": True,  "tz": -6, "epa": -0.020, "qb_delta": 0.0, "to_reg": 0.3,  "close_pct": 0.490, "streak": 0, "rz_dvoa": 0.06},
+    "Denver Broncos":        {"code": "DEN", "lat": 39.7439, "lon": -105.0201, "elev_m": 1609, "is_dome": False, "tz": -7, "epa": 0.042,  "qb_delta": 0.0, "to_reg": 0.2,  "close_pct": 0.781, "streak": 2, "rz_dvoa": -0.18},
+    "Detroit Lions":         {"code": "DET", "lat": 42.3400, "lon": -83.0456,  "elev_m": 183,  "is_dome": True,  "tz": -5, "epa": 0.155,  "qb_delta": 0.0, "to_reg": -0.5, "close_pct": 0.920, "streak": 5, "rz_dvoa": -0.21},
+    "Green Bay Packers":     {"code": "GB",  "lat": 44.5013, "lon": -88.0622,  "elev_m": 195,  "is_dome": False, "tz": -6, "epa": 0.078,  "qb_delta": 0.0, "to_reg": -0.2, "close_pct": 0.740, "streak": 1, "rz_dvoa": -0.11},
+    "Houston Texans":        {"code": "HOU", "lat": 29.6847, "lon": -95.4107,  "elev_m": 15,   "is_dome": True,  "tz": -6, "epa": 0.052,  "qb_delta": 0.0, "to_reg": -0.3, "close_pct": 0.710, "streak": 1, "rz_dvoa": -0.09},
+    "Indianapolis Colts":    {"code": "IND", "lat": 39.7601, "lon": -86.1639,  "elev_m": 218,  "is_dome": True,  "tz": -5, "epa": -0.010, "qb_delta": 0.0, "to_reg": 0.1,  "close_pct": 0.520, "streak": 0, "rz_dvoa": 0.01},
+    "Jacksonville Jaguars":  {"code": "JAX", "lat": 30.3240, "lon": -81.6373,  "elev_m": 5,    "is_dome": False, "tz": -5, "epa": -0.045, "qb_delta": 0.0, "to_reg": 0.4,  "close_pct": 0.380, "streak": 0, "rz_dvoa": 0.08},
+    "Kansas City Chiefs":    {"code": "KC",  "lat": 39.0489, "lon": -94.4839,  "elev_m": 250,  "is_dome": False, "tz": -6, "epa": 0.115,  "qb_delta": 0.0, "to_reg": -0.1, "close_pct": 0.906, "streak": 4, "rz_dvoa": -0.14},
+    "Las Vegas Raiders":     {"code": "LV",  "lat": 36.0909, "lon": -115.1833, "elev_m": 610,  "is_dome": True,  "tz": -8, "epa": -0.085, "qb_delta": 0.0, "to_reg": 0.5,  "close_pct": 0.290, "streak": 0, "rz_dvoa": 0.11},
+    "Los Angeles Chargers":  {"code": "LAC", "lat": 33.9535, "lon": -118.3390, "elev_m": 40,   "is_dome": True,  "tz": -8, "epa": 0.048,  "qb_delta": 0.0, "to_reg": -0.4, "close_pct": 0.760, "streak": 3, "rz_dvoa": -0.15},
+    "Los Angeles Rams":      {"code": "LAR", "lat": 33.9535, "lon": -118.3390, "elev_m": 40,   "is_dome": True,  "tz": -8, "epa": 0.038,  "qb_delta": 0.0, "to_reg": 0.0,  "close_pct": 0.620, "streak": 2, "rz_dvoa": -0.04},
+    "Miami Dolphins":        {"code": "MIA", "lat": 25.9580, "lon": -80.2389,  "elev_m": 3,    "is_dome": False, "tz": -5, "epa": 0.025,  "qb_delta": 0.0, "to_reg": 0.1,  "close_pct": 0.550, "streak": 1, "rz_dvoa": -0.03},
+    "Minnesota Vikings":     {"code": "MIN", "lat": 44.9736, "lon": -93.2575,  "elev_m": 255,  "is_dome": True,  "tz": -6, "epa": 0.092,  "qb_delta": 0.0, "to_reg": -0.3, "close_pct": 0.830, "streak": 2, "rz_dvoa": -0.17},
+    "New England Patriots":  {"code": "NE",  "lat": 42.0909, "lon": -71.2643,  "elev_m": 78,   "is_dome": False, "tz": -5, "epa": -0.095, "qb_delta": 0.0, "to_reg": 0.2,  "close_pct": 0.310, "streak": 0, "rz_dvoa": 0.10},
+    "New Orleans Saints":    {"code": "NO",  "lat": 29.9511, "lon": -90.0812,  "elev_m": 2,    "is_dome": True,  "tz": -6, "epa": -0.055, "qb_delta": 0.0, "to_reg": 0.2,  "close_pct": 0.410, "streak": 0, "rz_dvoa": 0.05},
+    "New York Giants":       {"code": "NYG", "lat": 40.8128, "lon": -74.0742,  "elev_m": 2,    "is_dome": False, "tz": -5, "epa": -0.088, "qb_delta": 0.0, "to_reg": 0.3,  "close_pct": 0.280, "streak": 0, "rz_dvoa": 0.09},
+    "New York Jets":         {"code": "NYJ", "lat": 40.8128, "lon": -74.0742,  "elev_m": 2,    "is_dome": False, "tz": -5, "epa": -0.030, "qb_delta": 0.0, "to_reg": 0.1,  "close_pct": 0.460, "streak": 0, "rz_dvoa": 0.02},
+    "Philadelphia Eagles":   {"code": "PHI", "lat": 39.9008, "lon": -75.1675,  "elev_m": 12,   "is_dome": False, "tz": -5, "epa": 0.118,  "qb_delta": 0.0, "to_reg": -0.2, "close_pct": 0.850, "streak": 4, "rz_dvoa": -0.15},
+    "Pittsburgh Steelers":   {"code": "PIT", "lat": 40.4468, "lon": -80.0158,  "elev_m": 223,  "is_dome": False, "tz": -5, "epa": 0.065,  "qb_delta": 0.0, "to_reg": -0.6, "close_pct": 0.840, "streak": 3, "rz_dvoa": -0.19},
+    "San Francisco 49ers":   {"code": "SF",  "lat": 37.4032, "lon": -121.9698, "elev_m": 7,    "is_dome": False, "tz": -8, "epa": 0.105,  "qb_delta": 0.0, "to_reg": 0.1,  "close_pct": 0.790, "streak": 2, "rz_dvoa": -0.12},
+    "Seattle Seahawks":      {"code": "SEA", "lat": 47.5952, "lon": -122.3316, "elev_m": 4,    "is_dome": False, "tz": -8, "epa": 0.015,  "qb_delta": 0.0, "to_reg": 0.2,  "close_pct": 0.560, "streak": 1, "rz_dvoa": 0.01},
+    "Tampa Bay Buccaneers":  {"code": "TB",  "lat": 27.9759, "lon": -82.5033,  "elev_m": 12,   "is_dome": False, "tz": -5, "epa": 0.085,  "qb_delta": 0.0, "to_reg": -0.4, "close_pct": 0.812, "streak": 2, "rz_dvoa": -0.12},
+    "Tennessee Titans":      {"code": "TEN", "lat": 36.1665, "lon": -86.7713,  "elev_m": 130,  "is_dome": False, "tz": -6, "epa": -0.090, "qb_delta": 0.0, "to_reg": 0.5,  "close_pct": 0.260, "streak": 0, "rz_dvoa": 0.12},
+    "Washington Commanders": {"code": "WAS", "lat": 38.9076, "lon": -76.8645,  "elev_m": 60,   "is_dome": False, "tz": -5, "epa": 0.110,  "qb_delta": 0.0, "to_reg": -0.3, "close_pct": 0.805, "streak": 3, "rz_dvoa": -0.13}
 }
 
-CODE_TO_TEAM = {v["code"]: k for k, v in NFL_TEAM_REGISTRY.items()}
 ESPN_CODE_MAP = {"WSH": "WAS", "JAC": "JAX"}
 
-# ==============================================================================
-# 2. GEODESIC DISTANCE, FAST WEATHER & FLUID ESPN TELEMETRY / SCOREBOARD ENGINE
-# ==============================================================================
 def calc_haversine_miles(lat1, lon1, lat2, lon2):
     r_miles = 3958.8
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
@@ -97,7 +90,6 @@ def fetch_live_stadium_weather(home_meta):
         "is_dome": is_dome,
         "elevation_m": elev_m
     }
-
     if is_dome:
         return weather_payload
 
@@ -107,7 +99,6 @@ def fetch_live_stadium_weather(home_meta):
             f"&current=temperature_2m,wind_speed_10m,surface_pressure"
             f"&temperature_unit=fahrenheit&wind_speed_unit=mph"
         )
-        # 2-second timeout prevents GitHub Actions from hanging on Open-Meteo rate limits
         resp = requests.get(url, headers=HEADERS, timeout=2)
         if resp.status_code == 200:
             data = resp.json().get("current", {})
@@ -116,40 +107,26 @@ def fetch_live_stadium_weather(home_meta):
             weather_payload["pressure_hpa"] = data.get("surface_pressure", 1013.25)
     except Exception:
         pass
-
     return weather_payload
 
-def fetch_espn_telemetry_and_scores():
-    """
-    Zero-credit ESPN Scoreboard scraper.
-    1. Captures live/final game scores for automatic ledger grading.
-    2. Captures trailing 3-week offensive scoring & win records to dynamically update
-       fluid QB form deltas (qb_delta) and closing rank percentiles (close_pct).
-    """
+def fetch_espn_scores():
     score_lookup = {}
-    recent_team_scores = {v["code"]: [] for v in NFL_TEAM_REGISTRY.values()}
-    live_win_pct = {}
-
     now_utc = datetime.now(timezone.utc)
-    # Query a 25-day trailing-to-current window so we get last 3 weeks + current slate in 1 call
-    start_str = (now_utc - timedelta(days=25)).strftime("%Y%m%d")
+    start_str = (now_utc - timedelta(days=10)).strftime("%Y%m%d")
     end_str = (now_utc + timedelta(days=7)).strftime("%Y%m%d")
-    url = f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=200&dates={start_str}-{end_str}"
+    url = f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=100&dates={start_str}-{end_str}"
 
     try:
         resp = requests.get(url, headers=HEADERS, timeout=5)
         if resp.status_code == 200:
             events = resp.json().get("events", [])
-            # Sort chronologically so most recent games are at the end
-            events.sort(key=lambda e: e.get("date", ""))
-
             for ev in events:
                 comps = ev.get("competitions", [])
                 if not comps:
                     continue
                 comp = comps[0]
                 status_type = comp.get("status", {}).get("type", {})
-                state = status_type.get("state", "pre")  # "pre", "in", "post"
+                state = status_type.get("state", "pre")
                 completed = bool(status_type.get("completed", False))
 
                 competitors = comp.get("competitors", [])
@@ -160,75 +137,19 @@ def fetch_espn_telemetry_and_scores():
 
                 h_abbr = ESPN_CODE_MAP.get(home_c.get("team", {}).get("abbreviation", ""), home_c.get("team", {}).get("abbreviation", ""))
                 a_abbr = ESPN_CODE_MAP.get(away_c.get("team", {}).get("abbreviation", ""), away_c.get("team", {}).get("abbreviation", ""))
-
                 h_score = int(float(home_c.get("score", 0) or 0))
                 a_score = int(float(away_c.get("score", 0) or 0))
 
-                # Extract overall win percentage from ESPN team records
-                for c_obj, abbr in [(home_c, h_abbr), (away_c, a_abbr)]:
-                    recs = c_obj.get("records", [])
-                    if recs:
-                        summary = recs[0].get("summary", "")
-                        parts = summary.split("-")
-                        if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
-                            w, l = int(parts[0]), int(parts[1])
-                            if (w + l) > 0:
-                                live_win_pct[abbr] = round(w / (w + l), 3)
-
-                if completed or state == "post":
-                    if h_abbr in recent_team_scores:
-                        recent_team_scores[h_abbr].append((h_score, a_score))
-                    if a_abbr in recent_team_scores:
-                        recent_team_scores[a_abbr].append((a_score, h_score))
-
-                match_key = f"{a_abbr}_{h_abbr}"
-                score_lookup[match_key] = {
+                score_lookup[f"{a_abbr}_{h_abbr}"] = {
                     "state": state,
                     "completed": completed,
                     "home_score": h_score,
-                    "away_score": a_score,
-                    "event_date": ev.get("date", "")
+                    "away_score": a_score
                 }
     except Exception as e:
-        print(f"[ESPN Telemetry Notice] {e}")
-
-    # Apply Fluid 3-Game Rolling QB/Offense Form Delta & Win Pct to Registry in-memory
-    for team_name, meta in NFL_TEAM_REGISTRY.items():
-        code = meta["code"]
-        if code in live_win_pct:
-            meta["close_pct"] = live_win_pct[code]
-
-        games_list = recent_team_scores.get(code, [])
-        if games_list:
-            last_3 = games_list[-3:]
-            # Update active win streak from recent results
-            streak = 0
-            for pts_for, pts_against in reversed(games_list):
-                if pts_for > pts_against:
-                    streak += 1
-                else:
-                    break
-            meta["streak"] = streak
-
-            # Weighted 3-game offensive scoring form (50% most recent, 30% prev, 20% 3rd)
-            weights = [0.20, 0.30, 0.50][-len(last_3):]
-            w_sum = sum(weights)
-            weighted_ppg = sum(g[0] * w for g, w in zip(last_3, weights)) / w_sum
-
-            # Expected team PPG from baseline intercept + EPA
-            expected_ppg = (MODEL_TOTAL_INTERCEPT / 2.0) + (meta["epa"] * (GOLDEN_PLAY_SCALER / 2.0))
-            form_diff = weighted_ppg - expected_ppg
-
-            # Damped Golden Ratio scaling (0.382) adjusts QB delta automatically for slumps/surges
-            fluid_adjustment = round(0.382 * form_diff, 2)
-            base_qb = meta.get("qb_delta", 0.0)
-            meta["qb_delta"] = round(max(-6.5, min(4.5, (base_qb * 0.5) + fluid_adjustment)), 2)
-
+        print(f"[ESPN Scoreboard Notice] {e}")
     return score_lookup
 
-# ==============================================================================
-# 3. PYTHON-SIDE COUPLED MODULE 11 & 12 FOR BALLS DEEP LEDGER LOCKING
-# ==============================================================================
 def calc_coupled_balls_deep_psi(home_meta, away_meta, env_weather):
     h = float(env_weather.get("elevation_m", 0))
     re = 6371000.0
@@ -268,17 +189,13 @@ def calc_coupled_balls_deep_psi(home_meta, away_meta, env_weather):
 
     sum_val = phi_bio + net_tov
     sign = 1.0 if sum_val > 0 else (-1.0 if sum_val < 0 else 0.0)
-    psi = sign * math.sqrt(abs(phi_bio * net_tov))
-    return round(psi, 4)
+    return round(sign * math.sqrt(abs(phi_bio * net_tov)), 4)
 
 def calc_ev_pct(win_prob, american_odds=-110):
     dec = (american_odds / 100.0) + 1.0 if american_odds > 0 else (100.0 / abs(american_odds)) + 1.0
     b = dec - 1.0
     return round(((win_prob * b) - (1.0 - win_prob)) * 100.0, 2)
 
-# ==============================================================================
-# 4. LIVE ODDS API FETCHER, FLAGSHIP 5-PACK & HISTORICAL LEDGER AUTO-GRADER
-# ==============================================================================
 def load_existing_ledger():
     if os.path.exists(DATA_FILE):
         try:
@@ -294,7 +211,6 @@ def fetch_live_odds():
     if not ODDS_API_KEY or ODDS_API_KEY == "PASTE_YOUR_API_KEY_HERE":
         print("[Notice] No valid ODDS_API_KEY set.")
         return []
-
     url = (
         f"https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/"
         f"?apiKey={ODDS_API_KEY}&regions=us&markets=spreads,totals&oddsFormat=american"
@@ -312,10 +228,8 @@ def fetch_live_odds():
 def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc):
     entries = ledger.get("entries", {})
 
-    # 1. Snapshot Pre-Game Lines or Lock at Kickoff
     for g in games_slate:
         gid = g["game_id"]
-        match_key = f"{g['away_team']}_{g['home_team']}"
         commence_str = g.get("commence_time", "")
         is_past_kickoff = False
         if commence_str:
@@ -325,13 +239,12 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc):
             except Exception:
                 pass
 
-        # Identify best spread pick and total pick for this game
         spread_props = [p for p in g.get("props_board", []) if p.get("market_type") == "spread"]
         total_props = [p for p in g.get("props_board", []) if p.get("market_type") == "total"]
         if not spread_props:
             continue
 
-        best_spread = max(spread_props, key=lambda x: x.get("model_win_prob", 0.5))
+        best_spread = max(spread_props, key=lambda x: x.get("ev_pct", -100.0))
         best_total = total_props[0] if total_props else None
 
         existing = entries.get(gid)
@@ -349,7 +262,6 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc):
                 "total_record": None
             }
 
-        # Only update closing lines if the game hasn't locked at kickoff yet
         if not existing.get("is_locked", False):
             existing["commence_time"] = commence_str
             existing["is_locked"] = is_past_kickoff
@@ -391,7 +303,6 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc):
 
         entries[gid] = existing
 
-    # 2. Grade Any Entry Whose Game Has Reached FINAL on ESPN
     for gid, entry in entries.items():
         match_key = f"{entry['away_team']}_{entry['home_team']}"
         espn_info = espn_scores.get(match_key)
@@ -409,7 +320,6 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc):
             entry["status"] = "FINAL"
             entry["final_score"] = f"{entry['away_team']} {a_pts} - {entry['home_team']} {h_pts}"
 
-            # Grade Spread Pick
             s_rec = entry.get("spread_record")
             if s_rec and s_rec.get("result_tip") == "PENDING":
                 pick_team = s_rec["pick_team"]
@@ -419,7 +329,6 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc):
                 grade = "HIT" if cover_diff > 0 else ("MISS" if cover_diff < 0 else "PUSH")
                 s_rec["result_tip"] = grade
 
-                # Check if Balls Deep picked the same side or opposite side
                 bd_proj = float(s_rec.get("balls_deep_proj", s_rec["tip_proj"]))
                 bd_same_side = (line - bd_proj) >= 0
                 if bd_same_side:
@@ -427,12 +336,10 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc):
                 else:
                     s_rec["result_balls_deep"] = "MISS" if grade == "HIT" else ("HIT" if grade == "MISS" else "PUSH")
 
-            # Grade Total Pick
             t_rec = entry.get("total_record")
             if t_rec and t_rec.get("result_tip") == "PENDING":
                 total_pts = h_pts + a_pts
                 t_line = float(t_rec["vegas_closing_line"])
-
                 for mode_key, dir_key in [("result_tip", "tip_direction"), ("result_balls_deep", "balls_deep_direction")]:
                     direction = t_rec.get(dir_key, "O")
                     if total_pts == t_line:
@@ -442,7 +349,6 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc):
                     else:
                         t_rec[mode_key] = "HIT" if total_pts < t_line else "MISS"
 
-    # 3. Compute Summary Fractions & Percentages
     counters = {
         "overall_smash": {"hits": 0, "total": 0},
         "spread_smash": {"hits": 0, "total": 0},
@@ -496,10 +402,7 @@ def build_master_payload():
     now_utc = datetime.now(timezone.utc)
     now_iso = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # 1. Sync ESPN Fluid QB Form Deltas & Live/Final Scoreboard (0 Odds API credits)
-    espn_scores = fetch_espn_telemetry_and_scores()
-
-    # 2. Fetch Live Spreads & Totals (2 Odds API credits; player props disabled)
+    espn_scores = fetch_espn_scores()
     raw_odds = fetch_live_odds()
     raw_odds.sort(key=lambda g: g.get("commence_time", ""))
 
@@ -542,20 +445,18 @@ def build_master_payload():
         env_weather = fetch_live_stadium_weather(home_meta)
         wind_mph = 0.0 if env_weather.get("is_dome") else float(env_weather.get("wind_mph", 0.0))
 
-        # --- Module 8 Circadian Penalty (exact parity with math_engine.js) ---
         abs_tz = abs(tz_shift)
         omega_dir = 1.35 if tz_shift > 0 else (0.85 if tz_shift < 0 else 1.0)
         body_clock = kickoff_local_hour - tz_shift
         trough_pen = max(0.0, 13.0 - body_clock)
         phi_circ = round(0.45 * (abs_tz * omega_dir * math.exp(-0.35 * 1.0)) + (0.30 * trough_pen), 3)
 
-        # --- Module 9 Fair Home Spread (Tip Baseline vs Balls Deep Coupled) ---
+        # Pure EPA + Turnover Regression + Pi/Phi HFA + Circadian (No QB Delta double-counting)
         epa_diff = away_meta["epa"] - home_meta["epa"]
-        delta_qb = away_meta["qb_delta"] - home_meta["qb_delta"]
         delta_to = away_meta["to_reg"] - home_meta["to_reg"]
         psi_11_12 = calc_coupled_balls_deep_psi(home_meta, away_meta, env_weather)
 
-        fair_home_tip = round((GOLDEN_PLAY_SCALER * epa_diff) + delta_qb + delta_to - PI_OVER_PHI_HFA - phi_circ, 2)
+        fair_home_tip = round((GOLDEN_PLAY_SCALER * epa_diff) + delta_to - PI_OVER_PHI_HFA - phi_circ, 2)
         fair_home_bd = round(fair_home_tip + psi_11_12, 2)
 
         props_board = []
@@ -586,7 +487,7 @@ def build_master_payload():
 
                     ev_tip = calc_ev_pct(win_prob_tip, price)
                     ev_bd = calc_ev_pct(win_prob_bd, price)
-                    badge = "SMASH" if win_prob_tip >= SMASH_PROB_THRESHOLD else "PASS"
+                    badge = "SMASH" if ev_tip >= SMASH_EV_THRESHOLD else "PASS"
 
                     props_board.append({
                         "player": f"{t_code} Spread ({'+' if point > 0 else ''}{point}) ({t_code} {prefix} {opp_code})",
@@ -616,12 +517,12 @@ def build_master_payload():
                     o_price = int(over_out.get("price", -110))
                     u_price = int(under_out.get("price", -110))
 
+                    # Pure EPA + Red-Zone DVOA + Wind Penalty (No QB Delta double-counting)
                     epa_total_pts = (home_meta["epa"] + away_meta["epa"]) * GOLDEN_PLAY_SCALER
-                    qb_total_pts = home_meta["qb_delta"] + away_meta["qb_delta"]
                     rz_total_pts = (home_meta["rz_dvoa"] + away_meta["rz_dvoa"]) * 10.0
                     wind_penalty = max(0.0, (wind_mph - 10.0) * 0.25)
 
-                    proj_total_tip = round(MODEL_TOTAL_INTERCEPT + epa_total_pts + qb_total_pts + rz_total_pts - wind_penalty, 1)
+                    proj_total_tip = round(MODEL_TOTAL_INTERCEPT + epa_total_pts + rz_total_pts - wind_penalty, 1)
                     proj_total_bd = round(proj_total_tip + (psi_11_12 * 0.45), 1)
 
                     is_under = proj_total_tip < t_point
@@ -635,7 +536,7 @@ def build_master_payload():
 
                     ev_tip = calc_ev_pct(calc_prob_tip, active_price)
                     ev_bd = calc_ev_pct(calc_prob_bd, active_price)
-                    badge = "SMASH" if calc_prob_tip >= SMASH_PROB_THRESHOLD else "PASS"
+                    badge = "SMASH" if ev_tip >= SMASH_EV_THRESHOLD else "PASS"
 
                     props_board.append({
                         "player": f"{away_code}@{home_code} Total ({'U' if is_under else 'O'} {t_point}) ({away_code} @ {home_code})",
@@ -672,37 +573,34 @@ def build_master_payload():
                 "short_week_flag": 0
             },
             "team_telemetry": {
-                "home": {"net_epa_per_play": home_meta["epa"], "qb_replacement_delta": home_meta["qb_delta"], "turnover_reg_delta": home_meta["to_reg"], "closing_rank_pct": home_meta["close_pct"], "active_win_streak": home_meta["streak"], "opp_rz_dvoa": home_meta["rz_dvoa"]},
-                "away": {"net_epa_per_play": away_meta["epa"], "qb_replacement_delta": away_meta["qb_delta"], "turnover_reg_delta": away_meta["to_reg"], "closing_rank_pct": away_meta["close_pct"], "active_win_streak": away_meta["streak"], "opp_rz_dvoa": away_meta["rz_dvoa"]}
+                "home": {"net_epa_per_play": home_meta["epa"], "qb_replacement_delta": 0.0, "turnover_reg_delta": home_meta["to_reg"], "closing_rank_pct": home_meta["close_pct"], "active_win_streak": home_meta["streak"], "opp_rz_dvoa": home_meta["rz_dvoa"]},
+                "away": {"net_epa_per_play": away_meta["epa"], "qb_replacement_delta": 0.0, "turnover_reg_delta": away_meta["to_reg"], "closing_rank_pct": away_meta["close_pct"], "active_win_streak": away_meta["streak"], "opp_rz_dvoa": away_meta["rz_dvoa"]}
             },
             "props_board": props_board
         })
 
-    # 3. Tag Flagship 5-Pack: Mandatory Top 3 Spreads ("Ménage à Trois") + Top 2 Flex Edges
     all_spreads = []
     all_props = []
     for g in games_slate:
-        # Keep only the favored model side per game so we don't pick both sides of one game
         game_spreads = [p for p in g["props_board"] if p["market_type"] == "spread"]
         if game_spreads:
-            best_s = max(game_spreads, key=lambda x: x["model_win_prob"])
+            best_s = max(game_spreads, key=lambda x: x["ev_pct"])
             all_spreads.append(best_s)
             all_props.append(best_s)
         for p in g["props_board"]:
             if p["market_type"] != "spread":
                 all_props.append(p)
 
-    all_spreads.sort(key=lambda x: x["model_win_prob"], reverse=True)
+    all_spreads.sort(key=lambda x: x["ev_pct"], reverse=True)
     menage_picks = all_spreads[:3]
     for idx, p in enumerate(menage_picks, start=1):
         p["flagship_slot"] = f"MÉNAGE À TROIS #{idx}"
 
     remaining_pool = [p for p in all_props if not p.get("flagship_slot")]
-    remaining_pool.sort(key=lambda x: x["model_win_prob"], reverse=True)
+    remaining_pool.sort(key=lambda x: x["ev_pct"], reverse=True)
     for idx, p in enumerate(remaining_pool[:2], start=4):
         p["flagship_slot"] = f"5-PACK FLEX #{idx}"
 
-    # 4. Update & Auto-Grade Persistent Historical Ledger
     existing_ledger = load_existing_ledger()
     updated_ledger = update_and_grade_ledger(existing_ledger, games_slate, espn_scores, now_utc)
 
@@ -712,9 +610,6 @@ def build_master_payload():
         "historical_ledger": updated_ledger
     }
 
-# ==============================================================================
-# 5. ATOMIC DISK WRITE & EXECUTION LOOP
-# ==============================================================================
 def write_atomic_json(payload, filepath=DATA_FILE):
     temp_path = f"{filepath}.tmp"
     with open(temp_path, "w", encoding="utf-8") as f:
