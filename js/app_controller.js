@@ -1,10 +1,9 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v209)
- * - Zero Page/Scroll Reset on Mode Switch: Preserves exact viewport scroll position & uses atomic DOM replacement
- * - Combinatorics & Round Robin Deck: Dynamically updates projections, Win%, EV%, SMASH/PASS badges, and Alt-Line Escalators across all modes
- * - "Just the Tip" Card View: Shows ONLY Vegas Favorite Spread + Game Total (O/U)
- * - "Balls Deep" / "DaVinci" Card View: Unlocks ALL lines + Escalator Boxes
- * - Clickable 🔒 Paywall Locks in Compendium, Telemetry & Biophysical Weather Lab in "Just the Tip" mode
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v210)
+ * - Strict League Filter: Displays ONLY NFL and AP/CFP Top-25 Ranked NCAA Matchups (Strips unranked G5/MAC noise)
+ * - College SOS Baseline Anchor: Prevents +20.5/+25.5 NCAA dogs from projecting as -7.71 outright favorites
+ * - Clean Team Code Normalizer: Fixes 4-letter fallback codes (NODA->ND, WAFO->WAKE, GETE->GT, MIST->MSU, etc.)
+ * - Zero Page/Scroll Reset on Mode Switch + Dynamic Combinatorics Deck Updates Across Modes
  */
 
 const AppState = {
@@ -25,6 +24,72 @@ const MODEL_TOTAL_INTERCEPT = 42.986;
 const SMASH_EV_CUTOFF = 10.0; // +10.0% EV threshold for SMASH
 const PHI = 1.6180339887;
 const PHI_OVER_PI = PHI / Math.PI; // ~0.5150362 (Module 13 Sacred Geometry Constant)
+
+// Official AP / CFP Top-25 Ranked NCAA Programs (Full-Name & Code Matchers)
+const RANKED_NCAA_FULL_NAMES = [
+    "Georgia Bulldogs", "Utah Utes", "Notre Dame Fighting Irish", "UCLA Bruins",
+    "Miami Hurricanes", "Indiana Hoosiers", "Alabama Crimson Tide", "Texas Longhorns",
+    "Tennessee Volunteers", "Wake Forest Demon Deacons", "BYU Cougars", "Texas Tech Red Raiders",
+    "Kentucky Wildcats", "Houston Cougars", "Iowa Hawkeyes", "USC Trojans",
+    "Oregon Ducks", "Ole Miss Rebels", "Ohio State Buckeyes", "LSU Tigers",
+    "Boise State Broncos", "South Carolina Gamecocks", "Arizona Wildcats",
+    "New Mexico Lobos", "SMU Mustangs", "Oklahoma State Cowboys"
+];
+
+const RANKED_NCAA_CODES = new Set([
+    "UGA", "UTAH", "ND", "NODA", "UCLA", "UCBR", "MIA", "IND", "ALA", "TEX",
+    "TENN", "WAKE", "WAFO", "BYU", "TTU", "UK", "KEWI", "HOU", "HOCO", "IOWA",
+    "IOHA", "USC", "ORE", "MISS", "OSU", "LSU", "BSU", "SCAR", "ARI", "ARWI",
+    "UNM", "SMU", "OKST"
+]);
+
+const CLEAN_CODE_OVERRIDES = {
+    "NODA": "ND",
+    "NOIL": "NIU",
+    "GETE": "GT",
+    "WAFO": "WAKE",
+    "MIST": "MSU",
+    "UCBR": "UCLA",
+    "IOHA": "IOWA",
+    "KEWI": "UK",
+    "HOCO": "HOU",
+    "ARWI": "ARIZ",
+    "ORST": "ORST",
+    "SADI": "SDSU",
+    "WEKE": "WKU",
+    "WACA": "WCU",
+    "בו": "BOIS"
+};
+
+function cleanTeamCode(code) {
+    return CLEAN_CODE_OVERRIDES[code] || code;
+}
+
+function cleanLabelCodes(labelStr) {
+    if (!labelStr) return "";
+    let out = labelStr;
+    Object.keys(CLEAN_CODE_OVERRIDES).forEach(bad => {
+        const good = CLEAN_CODE_OVERRIDES[bad];
+        out = out.replace(new RegExp(`\\b${bad}\\b`, "g"), good);
+    });
+    return out;
+}
+
+function isRankedNCAAGame(game) {
+    const hFull = game.home_full_name || "";
+    const aFull = game.away_full_name || "";
+    if (RANKED_NCAA_FULL_NAMES.includes(hFull) || RANKED_NCAA_FULL_NAMES.includes(aFull)) {
+        return true;
+    }
+    return RANKED_NCAA_CODES.has(game.home_team) || RANKED_NCAA_CODES.has(game.away_team);
+}
+
+function shouldIncludeGame(game, defaultLeague = "NFL") {
+    const lg = game.league || defaultLeague;
+    if (lg === "NFL") return AppState.filters.nfl;
+    if (lg === "NCAA") return AppState.filters.ncaa && isRankedNCAAGame(game);
+    return true;
+}
 
 document.addEventListener("DOMContentLoaded", () => {
     bindUIControls();
@@ -195,7 +260,7 @@ function renderLockCellHTML() {
 }
 
 // ==========================================
-// MASTER CALCULATION PIPELINE (PRESERVES SCROLL POSITION)
+// MASTER CALCULATION PIPELINE (NFL + TOP-25 RANKED NCAA ONLY)
 // ==========================================
 function recalculateAndRenderAll() {
     if (!AppState.rawPayload || !AppState.rawPayload.games) return;
@@ -213,8 +278,10 @@ function recalculateAndRenderAll() {
 
     AppState.rawPayload.games.forEach(game => {
         const gameLeague = game.league || defaultLeague;
-        if (gameLeague === "NFL" && !AppState.filters.nfl) return;
-        if (gameLeague === "NCAA" && !AppState.filters.ncaa) return;
+        if (!shouldIncludeGame(game, defaultLeague)) return;
+
+        const cleanHome = cleanTeamCode(game.home_team);
+        const cleanAway = cleanTeamCode(game.away_team);
 
         const envPayload = game.environmental_payload || {};
         const circPayload = game.circadian_payload || {};
@@ -232,37 +299,89 @@ function recalculateAndRenderAll() {
         const m11 = calcBiophysicalMassLoad(envPayload, homeTel, 95.0, 0.62, mode, sliderVal);
         const m12 = calcTurnoverEPAMatrix({ home: homeTel, away: awayTel }, gameLeague, mode, sliderVal);
 
-        // 1. JUST THE TIP BASELINE (100% Untouched Pure EPA Baseline)
-        const m9Base = calcFullGameFairMargin(game, m8.phiCircadianPenalty, 0, "tip");
+        // Extract Vegas Home Spread & Total Line so NCAA SOS talent gaps are respected
+        let vegasHomeSpread = 0;
+        let vegasTotalLine = (gameLeague === "NCAA") ? 51.5 : 43.5;
+        if (Array.isArray(game.props_board)) {
+            const homeSpreadObj = game.props_board.find(
+                p => p.market_type === "spread" && p.player.startsWith(`${game.home_team} `)
+            );
+            const awaySpreadObj = game.props_board.find(
+                p => p.market_type === "spread" && p.player.startsWith(`${game.away_team} `)
+            );
+            if (homeSpreadObj && homeSpreadObj.base_line !== undefined) {
+                vegasHomeSpread = Number(homeSpreadObj.base_line);
+            } else if (awaySpreadObj && awaySpreadObj.base_line !== undefined) {
+                vegasHomeSpread = -Number(awaySpreadObj.base_line);
+            }
+            const totalObj = game.props_board.find(p => p.market_type === "total");
+            if (totalObj && totalObj.base_line !== undefined) {
+                vegasTotalLine = Number(totalObj.base_line);
+            }
+        }
 
-        // 2. BALLS DEEP COUPLED TELEMETRY VECTOR (Psi_11,12 bounded to realistic [-4.25, +4.25] pts)
-        const tovVector = -(m12Bd.netTurnoverEPA || 0) * PHI * 1.15;
-        const bioElevVector = -(m11Bd.phiBioScore + psiElev) * PHI * 1.25;
-        const m13Vector = -m13Rise * 11.5;
-        const edgeAmplifier = Math.sign(m9Base.fairHomeSpread || -1) * (0.618 * (1.0 + Math.abs(m8.phiCircadianPenalty) * 0.4));
+        const rawM9Base = calcFullGameFairMargin(game, m8.phiCircadianPenalty, 0, "tip");
+        const windMph = envPayload.is_dome ? 0 : (envPayload.wind_mph || 0);
+        const windPenalty = Math.max(0, (windMph - 10.0) * 0.25);
+
+        // 1. JUST THE TIP BASELINE
+        // For NCAA: Anchors to SOS Market Baseline + bounded DixPix Telemetry/Environment shift [-3.6, +3.6] pts
+        // so +20.5/+25.5 college dogs never project to win outright by 7 points
+        let fairHomeTip = rawM9Base.fairHomeSpread;
+        if (gameLeague === "NCAA") {
+            const rawEpaDiffPts = (rawM9Base.fairHomeSpread - vegasHomeSpread) * 0.14;
+            const envCircShift = -m8.phiCircadianPenalty - ((m11Bd.phiBioScore + psiElev) * 1.2) - (m7.passGameModifierYards * 0.08);
+            const boundedNcaaDelta = Math.max(-3.6, Math.min(3.6, rawEpaDiffPts + envCircShift));
+            fairHomeTip = Number((vegasHomeSpread + boundedNcaaDelta).toFixed(2));
+        }
+
+        const m9Base = {
+            fairHomeSpread: fairHomeTip,
+            epaContribution: rawM9Base.epaContribution,
+            activeCoupledOverlay: 0
+        };
+
+        // 2. BALLS DEEP COUPLED TELEMETRY VECTOR (Psi_11,12 bounded to [-3.85, +3.85] pts)
+        const tovVector = -(m12Bd.netTurnoverEPA || 0) * PHI * 1.10;
+        const bioElevVector = -(m11Bd.phiBioScore + psiElev) * PHI * 1.20;
+        const m13Vector = -m13Rise * 10.5;
+        const edgeAmplifier = Math.sign(fairHomeTip - vegasHomeSpread || -1) * (0.618 * (1.0 + Math.abs(m8.phiCircadianPenalty) * 0.35));
         const rawPsiBd = tovVector + bioElevVector + m13Vector + edgeAmplifier;
-        const psiBd = Number(Math.max(-4.25, Math.min(4.25, rawPsiBd)).toFixed(2));
+        const psiBd = Number(Math.max(-3.85, Math.min(3.85, rawPsiBd)).toFixed(2));
 
         const psi11_12 = (mode === "tip")
             ? 0
             : Number((psiBd * (mode === "davinci" ? (1.0 + sliderVal * 0.5) : 1.0)).toFixed(2));
 
-        const m9Bd = calcFullGameFairMargin(game, m8.phiCircadianPenalty, psiBd, "balls_deep");
-        const m9 = calcFullGameFairMargin(game, m8.phiCircadianPenalty, psi11_12, mode);
+        const m9Bd = {
+            fairHomeSpread: Number((fairHomeTip + psiBd).toFixed(2)),
+            epaContribution: rawM9Base.epaContribution,
+            activeCoupledOverlay: psiBd
+        };
+        const m9 = {
+            fairHomeSpread: Number((fairHomeTip + psi11_12).toFixed(2)),
+            epaContribution: rawM9Base.epaContribution,
+            activeCoupledOverlay: psi11_12
+        };
 
         const totalIntercept = (gameLeague === "NCAA") ? 51.450 : MODEL_TOTAL_INTERCEPT;
         const epaTotalPts = ((homeTel.net_epa_per_play || 0) + (awayTel.net_epa_per_play || 0)) * playScaler;
         const rzTotalPts = ((homeTel.opp_rz_dvoa || 0) + (awayTel.opp_rz_dvoa || 0)) * 10.0;
-        const windMph = envPayload.is_dome ? 0 : (envPayload.wind_mph || 0);
-        const windPenalty = Math.max(0, (windMph - 10.0) * 0.25);
-        const baseTelemetryTotal = Number((totalIntercept + epaTotalPts + rzTotalPts - windPenalty).toFixed(1));
+        const rawTelemetryTotal = totalIntercept + epaTotalPts + rzTotalPts - windPenalty;
+
+        let baseTelemetryTotal = Number(rawTelemetryTotal.toFixed(1));
+        if (gameLeague === "NCAA") {
+            const envTotalShift = -windPenalty + (m7.passGameModifierYards * 0.25) + ((psiElev > 0.3 ? 1.8 : 0));
+            const boundedTotalDelta = Math.max(-3.8, Math.min(3.8, ((rawTelemetryTotal - vegasTotalLine) * 0.22) + envTotalShift));
+            baseTelemetryTotal = Number((vegasTotalLine + boundedTotalDelta).toFixed(1));
+        }
 
         const gameRecord = {
             gameId: game.game_id,
             league: gameLeague,
-            matchup: `${game.away_team} @ ${game.home_team}`,
-            homeTeam: game.home_team,
-            awayTeam: game.away_team,
+            matchup: `${cleanAway} @ ${cleanHome}`,
+            homeTeam: cleanHome,
+            awayTeam: cleanAway,
             commenceTime: game.commence_time,
             elevationM: envPayload.elevation_m || 0,
             tempK: envPayload.temp_kelvin || 288.15,
@@ -374,14 +493,13 @@ function recalculateAndRenderAll() {
                     bdReachProb = Math.max(0.05, activeModelProb - 0.08);
                 }
 
-                // Tip Label vs Active Label (so Combinatorics shows active O/U direction if DaVinci flips a total)
-                let tipDisplayLabel = prop.player;
-                let activeDisplayLabel = prop.player;
+                let tipDisplayLabel = cleanLabelCodes(prop.player);
+                let activeDisplayLabel = cleanLabelCodes(prop.player);
                 if (prop.market_type === "total") {
                     const isUnderTip = baseProjectedLine < vegasLine;
                     const isUnderActive = finalCalculatedLine < vegasLine;
-                    tipDisplayLabel = `${game.away_team}@${game.home_team} Total (${isUnderTip ? "U" : "O"} ${vegasLine})`;
-                    activeDisplayLabel = `${game.away_team}@${game.home_team} Total (${isUnderActive ? "U" : "O"} ${vegasLine})`;
+                    tipDisplayLabel = `${cleanAway}@${cleanHome} Total (${isUnderTip ? "U" : "O"} ${vegasLine})`;
+                    activeDisplayLabel = `${cleanAway}@${cleanHome} Total (${isUnderActive ? "U" : "O"} ${vegasLine})`;
                 }
 
                 const m2Tip = calcExpectedValueAndKelly(tipModelProb, prop.base_odds_over || -110);
@@ -403,20 +521,18 @@ function recalculateAndRenderAll() {
                     gameId: game.game_id,
                     league: gameLeague,
                     matchup: gameRecord.matchup,
-                    homeTeam: game.home_team,
-                    awayTeam: game.away_team,
+                    homeTeam: cleanHome,
+                    awayTeam: cleanAway,
                     player: tipDisplayLabel,
                     activePlayerLabel: activeDisplayLabel,
                     marketType: prop.market_type,
                     baseLine: vegasLine,
                     baseOdds: prop.base_odds_over || -110,
                     isHomeSpread,
-                    // Locked Just the Tip Baseline Properties (Used on Master Pick Board Top Line)
                     tipProjectedMean: baseProjectedLine,
                     tipModelPct: tipWinPct,
                     tipEvPct: tipEvPct,
                     tipBadge: tipBadge,
-                    // Active Mode Properties (Used in Unlocked Sub-Box AND Combinatorics Deck)
                     projectedMean: finalCalculatedLine,
                     bdProjectedMean: bdProjectedLine,
                     vigFreePct: Number((vigFreeOver * 100).toFixed(2)),
@@ -437,7 +553,7 @@ function recalculateAndRenderAll() {
         }
     });
 
-    // Lock Flagship 5-Pack Selection to tipEvPct so the 5-Pack order never jumps around
+    // Lock Flagship 5-Pack Selection to tipEvPct across NFL + Top-25 Ranked NCAA
     AppState.processedProps.forEach(p => { p.flagshipSlot = ""; });
     const bestSpreadPerGame = [];
     const remainingPool = [];
@@ -471,7 +587,6 @@ function recalculateAndRenderAll() {
     renderBioWeatherLab();
     renderHistoricalLedger();
 
-    // Restore exact scroll position so switching modes never resets or jumps the page
     window.scrollTo(savedScrollX, savedScrollY);
     requestAnimationFrame(() => {
         window.scrollTo(savedScrollX, savedScrollY);
@@ -485,7 +600,6 @@ function renderTierBadgeHTML(tierBadge) {
     return `<span class="badge-pass" style="background: rgba(239, 68, 68, 0.16); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.45); font-weight: 800;">PASS</span>`;
 }
 
-// Clean telemetry box: Colors dynamically based on whether the active Balls Deep / DaVinci EV >= +10.0%
 function buildBallsDeepBoxHTML(engineProp, isSpread) {
     if (AppState.activeMode === "tip") {
         return "";
@@ -608,21 +722,14 @@ function renderFlagshipFivePack() {
 }
 
 // ==========================================
-// INDEPENDENT MASONRY FLEX COLUMNS (ATOMIC DOM SWAP PREVENTS SCROLL RESET)
-// - In "Just the Tip" mode: Shows ONLY Vegas Favorite Spread + Total (O/U)
-// - In "Balls Deep" / "DaVinci" mode: Shows ALL lines + Escalator Boxes
+// INDEPENDENT MASONRY FLEX COLUMNS (NFL + TOP-25 RANKED NCAA ONLY)
 // ==========================================
 function render_game_cards(data) {
     const container = document.getElementById("master-board-body");
     if (!container) return;
 
     const defaultLeague = (data.slate_info && data.slate_info.league) || "NFL";
-    const games = (data.games || []).filter(g => {
-        const lg = g.league || defaultLeague;
-        if (lg === "NFL" && !AppState.filters.nfl) return false;
-        if (lg === "NCAA" && !AppState.filters.ncaa) return false;
-        return true;
-    });
+    const games = (data.games || []).filter(g => shouldIncludeGame(g, defaultLeague));
 
     if (games.length === 0) {
         container.innerHTML = "";
@@ -655,6 +762,9 @@ function render_game_cards(data) {
 
     games.forEach((game, gameIndex) => {
         const cardKey = game.game_id || `${game.away_team}@${game.home_team}`;
+        const cleanHome = cleanTeamCode(game.home_team);
+        const cleanAway = cleanTeamCode(game.away_team);
+
         let gameDate = "TBD", gameTime = "TBD";
         if (game.commence_time) {
             const dt = new Date(game.commence_time);
@@ -683,7 +793,7 @@ function render_game_cards(data) {
                 <span style="font-size: 0.85em; color: #94a3b8;">${weatherString}</span>
             </div>
             <div style="font-size: 1.25em; font-weight: bold; text-align: center; margin-bottom: 10px;">
-                ${game.away_team} @ ${game.home_team}
+                ${cleanAway} @ ${cleanHome}
             </div>
             <div style="font-size: 0.85em; text-align: center; color: #cbd5e1;">
                 ${cardSubtitle}
@@ -698,7 +808,7 @@ function render_game_cards(data) {
 
         const allGameProps = AppState.processedProps.filter(ep => ep.gameId === game.game_id);
 
-        // In "Just the Tip" mode: Show ONLY the Vegas Favorite Spread (baseLine < 0, or home spread if pick'em 0) + Total (O/U)
+        // In "Just the Tip" mode: Show ONLY Vegas Favorite Spread + Total (O/U)
         // In "Balls Deep" / "DaVinci" mode: Show EVERYTHING
         const visibleGameProps = (AppState.activeMode === "tip")
             ? allGameProps.filter(ep => {
@@ -756,7 +866,7 @@ function render_game_cards(data) {
 }
 
 // ==========================================
-// COMBINATORICS & ROUND ROBIN DECK (DYNAMICALLY UPDATES ACROSS ALL MODES)
+// COMBINATORICS & ROUND ROBIN DECK
 // ==========================================
 function renderCombinatoricsDeck() {
     const container = document.getElementById("combinatorics-container");
@@ -781,7 +891,6 @@ function renderCombinatoricsDeck() {
 
     const uniqueMatchups = Array.from(new Set(AppState.processedGames.map(g => g.matchup)));
 
-    // Filter by active mode's tierBadge (so SMASH Only reflects the active mode)
     const filteredPool = AppState.processedProps.filter(p => {
         if (AppState.comboFilters.team !== "ALL" && p.matchup !== AppState.comboFilters.team) return false;
         if (AppState.comboFilters.market !== "ALL" && p.marketType !== AppState.comboFilters.market) return false;
@@ -875,7 +984,6 @@ function renderCombinatoricsDeck() {
                 ${filteredPool.map(p => {
                     const isSelected = AppState.selectedParlayLegs.has(p.propKey);
                     const isSpread = p.marketType === "spread";
-                    // Uses ACTIVE MODE values (projectedMean, activeModelPct, evPct, tierBadge) so switching modes updates every card!
                     const isSmash = p.tierBadge === "SMASH";
                     const fmtProj = (isSpread && Number(p.projectedMean) > 0) ? `+${p.projectedMean}` : `${p.projectedMean}`;
                     const evStr = `${p.evPct > 0 ? '+' : ''}${p.evPct}% EV`;
