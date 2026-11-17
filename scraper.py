@@ -90,23 +90,29 @@ def fetch_live_stadium_weather(home_meta):
         "is_dome": is_dome,
         "elevation_m": elev_m
     }
+
     if is_dome:
         return weather_payload
 
-    try:
-        url = (
-            f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
-            f"&current=temperature_2m,wind_speed_10m,surface_pressure"
-            f"&temperature_unit=fahrenheit&wind_speed_unit=mph"
-        )
-        resp = requests.get(url, headers=HEADERS, timeout=2)
-        if resp.status_code == 200:
-            data = resp.json().get("current", {})
-            weather_payload["temperature_f"] = data.get("temperature_2m", 58.0)
-            weather_payload["wind_mph"] = data.get("wind_speed_10m", 6.5)
-            weather_payload["pressure_hpa"] = data.get("surface_pressure", 1013.25)
-    except Exception:
-        pass
+    # 3-Strike Retry Loop: Prioritizes absolute accuracy over scraper speed
+    for attempt in range(3):
+        try:
+            url = (
+                f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
+                f"&current=temperature_2m,wind_speed_10m,surface_pressure"
+                f"&temperature_unit=fahrenheit&wind_speed_unit=mph"
+            )
+            # Full 10-second window to let the weather API respond
+            resp = requests.get(url, headers=HEADERS, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json().get("current", {})
+                weather_payload["temperature_f"] = data.get("temperature_2m", 58.0)
+                weather_payload["wind_mph"] = data.get("wind_speed_10m", 6.5)
+                weather_payload["pressure_hpa"] = data.get("surface_pressure", 1013.25)
+                break  # Success! Exit the loop immediately.
+        except Exception:
+            time.sleep(2)  # Wait 2 seconds and try again if the API is jammed
+            
     return weather_payload
 
 def fetch_espn_scores():
