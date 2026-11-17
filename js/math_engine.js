@@ -1,19 +1,21 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — CORE MATH MODULES (v200)
- * Pure EPA Baseline (No QB Delta Double-Counting) & +10.0% EV SMASH Threshold
+ * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v300)
+ * Implements Fibonacci Tier-1 Market Calibration (34/76), 10-Zone 0.1*Fz Elevation Matrix (Psi_elev),
+ * Red-Zone Finishing (Delta_RZ_fin), and Module 13 Sacred Geometry Overlay (M_rise = phi/pi).
  */
 
 const GOLDEN_RATIO_PHI = 1.6180339887;
+const SACRED_PHI_OVER_PI = GOLDEN_RATIO_PHI / Math.PI; // ~0.5150362
 const PI_OVER_PHI_HFA = 1.9416110252;
 const GOLDEN_PLAY_SCALER = 38.5145;
 const LOGISTIC_K_TIGHT = GOLDEN_RATIO_PHI / (4.0 * Math.PI); // ~0.12875903
 const SMASH_EV_THRESHOLD = 10.0; // +10.0% EV (~57.62% Win Prob at -110)
 
 const FIBONACCI_TIERS = {
-    TIER_1: 34,
-    TIER_2: 21,
-    TIER_3: 13,
-    TIER_4: 8,
+    TIER_1: 34, // 44.74% Core Efficiency & Market Baseline Weight
+    TIER_2: 21, // 27.63% High-Leverage Variance
+    TIER_3: 13, // 17.11% Tempo, Bio & 10-Zone Elevation
+    TIER_4: 8,  // 10.53% Friction & Circadian Schedule
     SUM_F: 76
 };
 
@@ -190,9 +192,7 @@ function calcBarometricBallistics(envPayload) {
             passGameModifierYards: 2.52
         };
     }
-    const Rd = 287.058;
-    const Rv = 461.495;
-    const rho0 = 1.225;
+    const Rd = 287.058, Rv = 461.495, rho0 = 1.225;
     const T = envPayload.temp_kelvin !== undefined
         ? envPayload.temp_kelvin
         : (envPayload.temperature_f !== undefined ? ((envPayload.temperature_f - 32) * 5 / 9) + 273.15 : 288.15);
@@ -225,7 +225,7 @@ function calcBarometricBallistics(envPayload) {
     };
 }
 
-// MODULE 8: CIRCADIAN FATIGUE PENALTY & REST STRAIN
+// MODULE 8: CIRCADIAN FATIGUE PENALTY, REST STRAIN & CHARTER DELAY SHOCK
 function calcCircadianStrain(circPayload, kickoffLocalHour) {
     const tzShift = circPayload.away_tz_shift || 0;
     const absTz = Math.abs(tzShift);
@@ -234,13 +234,14 @@ function calcCircadianStrain(circPayload, kickoffLocalHour) {
     const restDelta = circPayload.rest_differential_days || 0;
     const mnfShortFlag = circPayload.short_week_flag ? 1.0 : 0.0;
     const dAccl = circPayload.acclimation_days || 1;
+    const delayShock = circPayload.charter_delay_shock || 0.0;
 
     const bodyClockKickoff = (kickoffLocalHour || 13) - tzShift;
     const troughPenalty = Math.max(0, 13 - bodyClockKickoff);
 
-    const alpha = 0.45, gamma = 0.35, beta = 0.30;
-    const phiCirc = alpha * (absTz * omegaDir * Math.exp(-gamma * dAccl)) + (beta * troughPenalty);
-    const csi = (0.40 * absTz * omegaDir) + (0.35 * (travelMiles / 1000)) - (0.50 * restDelta) + mnfShortFlag;
+    const alpha = 0.45, gamma = 0.35, beta = 0.30, deltaDelay = 1.0;
+    const phiCirc = alpha * (absTz * omegaDir * Math.exp(-gamma * dAccl)) + (beta * troughPenalty) + (deltaDelay * delayShock);
+    const csi = (0.40 * absTz * omegaDir) + (0.35 * (travelMiles / 1000)) - (0.50 * restDelta) + mnfShortFlag + delayShock;
 
     return {
         phiCircadianPenalty: Number(phiCirc.toFixed(3)),
@@ -249,25 +250,128 @@ function calcCircadianStrain(circPayload, kickoffLocalHour) {
     };
 }
 
-// MODULE 9: FULL-GAME FAIR MARGIN (PURE EPA BASELINE — NO QB DELTA DOUBLE-COUNT)
-function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "tip") {
+// MODULE 11.2: 10-ZONE 0.1*Fz FIBONACCI ELEVATION ACCLIMATION MATRIX (PSI_ELEV)
+function calcTenZoneElevationMatrix(envPayload, circPayload, mode = "tip") {
+    const hVenueM = envPayload.elevation_m || 0;
+    const hAwayM = (circPayload && circPayload.away_elev_m !== undefined) ? circPayload.away_elev_m : 150;
+    const deltaHFeet = (hVenueM - hAwayM) * 3.28084;
+    const absFeet = Math.abs(deltaHFeet);
+
+    // 10 Fibonacci Zones (0.1 * Fz)
+    const zones = [
+        { maxFt: 100,  wz: 0.1, netPt: -0.03 },
+        { maxFt: 200,  wz: 0.2, netPt: -0.06 },
+        { maxFt: 300,  wz: 0.3, netPt: -0.10 },
+        { maxFt: 500,  wz: 0.5, netPt: -0.16 },
+        { maxFt: 800,  wz: 0.8, netPt: -0.26 },
+        { maxFt: 1300, wz: 1.3, netPt: -0.42 },
+        { maxFt: 2100, wz: 2.1, netPt: -0.68 },
+        { maxFt: 3400, wz: 3.4, netPt: -1.10 },
+        { maxFt: 5500, wz: 5.5, netPt: -1.78 },
+        { maxFt: 99999, wz: 8.9, netPt: -2.88 }
+    ];
+
+    let activeZone = zones[0];
+    let zoneIndex = 1;
+    for (let i = 0; i < zones.length; i++) {
+        if (absFeet <= zones[i].maxFt) {
+            activeZone = zones[i];
+            zoneIndex = i + 1;
+            break;
+        }
+    }
+
+    // Asymmetric Ascent (0.382 -> 0.618 -> 1.618 -> 1.618) vs Descent (1.618 -> 1.0 -> 0.618 -> 0.382)
+    const isAscent = deltaHFeet >= 0;
+    const qAvg = isAscent ? ((0.382 + 0.618 + 1.618 + 1.618) / 4.0) : ((1.618 + 1.000 + 0.618 + 0.382) / 4.0);
+    const modeScale = (mode === "tip") ? 0.618 : (mode === "balls_deep" ? 1.0 : 1.25);
+
+    // Negative psiElev helps the acclimated Home Team (lowers home spread)
+    const psiElev = activeZone.netPt * (qAvg / 1.059) * modeScale;
+
+    return {
+        zoneNumber: zoneIndex,
+        wzWeight: activeZone.wz,
+        deltaFeet: Math.round(deltaHFeet),
+        direction: isAscent ? "ASCENT" : "DESCENT",
+        psiElevPts: Number(psiElev.toFixed(3))
+    };
+}
+
+// MODULE 13: SACRED GEOMETRY "RISE TO THE OCCASION" & INVERSE FAVORITE TRAP (M_RISE)
+function calcSacredGeometryRise(gameData, vegasHomeSpread = 0, rawHomeSpread = 0) {
+    const home = (gameData.team_telemetry && gameData.team_telemetry.home) || {};
+    const away = (gameData.team_telemetry && gameData.team_telemetry.away) || {};
+
+    // Identify market favorite vs underdog
+    const homeIsUnderdog = vegasHomeSpread > 0;
+    const dogTel = homeIsUnderdog ? home : away;
+
+    // Poll/Market-to-EPA Divergence: how much Vegas overrates the favorite relative to raw EPA margin
+    const marketEpaDivergence = Math.max(-4.5, Math.min(4.5, (rawHomeSpread - vegasHomeSpread) * (homeIsUnderdog ? -1 : 1)));
+    const normDivergence = marketEpaDivergence / 4.5;
+
+    // Underdog Defensive Havoc Multiplier (derived from RZ DVOA & closing rank)
+    const dogHavocRatio = Math.max(0.75, Math.min(1.35, 1.0 - (dogTel.opp_rz_dvoa || 0) + ((dogTel.closing_rank_pct || 0.5) - 0.5) * 0.4));
+    const deltaContext = Math.max(-1.618, Math.min(1.618, normDivergence * dogHavocRatio));
+
+    const Fn = 21; // Tier 2/1 situational volatility weight
+    const mRiseDelta = SACRED_PHI_OVER_PI * (Fn / FIBONACCI_TIERS.SUM_F) * deltaContext;
+    const mRiseMultiplier = 1.0 + mRiseDelta;
+
+    // Point adjustment in favor of the underdog when a favorite is overrated
+    const riseSpreadAdj = (homeIsUnderdog ? -1 : 1) * (mRiseDelta * 3.5);
+
+    return {
+        mRiseMultiplier: Number(mRiseMultiplier.toFixed(4)),
+        deltaContext: Number(deltaContext.toFixed(3)),
+        riseHomeSpreadAdj: Number(riseSpreadAdj.toFixed(2))
+    };
+}
+
+// MODULE 9: FULL-GAME FAIR MARGIN (WITH RED-ZONE FINISHING, 10-ZONE ELEVATION & TIER-1 MARKET CALIBRATION)
+function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "tip", vegasHomeSpread = null, psiElev = 0) {
     const hfaBase = gameData.hfa_base !== undefined ? gameData.hfa_base : PI_OVER_PHI_HFA;
     const home = (gameData.team_telemetry && gameData.team_telemetry.home) || {};
     const away = (gameData.team_telemetry && gameData.team_telemetry.away) || {};
 
     const epaDiff = (away.net_epa_per_play || 0) - (home.net_epa_per_play || 0);
     const deltaTOReg = (away.turnover_reg_delta || 0) - (home.turnover_reg_delta || 0);
+
+    // Upgraded Module 9 Red-Zone TD Finishing Coefficient (Delta_RZ_fin)
+    const deltaRzFin = ((away.opp_rz_dvoa || 0) - (home.opp_rz_dvoa || 0)) * 4.0;
+
     const activePsi = (mode === "tip") ? 0 : psiCoupled11_12;
     const effectivePlays = GOLDEN_PLAY_SCALER;
 
-    const fairMarginHomeSpread = (
-        (effectivePlays * epaDiff) + deltaTOReg - hfaBase - phiCirc + activePsi
+    // 1. Pure Telemetry Unanchored Spread
+    const rawTelemetryHomeSpread = (
+        (effectivePlays * epaDiff) + deltaRzFin + deltaTOReg - hfaBase - phiCirc + activePsi + psiElev
     );
 
+    // 2. Module 13 Sacred Geometry Overlay & Fibonacci Tier-1 Market Baseline Calibration (34/76 = 44.74%)
+    let calibratedHomeSpread = rawTelemetryHomeSpread;
+    let m13 = { mRiseMultiplier: 1.0, deltaContext: 0, riseHomeSpreadAdj: 0 };
+
+    if (vegasHomeSpread !== null && vegasHomeSpread !== undefined && !isNaN(vegasHomeSpread)) {
+        m13 = calcSacredGeometryRise(gameData, vegasHomeSpread, rawTelemetryHomeSpread);
+        const rawWithRise = rawTelemetryHomeSpread + (mode === "tip" ? (m13.riseHomeSpreadAdj * 0.5) : m13.riseHomeSpreadAdj);
+        const rawDivergence = rawWithRise - vegasHomeSpread;
+
+        // Soft hyperbolic tangent damper prevents stale roster/injury lines from creating 12-point cartoon gaps
+        const dampedDivergence = 6.5 * Math.tanh(rawDivergence / 6.5);
+        const telemetryWeight = FIBONACCI_TIERS.TIER_1 / FIBONACCI_TIERS.SUM_F; // 34 / 76 = 0.44737
+
+        calibratedHomeSpread = vegasHomeSpread + (dampedDivergence * telemetryWeight);
+    }
+
     return {
-        fairHomeSpread: Number(fairMarginHomeSpread.toFixed(2)),
+        fairHomeSpread: Number(calibratedHomeSpread.toFixed(2)),
+        rawTelemetrySpread: Number(rawTelemetryHomeSpread.toFixed(2)),
         epaContribution: Number((effectivePlays * epaDiff).toFixed(2)),
-        activeCoupledOverlay: Number(activePsi.toFixed(3))
+        deltaRzFin: Number(deltaRzFin.toFixed(2)),
+        activeCoupledOverlay: Number(activePsi.toFixed(3)),
+        mRiseMultiplier: m13.mRiseMultiplier
     };
 }
 
@@ -281,8 +385,7 @@ function calcProfitBoostParlayEV(legsArray, boostMultiplier = 1.30) {
     if (!legsArray || legsArray.length === 0) {
         return { dRaw: 1, dBoost: 1, trueParlayProb: 0, evBoostPct: 0 };
     }
-    let dRaw = 1.0;
-    let pTrueParlay = 1.0;
+    let dRaw = 1.0, pTrueParlay = 1.0;
     for (let i = 0; i < legsArray.length; i++) {
         const dec = americanToDecimal(legsArray[i].americanOdds);
         dRaw *= dec;
@@ -336,7 +439,7 @@ function calcRoundRobinMatrix(legsArray) {
     return tiers;
 }
 
-// MODULE 11: BIOPHYSICAL MASS DENSITY & CLOSING MULTIPLIERS
+// MODULE 11.1: BIOPHYSICAL MASS DENSITY & CLOSING MULTIPLIERS
 function calcBiophysicalMassLoad(envPayload, homeTelemetry, playerMassKg = 95.0, fH2O = 0.62, mode = "balls_deep", intensitySlider = 0.0) {
     const h = envPayload.elevation_m || 0;
     const Re = 6371000, gSea = 9.80665;
@@ -369,7 +472,7 @@ function calcBiophysicalMassLoad(envPayload, homeTelemetry, playerMassKg = 95.0,
         closingMultiplier = (rankPct >= 0.53) ? 0.786 : 0.618;
     } else if (mode === "davinci") {
         const baseDavinci = (rankPct >= 0.53 && winStreak >= 2) ? 1.618 : ((rankPct >= 0.53) ? 1.0 : 0.618);
-        closingMultiplier = Number((baseDavinci * (1.0 + (intensitySlider * 0.35))).toFixed(3));
+        closingMultiplier = Number((baseDavinci * (1.0 + (intensitySlider * (13 / 76)))).toFixed(3));
     }
 
     const phiBioAdjusted = phiBioRaw * closingMultiplier;
@@ -396,7 +499,7 @@ function calcTurnoverEPAMatrix(teamTelemetry, league = "NFL", mode = "balls_deep
         home4QWeight = homeRankPct >= 0.53 ? 0.786 : 0.618;
         away4QWeight = awayRankPct >= 0.53 ? 0.786 : 0.618;
     } else if (mode === "davinci") {
-        const sliderScale = 1.0 + (intensitySlider * 0.35);
+        const sliderScale = 1.0 + (intensitySlider * (21 / 76));
         home4QWeight = (homeRankPct >= 0.53 ? 1.618 : 0.618) * sliderScale;
         away4QWeight = (awayRankPct >= 0.53 ? 1.618 : 0.618) * sliderScale;
     }
@@ -423,12 +526,12 @@ function calcCoupledInteractionPsi(phiBio, epaTov, intensitySlider = 0.0) {
     const sumVal = phiBio + epaTov;
     const sign = sumVal > 0 ? 1 : (sumVal < 0 ? -1 : 0);
     const rootProduct = Math.sqrt(Math.abs(phiBio * epaTov));
-    const scalar = 1.0 + (intensitySlider * 0.618);
+    const scalar = 1.0 + (intensitySlider * (13 / 76));
     return Number((sign * rootProduct * scalar).toFixed(4));
 }
 
-// MASTER EQUATION: AGGREGATE FIBONACCI PROBABILITY
-function calcMasterFibonacciAggregate(moduleScores, fibLookupFn = 13, intensitySlider = 0) {
+// MASTER EQUATION: AGGREGATE FIBONACCI PROBABILITY (SECTION 2.1 - 2.3)
+function calcMasterFibonacciAggregate(moduleScores, fibLookupFn = 13, intensitySlider = 0, mRiseMultiplier = 1.0) {
     const m = moduleScores;
     const tier1 = FIBONACCI_TIERS.TIER_1 * ((m.m1 || 0) + (m.m5 || 0) + (m.m7 || 0));
     const tier2 = FIBONACCI_TIERS.TIER_2 * ((m.m6 || 0) + (m.m10 || 0) + (m.m12 || 0));
@@ -436,12 +539,13 @@ function calcMasterFibonacciAggregate(moduleScores, fibLookupFn = 13, intensityS
     const tier4 = FIBONACCI_TIERS.TIER_4 * ((m.m4 || 0) + (m.m8 || 0));
 
     const omegaFib = (tier1 + tier2 + tier3 + tier4) / FIBONACCI_TIERS.SUM_F;
-    const baseLogisticProb = 1.0 / (1.0 + Math.exp(-GOLDEN_RATIO_PHI * omegaFib));
+    const omegaFibRise = omegaFib * mRiseMultiplier;
+    const baseLogisticProb = 1.0 / (1.0 + Math.exp(-GOLDEN_RATIO_PHI * omegaFibRise));
     const volatilityMultiplier = 1.0 + ((fibLookupFn / FIBONACCI_TIERS.SUM_F) * intensitySlider);
     const pAgg = Math.max(0.01, Math.min(0.99, baseLogisticProb * volatilityMultiplier));
 
     return {
-        omegaFibScore: Number(omegaFib.toFixed(4)),
+        omegaFibScore: Number(omegaFibRise.toFixed(4)),
         lockedObjectiveProb: Number((baseLogisticProb * 100).toFixed(2)),
         liveAdjustedProb: Number((pAgg * 100).toFixed(2))
     };
