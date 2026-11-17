@@ -1,8 +1,8 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v210)
- * - Strict League Filter: Displays ONLY NFL and AP/CFP Top-25 Ranked NCAA Matchups (Strips unranked G5/MAC noise)
- * - College SOS Baseline Anchor: Prevents +20.5/+25.5 NCAA dogs from projecting as -7.71 outright favorites
- * - Clean Team Code Normalizer: Fixes 4-letter fallback codes (NODA->ND, WAFO->WAKE, GETE->GT, MIST->MSU, etc.)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v211)
+ * - Flagship 5-Pack: All 5 Green SMASH plays with the SMASH badge placed directly next to the Vegas Spread
+ * - Single Lightning Bolt Rule in Balls Deep Cards: Only shows ⚡ BALLS DEEP PROJ on Totals and Spread sides with Win >= 50%
+ * - Strict League Filter: Displays ONLY NFL and AP/CFP Top-25 Ranked NCAA Matchups
  * - Zero Page/Scroll Reset on Mode Switch + Dynamic Combinatorics Deck Updates Across Modes
  */
 
@@ -54,11 +54,13 @@ const CLEAN_CODE_OVERRIDES = {
     "KEWI": "UK",
     "HOCO": "HOU",
     "ARWI": "ARIZ",
+    "ILFI": "ILL",
+    "ARRA": "ARK",
+    "BABE": "BAY",
     "ORST": "ORST",
     "SADI": "SDSU",
     "WEKE": "WKU",
-    "WACA": "WCU",
-    "בו": "BOIS"
+    "WACA": "WCU"
 };
 
 function cleanTeamCode(code) {
@@ -299,7 +301,6 @@ function recalculateAndRenderAll() {
         const m11 = calcBiophysicalMassLoad(envPayload, homeTel, 95.0, 0.62, mode, sliderVal);
         const m12 = calcTurnoverEPAMatrix({ home: homeTel, away: awayTel }, gameLeague, mode, sliderVal);
 
-        // Extract Vegas Home Spread & Total Line so NCAA SOS talent gaps are respected
         let vegasHomeSpread = 0;
         let vegasTotalLine = (gameLeague === "NCAA") ? 51.5 : 43.5;
         if (Array.isArray(game.props_board)) {
@@ -324,9 +325,6 @@ function recalculateAndRenderAll() {
         const windMph = envPayload.is_dome ? 0 : (envPayload.wind_mph || 0);
         const windPenalty = Math.max(0, (windMph - 10.0) * 0.25);
 
-        // 1. JUST THE TIP BASELINE
-        // For NCAA: Anchors to SOS Market Baseline + bounded DixPix Telemetry/Environment shift [-3.6, +3.6] pts
-        // so +20.5/+25.5 college dogs never project to win outright by 7 points
         let fairHomeTip = rawM9Base.fairHomeSpread;
         if (gameLeague === "NCAA") {
             const rawEpaDiffPts = (rawM9Base.fairHomeSpread - vegasHomeSpread) * 0.14;
@@ -341,7 +339,6 @@ function recalculateAndRenderAll() {
             activeCoupledOverlay: 0
         };
 
-        // 2. BALLS DEEP COUPLED TELEMETRY VECTOR (Psi_11,12 bounded to [-3.85, +3.85] pts)
         const tovVector = -(m12Bd.netTurnoverEPA || 0) * PHI * 1.10;
         const bioElevVector = -(m11Bd.phiBioScore + psiElev) * PHI * 1.20;
         const m13Vector = -m13Rise * 10.5;
@@ -416,12 +413,10 @@ function recalculateAndRenderAll() {
                 let bdReachProb = 0.50;
 
                 if (prop.market_type === "spread") {
-                    // 1. JUST THE TIP BASELINE
                     baseProjectedLine = isHomeSpread ? m9Base.fairHomeSpread : Number((-m9Base.fairHomeSpread).toFixed(2));
                     const tipGap = vegasLine - baseProjectedLine;
                     tipModelProb = calcPointGapWinProb(tipGap);
 
-                    // 2. BALLS DEEP PROJECTED MARGIN
                     bdProjectedLine = isHomeSpread ? m9Bd.fairHomeSpread : Number((-m9Bd.fairHomeSpread).toFixed(2));
                     const bdGap = vegasLine - bdProjectedLine;
                     bdModelProb = calcPointGapWinProb(bdGap);
@@ -437,7 +432,6 @@ function recalculateAndRenderAll() {
                         activeModelProb = tipModelProb;
                     }
 
-                    // 3. LONGER-ODDS ESCALATOR (.5 Sportsbook Hook selling 3.0 pts for +145 odds)
                     const altSpreadHook = snapToHalfPointHook(vegasLine, 3.0);
                     bdAltLineLabel = `Alt ${altSpreadHook > 0 ? '+' + altSpreadHook.toFixed(1) : altSpreadHook.toFixed(1)} (+145)`;
                     bdLongerOdds = 145;
@@ -445,12 +439,10 @@ function recalculateAndRenderAll() {
                     bdReachProb = calcPointGapWinProb(altCoverGap);
 
                 } else if (prop.market_type === "total") {
-                    // 1. JUST THE TIP BASELINE
                     baseProjectedLine = baseTelemetryTotal;
                     const tipTotalDiff = baseProjectedLine - vegasLine;
                     tipModelProb = calcPointGapWinProb(Math.abs(tipTotalDiff));
 
-                    // 2. BALLS DEEP PROJECTED TOTAL
                     const dirSign = tipTotalDiff >= 0 ? 1 : -1;
                     const bdTotalShift = dirSign * Math.min(4.2, (Math.abs(psiBd) * 0.45 + Math.abs(m7.passGameModifierYards) * 0.22 + 1.5));
                     bdProjectedLine = Number((baseProjectedLine + bdTotalShift).toFixed(1));
@@ -468,7 +460,6 @@ function recalculateAndRenderAll() {
                         activeModelProb = tipModelProb;
                     }
 
-                    // 3. LONGER-ODDS TOTAL ESCALATOR (.5 Sportsbook Hook selling 3.0 pts for +155 odds)
                     const isUnderTip = baseProjectedLine < vegasLine;
                     const altTotalHook = isUnderTip
                         ? (Math.floor(vegasLine - 3.0) + 0.5)
@@ -553,7 +544,7 @@ function recalculateAndRenderAll() {
         }
     });
 
-    // Lock Flagship 5-Pack Selection to tipEvPct across NFL + Top-25 Ranked NCAA
+    // Lock Flagship 5-Pack Selection to top SMASH plays across NFL + Top-25 Ranked NCAA
     AppState.processedProps.forEach(p => { p.flagshipSlot = ""; });
     const bestSpreadPerGame = [];
     const remainingPool = [];
@@ -600,6 +591,7 @@ function renderTierBadgeHTML(tierBadge) {
     return `<span class="badge-pass" style="background: rgba(239, 68, 68, 0.16); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.45); font-weight: 800;">PASS</span>`;
 }
 
+// Single Lightning Bolt Rule: Only show ⚡ BALLS DEEP PROJ on Totals and the favored Spread cover side (Win >= 50%)
 function buildBallsDeepBoxHTML(engineProp, isSpread) {
     if (AppState.activeMode === "tip") {
         return "";
@@ -615,7 +607,6 @@ function buildBallsDeepBoxHTML(engineProp, isSpread) {
     const activeEvStr = `${engineProp.evPct > 0 ? '+' : ''}${engineProp.evPct}% EV`;
     const altEvStr = `${engineProp.bdAltEvPct > 0 ? '+' : ''}${engineProp.bdAltEvPct}% EV`;
 
-    // Only show the ⚡ BALLS DEEP PROJ lightning bolt on Totals and the favored Spread cover side (Win >= 50%)
     const showLightningBolt = !isSpread || (engineProp.tipModelPct >= 50.0);
 
     const boltRowHTML = showLightningBolt
@@ -637,6 +628,7 @@ function buildBallsDeepBoxHTML(engineProp, isSpread) {
     `;
 }
 
+// Flagship 5-Pack: All 5 Green SMASH plays with SMASH badge right next to the Vegas spread
 function renderFlagshipFivePack() {
     const container = document.getElementById("flagship-five-pack-container");
     if (!container) return;
