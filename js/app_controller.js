@@ -633,7 +633,8 @@ function render_game_cards(data) {
         if (props.length === 0) {
             drawer.innerHTML = `<div style="font-size: 0.85em; color: #94a3b8;">No active lines available yet.</div>`;
         } else {
-            const isSpread = p.market_type === "spread";
+            props.forEach((p, idx) => {
+               const isSpread = p.market_type === "spread";
                 const isTipSmash = engineData.tipEvPct >= SMASH_EV_CUTOFF;
                 const displayTipProj = (isSpread && Number(engineData.tipProjectedMean) > 0)
                     ? `+${engineData.tipProjectedMean}`
