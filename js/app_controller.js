@@ -1,8 +1,8 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v200)
- * - Pure EPA Baseline (No QB Delta double-counting)
- * - Objective SMASH threshold >= +10.0% EV (~57.62% Win Prob at -110)
- * - Centered single-card Flagship 5-Pack sub-banner & embedded mobile-friendly Combinatorics calculator
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v201)
+ * - Tier-1 Market Baseline Anchor (Pi * tanh(Delta / (Pi * Phi))) prevents runaway 40%-70% EVs
+ * - Single non-clickable locked "Balls Deep" banner under Active Engine in Tip mode
+ * - Zero Balls Deep projections or boxes inside game cards unless Balls Deep / DaVinci is active
  */
 
 const AppState = {
@@ -21,22 +21,13 @@ const AppState = {
 const openCardMemory = new Set();
 const MODEL_TOTAL_INTERCEPT = 42.986;
 const SMASH_EV_CUTOFF = 10.0; // +10.0% EV threshold for SMASH
+const SACRED_PI_PHI = Math.PI * 1.6180339887; // ~5.08320369
 
 document.addEventListener("DOMContentLoaded", () => {
     bindUIControls();
     pollDataFeed();
     setInterval(pollDataFeed, 5000);
 });
-
-window.unlockBallsDeepMode = function(event) {
-    if (event) event.stopPropagation();
-    const bdRadio = document.getElementById("mode-balls-deep");
-    if (bdRadio) {
-        bdRadio.checked = true;
-        AppState.activeMode = "balls_deep";
-        recalculateAndRenderAll();
-    }
-};
 
 window.toggleParlayLeg = function(propKey) {
     if (AppState.selectedParlayLegs.has(propKey)) {
@@ -162,16 +153,52 @@ function recalculateAndRenderAll() {
             ? 0
             : calcCoupledInteractionPsi(m11.phiBioScore, m12.netTurnoverEPA, sliderVal);
 
-        const m9Base = calcFullGameFairMargin(game, m8.phiCircadianPenalty, 0, "tip");
-        const m9Bd = calcFullGameFairMargin(game, m8.phiCircadianPenalty, psiBd, "balls_deep");
-        const m9 = calcFullGameFairMargin(game, m8.phiCircadianPenalty, psi11_12, mode);
+        const m9RawBase = calcFullGameFairMargin(game, m8.phiCircadianPenalty, 0, "tip");
 
-        // Pure EPA + Red-Zone DVOA + Wind Penalty (No QB Delta double-counting)
+        // Extract Vegas Home Spread & Vegas Total to anchor Tier-1 Market Baseline (F9 = 34/76)
+        let vegasHomeSpread = m9RawBase.fairHomeSpread;
+        let vegasTotalLine = MODEL_TOTAL_INTERCEPT;
+        if (Array.isArray(game.props_board)) {
+            const homeSpreadObj = game.props_board.find(
+                p => p.market_type === "spread" && p.player.startsWith(`${game.home_team} `)
+            );
+            const awaySpreadObj = game.props_board.find(
+                p => p.market_type === "spread" && p.player.startsWith(`${game.away_team} `)
+            );
+            if (homeSpreadObj && homeSpreadObj.base_line !== undefined) {
+                vegasHomeSpread = Number(homeSpreadObj.base_line);
+            } else if (awaySpreadObj && awaySpreadObj.base_line !== undefined) {
+                vegasHomeSpread = -Number(awaySpreadObj.base_line);
+            }
+            const totalObj = game.props_board.find(p => p.market_type === "total");
+            if (totalObj && totalObj.base_line !== undefined) {
+                vegasTotalLine = Number(totalObj.base_line);
+            }
+        }
+
+        // Sacred Geometry Tier-1 Market Anchor: Damps raw EPA divergence via Pi * tanh(Delta / (Pi * Phi))
+        const rawHomeSpreadDelta = m9RawBase.fairHomeSpread - vegasHomeSpread;
+        const anchoredHomeShift = Math.PI * Math.tanh(rawHomeSpreadDelta / SACRED_PI_PHI);
+
+        const fairHomeTip = Number((vegasHomeSpread + anchoredHomeShift).toFixed(2));
+        const fairHomeBd = Number((fairHomeTip + psiBd).toFixed(2));
+        const fairHomeActive = (mode === "tip")
+            ? fairHomeTip
+            : Number((fairHomeTip + psi11_12 - (sliderVal * 0.618)).toFixed(2));
+
+        const m9Base = { fairHomeSpread: fairHomeTip, epaContribution: m9RawBase.epaContribution, activeCoupledOverlay: 0 };
+        const m9Bd = { fairHomeSpread: fairHomeBd, epaContribution: m9RawBase.epaContribution, activeCoupledOverlay: psiBd };
+        const m9 = { fairHomeSpread: fairHomeActive, epaContribution: m9RawBase.epaContribution, activeCoupledOverlay: psi11_12 };
+
+        // Pure EPA + Red-Zone DVOA + Wind Penalty anchored to Tier-1 Market Total Baseline
         const epaTotalPts = ((homeTel.net_epa_per_play || 0) + (awayTel.net_epa_per_play || 0)) * playScaler;
         const rzTotalPts = ((homeTel.opp_rz_dvoa || 0) + (awayTel.opp_rz_dvoa || 0)) * 10.0;
         const windMph = envPayload.is_dome ? 0 : (envPayload.wind_mph || 0);
         const windPenalty = Math.max(0, (windMph - 10.0) * 0.25);
-        const baseTelemetryTotal = Number((MODEL_TOTAL_INTERCEPT + epaTotalPts + rzTotalPts - windPenalty).toFixed(1));
+        const rawTelemetryTotal = MODEL_TOTAL_INTERCEPT + epaTotalPts + rzTotalPts - windPenalty;
+        const rawTotalDelta = rawTelemetryTotal - vegasTotalLine;
+        const anchoredTotalShift = Math.PI * Math.tanh(rawTotalDelta / SACRED_PI_PHI);
+        const baseTelemetryTotal = Number((vegasTotalLine + anchoredTotalShift).toFixed(1));
 
         const gameRecord = {
             gameId: game.game_id,
@@ -232,8 +259,7 @@ function recalculateAndRenderAll() {
                         finalCalculatedLine = bdProjectedLine;
                         activeModelProb = bdModelProb;
                     } else if (mode === "davinci") {
-                        const activeHomeSpread = m9.fairHomeSpread - (sliderVal * 0.85);
-                        finalCalculatedLine = isHomeSpread ? Number(activeHomeSpread.toFixed(2)) : Number((-activeHomeSpread).toFixed(2));
+                        finalCalculatedLine = isHomeSpread ? m9.fairHomeSpread : Number((-m9.fairHomeSpread).toFixed(2));
                         activeModelProb = calcPointGapWinProb(vegasLine - finalCalculatedLine);
                     }
                 } else if (prop.market_type === "total") {
@@ -241,7 +267,7 @@ function recalculateAndRenderAll() {
                         finalCalculatedLine = bdProjectedLine;
                         activeModelProb = bdModelProb;
                     } else if (mode === "davinci") {
-                        const dvShift = (psi11_12 * 0.65) + (sliderVal * 1.45);
+                        const dvShift = (psi11_12 * 0.65) + (sliderVal * 0.95);
                         finalCalculatedLine = Number((baseProjectedLine + dvShift).toFixed(1));
                         activeModelProb = calcPointGapWinProb(Math.abs(finalCalculatedLine - vegasLine));
                     }
@@ -333,33 +359,25 @@ function recalculateAndRenderAll() {
     renderHistoricalLedger();
 }
 
+// Returns NOTHING in "Just the Tip" mode so cards stay 100% clean; shows comparison only when unlocked
 function buildBallsDeepBoxHTML(engineProp, isSpread) {
-    const bdProj = engineProp.bdProjectedMean;
-    const fmtBdProj = (isSpread && Number(bdProj) > 0) ? `+${bdProj}` : `${bdProj}`;
-    const bdEvStr = `${engineProp.bdEvPct > 0 ? '+' : ''}${engineProp.bdEvPct}% EV`;
-
     if (AppState.activeMode === "tip") {
-        return `
-            <div class="bd-preview-locked" onclick="window.unlockBallsDeepMode(event)" title="Click to unlock Balls Deep Mode">
-                <span style="color: var(--accent-gold); font-weight: 700;">🔒 BALLS DEEP — "You gotta pay to go balls deep..."</span>
-                <span style="color: var(--text-secondary);">Proj: ${fmtBdProj} (${engineProp.bdModelPct}% | ${bdEvStr})</span>
-            </div>
-        `;
-    } else {
-        const tipProj = engineProp.tipProjectedMean;
-        const fmtTipProj = (isSpread && Number(tipProj) > 0) ? `+${tipProj}` : `${tipProj}`;
-        const tipEvStr = `${engineProp.tipEvPct > 0 ? '+' : ''}${engineProp.tipEvPct}% EV`;
-        const activeLabel = AppState.activeMode === "davinci" ? "DAVINCI ACTIVE" : "BALLS DEEP ACTIVE";
-        const activeProj = (isSpread && Number(engineProp.projectedMean) > 0) ? `+${engineProp.projectedMean}` : `${engineProp.projectedMean}`;
-        const activeEvStr = `${engineProp.evPct > 0 ? '+' : ''}${engineProp.evPct}% EV`;
-
-        return `
-            <div class="bd-preview-unlocked">
-                <span style="color: var(--text-secondary);">Tip Baseline: <strong>${fmtTipProj}</strong> (${engineProp.tipModelPct}% | ${tipEvStr})</span>
-                <span style="color: var(--accent-emerald); font-weight: 700;">⚡ ${activeLabel}: ${activeProj} (${engineProp.activeModelPct}% | ${activeEvStr} | Ψ: ${engineProp.psiActive})</span>
-            </div>
-        `;
+        return "";
     }
+
+    const tipProj = engineProp.tipProjectedMean;
+    const fmtTipProj = (isSpread && Number(tipProj) > 0) ? `+${tipProj}` : `${tipProj}`;
+    const tipEvStr = `${engineProp.tipEvPct > 0 ? '+' : ''}${engineProp.tipEvPct}% EV`;
+    const activeLabel = AppState.activeMode === "davinci" ? "DAVINCI ACTIVE" : "BALLS DEEP ACTIVE";
+    const activeProj = (isSpread && Number(engineProp.projectedMean) > 0) ? `+${engineProp.projectedMean}` : `${engineProp.projectedMean}`;
+    const activeEvStr = `${engineProp.evPct > 0 ? '+' : ''}${engineProp.evPct}% EV`;
+
+    return `
+        <div class="bd-preview-unlocked">
+            <span style="color: var(--text-secondary);">Tip Baseline: <strong>${fmtTipProj}</strong> (${engineProp.tipModelPct}% | ${tipEvStr})</span>
+            <span style="color: var(--accent-emerald); font-weight: 700;">⚡ ${activeLabel}: ${activeProj} (${engineProp.activeModelPct}% | ${activeEvStr} | Ψ: ${engineProp.psiActive})</span>
+        </div>
+    `;
 }
 
 function renderFlagshipFivePack() {
@@ -385,16 +403,30 @@ function renderFlagshipFivePack() {
         ? "Just the Tip Baseline"
         : (AppState.activeMode === "balls_deep" ? "Balls Deep Coupled Mode" : "DaVinci Override Mode");
 
+    // Single centered, non-clickable locked tab right under Active Engine when in "Just the Tip" mode
+    const singleLockedStatusHTML = AppState.activeMode === "tip"
+        ? `
+            <div style="margin: 10px auto 4px auto; max-width: 480px; padding: 7px 14px; border-radius: 6px; background: rgba(9, 13, 22, 0.78); border: 1px dashed rgba(245, 158, 11, 0.45); opacity: 0.65; font-family: var(--font-mono); font-size: 11px; color: var(--accent-gold); font-weight: 700; text-align: center; cursor: not-allowed; user-select: none;">
+                🔒 BALLS DEEP — "You gotta pay to go balls deep..."
+            </div>
+        `
+        : `
+            <div style="margin: 10px auto 4px auto; max-width: 480px; padding: 6px 14px; border-radius: 6px; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.4); font-family: var(--font-mono); font-size: 11px; color: var(--accent-emerald); font-weight: 700; text-align: center;">
+                🔓 BALLS DEEP COUPLED TELEMETRY UNLOCKED (Ψ_11,12 ACTIVE)
+            </div>
+        `;
+
     container.innerHTML = `
         <div id="flagship-banner-toggle" style="cursor: pointer; padding: 14px 20px; text-align: center; background: linear-gradient(90deg, rgba(245, 158, 11, 0.16), rgba(6, 182, 212, 0.10), rgba(245, 158, 11, 0.16)); user-select: none;">
             <div style="font-size: 15px; font-weight: 800; color: var(--accent-gold); letter-spacing: 0.04em;">
                 👑 THE DIXPIX FLAGSHIP 5-PACK // FEATURING "THE MÉNAGE À TROIS"
             </div>
             <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
-                Active Engine: <strong style="color: var(--accent-cyan);">${modeTitle}</strong> &bull; 
-                <span style="color: var(--text-primary); text-decoration: underline;">
-                    ${isExpanded ? 'Click to collapse 5-Pack ▲' : 'Click to unlock &amp; expand all 5 Flagship Plays ▼'}
-                </span>
+                Active Engine: <strong style="color: var(--accent-cyan);">${modeTitle}</strong>
+            </div>
+            ${singleLockedStatusHTML}
+            <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); text-decoration: underline; margin-top: 6px;">
+                ${isExpanded ? 'Click to collapse 5-Pack ▲' : 'Click to unlock &amp; expand all 5 Flagship Plays ▼'}
             </div>
         </div>
 
@@ -449,6 +481,9 @@ function render_game_cards(data) {
     container.style.gap = "15px";
 
     const games = data.games || [];
+    const cardSubtitle = AppState.activeMode === "tip"
+        ? "Click to expand lines &amp; EV%"
+        : "Click to expand lines, EV% &amp; Balls Deep telemetry";
 
     games.forEach(game => {
         const cardKey = game.game_id || `${game.away_team}@${game.home_team}`;
@@ -482,7 +517,7 @@ function render_game_cards(data) {
                 ${game.away_team} @ ${game.home_team}
             </div>
             <div style="font-size: 0.85em; text-align: center; color: #cbd5e1;">
-                Click to expand lines, EV% &amp; Balls Deep telemetry
+                ${cardSubtitle}
             </div>
         `;
 
@@ -726,14 +761,6 @@ function renderTelemetryInspector() {
 
     container.className = "table-responsive";
     container.innerHTML = `
-        ${!showCoupledPsi ? `
-            <div style="padding: 12px 16px; border-bottom: 1px solid var(--border-subtle);">
-                <div class="bd-preview-locked" onclick="window.unlockBallsDeepMode(event)" style="margin-top: 0;">
-                    <span style="color: var(--accent-gold); font-weight: 700;">🔒 COUPLED Ψ_11,12 COLUMN HIDDEN IN TIP MODE — "You gotta pay to go balls deep..."</span>
-                    <span style="color: var(--accent-cyan);">Click here to unlock Balls Deep Telemetry &rarr;</span>
-                </div>
-            </div>
-        ` : ""}
         <table class="quant-table">
             <thead>
                 <tr>
@@ -816,6 +843,7 @@ function renderHistoricalLedger() {
 
     const ledgerObj = (AppState.rawPayload && AppState.rawPayload.historical_ledger) || {};
     const summary = ledgerObj.summary || {};
+    const showBallsDeep = (AppState.activeMode === "balls_deep" || AppState.activeMode === "davinci");
 
     const fmtBucket = (key) => {
         const b = summary[key];
@@ -850,13 +878,6 @@ function renderHistoricalLedger() {
             const isSpread = p.marketType === "spread";
             const fmtTipProj = (isSpread && Number(p.tipProjectedMean) > 0) ? `+${p.tipProjectedMean}` : `${p.tipProjectedMean}`;
             const fmtBdProj = (isSpread && Number(p.bdProjectedMean) > 0) ? `+${p.bdProjectedMean}` : `${p.bdProjectedMean}`;
-
-            const bdCell = AppState.activeMode === "tip"
-                ? `<div class="bd-preview-locked" onclick="window.unlockBallsDeepMode(event)" style="margin:0;padding:4px 8px;">
-                     <span style="color:var(--accent-gold);">🔒 "You gotta pay to go balls deep..."</span>
-                   </div>`
-                : `<span style="color:var(--accent-emerald);">Proj: <strong>${fmtBdProj}</strong> (${p.bdModelPct}% | ${p.bdEvPct > 0 ? '+' : ''}${p.bdEvPct}% EV)</span>`;
-
             const gradedRes = (savedRec && savedRec.result_tip) ? savedRec.result_tip : "PENDING";
 
             rowsHTML += `
@@ -866,7 +887,7 @@ function renderHistoricalLedger() {
                     <td><strong>${p.player}</strong> <span class="${p.tierBadge === 'SMASH' ? 'badge-smash' : 'badge-pass'}">${p.tierBadge}</span></td>
                     <td>${p.baseLine} (${p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds})</td>
                     <td>Proj: <strong>${fmtTipProj}</strong> (${p.tipModelPct}% | ${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV)</td>
-                    <td>${bdCell}</td>
+                    ${showBallsDeep ? `<td><span style="color:var(--accent-emerald);">Proj: <strong>${fmtBdProj}</strong> (${p.bdModelPct}% | ${p.bdEvPct > 0 ? '+' : ''}${p.bdEvPct}% EV)</span></td>` : ""}
                     <td>${renderGradeBadge(gradedRes)}</td>
                 </tr>
             `;
@@ -898,13 +919,10 @@ function renderHistoricalLedger() {
             <div style="background: var(--bg-elevated); border: 1px solid rgba(6, 182, 212, 0.45); border-radius: 8px; padding: 14px;">
                 <div style="font-size: 11px; color: var(--accent-cyan); font-weight: 800;">⚡ TIP vs. BALLS DEEP HEAD-TO-HEAD</div>
                 <div style="font-size: 14px; font-weight: 800; margin: 6px 0;">Just the Tip: ${fmtBucket("tip_all")}</div>
-                ${AppState.activeMode === "tip" ? `
-                    <div class="bd-preview-locked" onclick="window.unlockBallsDeepMode(event)">
-                        <span style="color: var(--accent-gold);">🔒 Balls Deep Record — "You gotta pay to go balls deep..."</span>
-                    </div>
-                ` : `
-                    <div style="font-size: 14px; font-weight: 800; color: var(--accent-emerald);">Balls Deep: ${fmtBucket("balls_deep_all")}</div>
-                `}
+                ${showBallsDeep
+                    ? `<div style="font-size: 14px; font-weight: 800; color: var(--accent-emerald);">Balls Deep: ${fmtBucket("balls_deep_all")}</div>`
+                    : `<div style="font-size: 11px; color: var(--accent-gold); opacity: 0.65;">🔒 Balls Deep Record Locked</div>`
+                }
             </div>
         </div>
 
@@ -917,7 +935,7 @@ function renderHistoricalLedger() {
                         <th>Official Model Pick</th>
                         <th>Vegas Closing</th>
                         <th>Just the Tip Closing</th>
-                        <th>Balls Deep Closing</th>
+                        ${showBallsDeep ? `<th>Balls Deep Closing</th>` : ""}
                         <th>Graded Result</th>
                     </tr>
                 </thead>
