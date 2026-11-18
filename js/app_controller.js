@@ -1115,7 +1115,7 @@ function renderFlagshipFivePack() {
 
                 <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
                     ${isPorkys
-                        ? 'Champagne Room Bouncer Alert: <strong style="color:#f87171;">Public Bait Trap on Left</strong> ➔ <strong style="color:var(--accent-emerald);">Recommended Fade on Right</strong>'
+                        ? '💣 Wingman Grenade Alert: <strong style="color:#f87171;">1:45 AM Public Grenade on Left</strong> ➔ <strong style="color:var(--accent-emerald);">Sober Counter-Strike Fade on Right</strong>'
                         : `Active Engine: <strong style="color: var(--accent-cyan);">${modeTitle}</strong> • <span style="color: var(--accent-emerald);">Current Week Slate (Thru MNF)</span>`}
                 </div>
 
