@@ -1468,7 +1468,7 @@ function buildLedgerLegendHTML() {
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
                         <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">THE MORNING-AFTER SCORECARD (W - L - BB)</div>
                         <div>• <strong style="color:var(--accent-emerald);">✅ HIT (W):</strong> <em>The Money Shot.</em> Covered the Vegas closing number and walked out with the bookie's cash.</div>
-                        <div style="margin-top: 4px;">• <strong style="color:#60a5fa;">🔵 BLUE BALLS (BB):</strong> <em>Robbed at the Two-Minute Warning.</em> Missed the Vegas line by <strong>&le;3.0 points (one field goal or less)</strong>—when the projection had you 99% of the way to the finish line before a red-zone fumble or half-point hook killed the climax.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:#60a5fa;">🔵 BLUE BALLS (BB):</strong> <em>Robbed at the Two-Minute Warning.</em> Missed the Vegas line by <strong>&le;3.0 points (one field goal or less)</strong>—when she gets you all 99% of the way, Mom walked in and killed the climax.</div>
                         <div style="margin-top: 4px;">• <strong style="color:var(--accent-danger);">❌ MISS (L):</strong> <em>Walk of Shame.</em> Missed the closing line by more than 3.0 points. No excuses—we post every receipt.</div>
                     </div>
 
