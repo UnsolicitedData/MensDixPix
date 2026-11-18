@@ -1,9 +1,9 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v213)
- * - Clean Bare Lock Icons (no dashed border or opaque orange fill)
- * - Collapsible Decoder Ring & Betting Guide Drawer on Master Pick Board
- * - Collapsible Ledger Legend Drawer on Historical Ledger Tab
- * - 3-Tier EV System: SMASH (>= +10% EV), TOO CLOSE (-9.9% to +9.9% EV, blank badge + neutral slate), PASS (<= -10% EV)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v214)
+ * - Dynamic Monday Night Football Cutoff: Locks Flagship 5-Pack strictly to the current week (through MNF)
+ * - Master Pick Board Divider: Separates Current Week Slate from Next Week's Early Lookahead Lines
+ * - Unbiased Centered Spread Engine (NFL + NCAA): Eliminates pull-to-zero underdog bias so strong Favorites and live Underdogs both SMASH
+ * - Clean Bare Lock Icons + Provocative VIP Club Legends + 3-Tier EV System (SMASH / Neutral Slate / PASS)
  * - W - L - BB (Blue Balls <= 3.0 pts miss) + Champagne Room Rules Traps Avoided Counter
  */
 
@@ -15,6 +15,7 @@ const AppState = {
     filters: { nfl: true, ncaa: true },
     comboFilters: { team: "ALL", market: "ALL", tier: "ALL" },
     selectedParlayLegs: new Set(),
+    mnfCutoffMs: Infinity,
     processedGames: [],
     processedProps: [],
     flagshipFivePack: []
@@ -22,10 +23,11 @@ const AppState = {
 
 const openCardMemory = new Set();
 const MODEL_TOTAL_INTERCEPT = 42.986;
-const SMASH_EV_CUTOFF = 10.0;  // >= +10.0% EV threshold for SMASH
-const PASS_EV_CUTOFF = -10.0;  // <= -10.0% EV threshold for definitive PASS
+const M9_HOME_INTERCEPT_OFFSET = 3.20; // Centers Module 9 around 0.0 before applying to Vegas baseline
+const SMASH_EV_CUTOFF = 10.0;          // >= +10.0% EV threshold for SMASH
+const PASS_EV_CUTOFF = -10.0;          // <= -10.0% EV threshold for definitive PASS
 const PHI = 1.6180339887;
-const PHI_OVER_PI = PHI / Math.PI; // ~0.5150362 (Module 13 Sacred Geometry Constant)
+const PHI_OVER_PI = PHI / Math.PI;     // ~0.5150362 (Module 13 Sacred Geometry Constant)
 
 // Official AP / CFP Top-25 Ranked NCAA Programs (Full-Name & Code Matchers)
 const RANKED_NCAA_FULL_NAMES = [
@@ -117,6 +119,32 @@ function shouldIncludeGame(game, defaultLeague = "NFL") {
     if (lg === "NFL") return AppState.filters.nfl;
     if (lg === "NCAA") return AppState.filters.ncaa && isRankedNCAAGame(game);
     return true;
+}
+
+// Calculates the Tuesday 5:00 AM cutoff right after Monday Night Football for the active week
+function computeUpcomingMnfCutoffMs(gamesList) {
+    const validTimes = (gamesList || [])
+        .map(g => g.commence_time || g.commenceTime)
+        .filter(Boolean)
+        .map(t => new Date(t).getTime())
+        .filter(ms => !isNaN(ms));
+
+    const anchorMs = validTimes.length > 0 ? Math.min(...validTimes) : Date.now();
+    const anchorDate = new Date(anchorMs);
+    const day = anchorDate.getDay(); // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+    const daysUntilTueAfterMnf = (day === 2) ? 7 : ((9 - day) % 7 || 7);
+
+    const cutoffDate = new Date(anchorDate);
+    cutoffDate.setDate(anchorDate.getDate() + daysUntilTueAfterMnf);
+    cutoffDate.setHours(5, 0, 0, 0); // Tuesday 5:00 AM local time following MNF
+    return cutoffDate.getTime();
+}
+
+function isGameInCurrentWeek(commenceTimeStr, cutoffMs) {
+    if (!commenceTimeStr) return true;
+    const ms = new Date(commenceTimeStr).getTime();
+    if (isNaN(ms)) return true;
+    return ms <= cutoffMs;
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -321,6 +349,9 @@ function recalculateAndRenderAll() {
     const sliderVal = (mode === "davinci") ? AppState.intensitySlider : 0.0;
     const playScaler = (typeof GOLDEN_PLAY_SCALER !== "undefined") ? GOLDEN_PLAY_SCALER : 38.5145;
 
+    const eligibleGamesForCutoff = AppState.rawPayload.games.filter(g => shouldIncludeGame(g, defaultLeague));
+    AppState.mnfCutoffMs = computeUpcomingMnfCutoffMs(eligibleGamesForCutoff);
+
     AppState.processedGames = [];
     AppState.processedProps = [];
 
@@ -328,6 +359,7 @@ function recalculateAndRenderAll() {
         const gameLeague = game.league || defaultLeague;
         if (!shouldIncludeGame(game, defaultLeague)) return;
 
+        const isCurrentWeek = isGameInCurrentWeek(game.commence_time, AppState.mnfCutoffMs);
         const cleanHome = cleanTeamCode(game.home_team);
         const cleanAway = cleanTeamCode(game.away_team);
 
@@ -371,13 +403,17 @@ function recalculateAndRenderAll() {
         const windMph = envPayload.is_dome ? 0 : (envPayload.wind_mph || 0);
         const windPenalty = Math.max(0, (windMph - 10.0) * 0.25);
 
-        let fairHomeTip = rawM9Base.fairHomeSpread;
-        if (gameLeague === "NCAA") {
-            const rawEpaDiffPts = (rawM9Base.fairHomeSpread - vegasHomeSpread) * 0.14;
-            const envCircShift = -m8.phiCircadianPenalty - ((m11Bd.phiBioScore + psiElev) * 1.2) - (m7.passGameModifierYards * 0.08);
-            const boundedNcaaDelta = Math.max(-3.6, Math.min(3.6, rawEpaDiffPts + envCircShift));
-            fairHomeTip = Number((vegasHomeSpread + boundedNcaaDelta).toFixed(2));
-        }
+        // Unbiased Centered Spread Engine (NFL & NCAA):
+        // Removes the fixed -3.20 Home Field intercept already priced into Vegas lines so strong Favorites and live Underdogs both project accurately
+        const centeredM9Edge = rawM9Base.fairHomeSpread + M9_HOME_INTERCEPT_OFFSET; // < 0 favors Home cover, > 0 favors Away cover
+        const tovSpreadEdge = -(m12Bd.netTurnoverEPA || 0) * 1.45;                  // < 0 favors Home cover, > 0 favors Away cover
+        const rankAndM13Edge = -m13Rise * 8.5;                                      // Sacred Geometry & closing rank edge
+        const circDirSign = vegasHomeSpread <= 0 ? -1 : 1;
+        const envCircSpreadEdge = ((m8.circadianStrainIndex - 0.50) * 1.15 * circDirSign) - (m7.passGameModifierYards * 0.12);
+
+        const rawHomeSpreadDelta = (centeredM9Edge * 1.35) + tovSpreadEdge + rankAndM13Edge + envCircSpreadEdge;
+        const boundedSpreadDelta = Math.max(-4.35, Math.min(4.35, rawHomeSpreadDelta));
+        const fairHomeTip = Number((vegasHomeSpread + boundedSpreadDelta).toFixed(2));
 
         const m9Base = {
             fairHomeSpread: fairHomeTip,
@@ -385,12 +421,12 @@ function recalculateAndRenderAll() {
             activeCoupledOverlay: 0
         };
 
-        const tovVector = -(m12Bd.netTurnoverEPA || 0) * PHI * 1.10;
-        const bioElevVector = -(m11Bd.phiBioScore + psiElev) * PHI * 1.20;
-        const m13Vector = -m13Rise * 10.5;
-        const edgeAmplifier = Math.sign(fairHomeTip - vegasHomeSpread || -1) * (0.618 * (1.0 + Math.abs(m8.phiCircadianPenalty) * 0.35));
+        const tovVector = -(m12Bd.netTurnoverEPA || 0) * PHI * 0.95;
+        const bioElevVector = ((m11Bd.phiBioScore + psiElev) - 0.022) * PHI * 1.40 * (boundedSpreadDelta <= 0 ? -1 : 1);
+        const m13Vector = -m13Rise * 9.5;
+        const edgeAmplifier = Math.sign(boundedSpreadDelta || -1) * (0.618 * (1.0 + Math.abs(m8.phiCircadianPenalty) * 0.30));
         const rawPsiBd = tovVector + bioElevVector + m13Vector + edgeAmplifier;
-        const psiBd = Number(Math.max(-3.85, Math.min(3.85, rawPsiBd)).toFixed(2));
+        const psiBd = Number(Math.max(-3.65, Math.min(3.65, rawPsiBd)).toFixed(2));
 
         const psi11_12 = (mode === "tip")
             ? 0
@@ -422,6 +458,7 @@ function recalculateAndRenderAll() {
         const gameRecord = {
             gameId: game.game_id,
             league: gameLeague,
+            isCurrentWeek,
             matchup: `${cleanAway} @ ${cleanHome}`,
             homeTeam: cleanHome,
             awayTeam: cleanAway,
@@ -555,6 +592,7 @@ function recalculateAndRenderAll() {
                 AppState.processedProps.push({
                     propKey,
                     commenceTime: game.commence_time,
+                    isCurrentWeek,
                     gameId: game.game_id,
                     league: gameLeague,
                     matchup: gameRecord.matchup,
@@ -582,7 +620,7 @@ function recalculateAndRenderAll() {
                     evPct: activeEvPct,
                     quarterKellyPct: Number(m2Active.quarterKellyStakePct.toFixed(2)),
                     tierBadge: activeBadge,
-                    flagshipSlot: prop.flagship_slot || "",
+                    flagshipSlot: "",
                     psiBd,
                     psiActive: psi11_12
                 });
@@ -590,12 +628,15 @@ function recalculateAndRenderAll() {
         }
     });
 
-    // Lock Flagship 5-Pack Selection to top SMASH plays across NFL + Top-25 Ranked NCAA
+    // Lock Flagship 5-Pack Selection STRICTLY to THIS WEEK'S games (ending with Monday Night Football)
     AppState.processedProps.forEach(p => { p.flagshipSlot = ""; });
     const bestSpreadPerGame = [];
     const remainingPool = [];
 
-    AppState.processedGames.forEach(g => {
+    const currentWeekGames = AppState.processedGames.filter(g => g.isCurrentWeek);
+    const activeWeekPool = currentWeekGames.length > 0 ? currentWeekGames : AppState.processedGames;
+
+    activeWeekPool.forEach(g => {
         const gameSpreads = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "spread");
         if (gameSpreads.length > 0) {
             gameSpreads.sort((a, b) => b.tipEvPct - a.tipEvPct);
@@ -697,7 +738,7 @@ function buildMasterBoardLegendHTML() {
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px;">
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
                         <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">1. COVER CHARGE vs. REAL MEASUREMENTS</div>
-                        <div>• <strong>Bold Top Line</strong> (e.g. <em>MIA Spread +16.5</em> or <em>Total U 54.5</em>) is the <strong>Vegas Sportsbook Line</strong>—the cover charge on your betting slip.</div>
+                        <div>• <strong>Bold Top Line</strong> (e.g. <em>TEX Spread -20.5</em> or <em>Total U 54.5</em>) is the <strong>Vegas Sportsbook Line</strong>—the cover charge on your betting slip.</div>
                         <div style="margin-top: 4px;">• <strong>Proj:</strong> is what our 13-Module Engine says is <em>actually</em> under the hood once the stage lights come on. When Vegas pads its number and our <strong>Proj</strong> exposes the gap, that spread is where we print your Win % and EV%.</div>
                     </div>
 
@@ -719,7 +760,7 @@ function buildMasterBoardLegendHTML() {
     `;
 }
 
-// Flagship 5-Pack: All 5 Green SMASH plays with SMASH badge right next to the Vegas spread
+// Flagship 5-Pack: Strictly Current Week (Through MNF)
 function renderFlagshipFivePack() {
     const container = document.getElementById("flagship-five-pack-container");
     if (!container) return;
@@ -763,7 +804,7 @@ function renderFlagshipFivePack() {
                     👑 THE DIXPIX FLAGSHIP 5-PACK // FEATURING "THE MÉNAGE À TROIS"
                 </div>
                 <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
-                    Active Engine: <strong style="color: var(--accent-cyan);">${modeTitle}</strong>
+                    Active Engine: <strong style="color: var(--accent-cyan);">${modeTitle}</strong> • <span style="color: var(--accent-emerald);">Current Week Slate (Thru MNF)</span>
                 </div>
                 ${singleLockedStatusHTML}
                 <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); text-decoration: underline; margin-top: 6px;">
@@ -816,28 +857,15 @@ function renderFlagshipFivePack() {
 }
 
 // ==========================================
-// INDEPENDENT MASONRY FLEX COLUMNS (NFL + TOP-25 RANKED NCAA ONLY)
+// INDEPENDENT MASONRY FLEX COLUMNS WITH MNF CUTOFF DIVIDER
 // ==========================================
-function render_game_cards(data) {
-    const container = document.getElementById("master-board-body");
-    if (!container) return;
+function buildMasonryGridForGames(gamesSlice, numCols, cardSubtitle) {
+    const rowWrapper = document.createElement("div");
+    rowWrapper.style.display = "flex";
+    rowWrapper.style.alignItems = "flex-start";
+    rowWrapper.style.gap = "15px";
+    rowWrapper.style.width = "100%";
 
-    const defaultLeague = (data.slate_info && data.slate_info.league) || "NFL";
-    const games = (data.games || []).filter(g => shouldIncludeGame(g, defaultLeague));
-
-    if (games.length === 0) {
-        container.innerHTML = "";
-        return;
-    }
-
-    const containerWidth = container.clientWidth || window.innerWidth || 1200;
-    const numCols = Math.max(1, Math.min(4, Math.floor(containerWidth / 340)));
-
-    container.style.display = "flex";
-    container.style.alignItems = "flex-start";
-    container.style.gap = "15px";
-
-    const fragment = document.createDocumentFragment();
     const colElements = [];
     for (let c = 0; c < numCols; c++) {
         const colDiv = document.createElement("div");
@@ -846,15 +874,11 @@ function render_game_cards(data) {
         colDiv.style.display = "flex";
         colDiv.style.flexDirection = "column";
         colDiv.style.gap = "15px";
-        fragment.appendChild(colDiv);
+        rowWrapper.appendChild(colDiv);
         colElements.push(colDiv);
     }
 
-    const cardSubtitle = AppState.activeMode === "tip"
-        ? "Click to expand lines &amp; EV%"
-        : "Click to expand lines, EV% &amp; Balls Deep Escalator";
-
-    games.forEach((game, gameIndex) => {
+    gamesSlice.forEach((game, gameIndex) => {
         const cardKey = game.game_id || `${game.away_team}@${game.home_team}`;
         const cleanHome = cleanTeamCode(game.home_team);
         const cleanAway = cleanTeamCode(game.away_team);
@@ -955,6 +979,65 @@ function render_game_cards(data) {
 
         colElements[gameIndex % numCols].appendChild(card);
     });
+
+    return rowWrapper;
+}
+
+function render_game_cards(data) {
+    const container = document.getElementById("master-board-body");
+    if (!container) return;
+
+    const defaultLeague = (data.slate_info && data.slate_info.league) || "NFL";
+    const games = (data.games || []).filter(g => shouldIncludeGame(g, defaultLeague));
+
+    if (games.length === 0) {
+        container.innerHTML = "";
+        return;
+    }
+
+    const containerWidth = container.clientWidth || window.innerWidth || 1200;
+    const numCols = Math.max(1, Math.min(4, Math.floor(containerWidth / 340)));
+
+    container.style.display = "flex";
+    container.style.flexDirection = "column";
+    container.style.gap = "20px";
+
+    const cardSubtitle = AppState.activeMode === "tip"
+        ? "Click to expand lines &amp; EV%"
+        : "Click to expand lines, EV% &amp; Balls Deep Escalator";
+
+    const currentWeekGames = games.filter(g => isGameInCurrentWeek(g.commence_time, AppState.mnfCutoffMs));
+    const lookaheadGames = games.filter(g => !isGameInCurrentWeek(g.commence_time, AppState.mnfCutoffMs));
+
+    const fragment = document.createDocumentFragment();
+
+    if (currentWeekGames.length > 0) {
+        fragment.appendChild(buildMasonryGridForGames(currentWeekGames, numCols, cardSubtitle));
+    }
+
+    if (lookaheadGames.length > 0) {
+        const cutoffDt = new Date(AppState.mnfCutoffMs);
+        const cutoffLabel = cutoffDt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+
+        const dividerBanner = document.createElement("div");
+        dividerBanner.style.width = "100%";
+        dividerBanner.style.margin = "12px 0 4px 0";
+        dividerBanner.style.padding = "12px 18px";
+        dividerBanner.style.borderRadius = "8px";
+        dividerBanner.style.border = "1px dashed rgba(245, 158, 11, 0.55)";
+        dividerBanner.style.background = "linear-gradient(90deg, rgba(245, 158, 11, 0.14), rgba(15, 23, 42, 0.92), rgba(245, 158, 11, 0.14))";
+        dividerBanner.style.textAlign = "center";
+        dividerBanner.innerHTML = `
+            <div style="font-family: var(--font-mono); font-size: 13px; font-weight: 800; color: var(--accent-gold); letter-spacing: 0.04em;">
+                🔭 AFTER MONDAY NIGHT FOOTBALL CUTOFF (${cutoffLabel}) // NEXT WEEK'S EARLY LOOKAHEAD SLATE (${lookaheadGames.length} GAMES)
+            </div>
+            <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 3px;">
+                Available for early browsing &amp; parlay building • Excluded from this week's Flagship 5-Pack until Tuesday morning
+            </div>
+        `;
+        fragment.appendChild(dividerBanner);
+        fragment.appendChild(buildMasonryGridForGames(lookaheadGames, numCols, cardSubtitle));
+    }
 
     container.replaceChildren(fragment);
 }
@@ -1087,7 +1170,7 @@ function renderCombinatoricsDeck() {
                         <div onclick="window.toggleParlayLeg('${p.propKey}')" style="cursor: pointer; padding: 12px 14px; border-radius: 8px; background: ${isSelected ? 'rgba(6, 182, 212, 0.14)' : 'var(--bg-elevated)'}; border: 1px solid ${isSelected ? 'var(--accent-cyan)' : 'var(--border-subtle)'}; transition: all 0.15s ease;">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                                 <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);">
-                                    ${isSelected ? '✅ IN SLIP // ' : ''}${p.matchup}
+                                    ${isSelected ? '✅ IN SLIP // ' : ''}${p.matchup} ${!p.isCurrentWeek ? '🔭' : ''}
                                 </span>
                                 <div style="display: flex; gap: 6px;">
                                     ${p.flagshipSlot ? `<span class="${p.flagshipSlot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}">${p.flagshipSlot}</span>` : ''}
@@ -1468,7 +1551,7 @@ function buildLedgerLegendHTML() {
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
                         <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">THE MORNING-AFTER SCORECARD (W - L - BB)</div>
                         <div>• <strong style="color:var(--accent-emerald);">✅ HIT (W):</strong> <em>The Money Shot.</em> Covered the Vegas closing number and walked out with the bookie's cash.</div>
-                        <div style="margin-top: 4px;">• <strong style="color:#60a5fa;">🔵 BLUE BALLS (BB):</strong> <em>Robbed at the Two-Minute Warning.</em> Missed the Vegas line by <strong>&le;3.0 points (one field goal or less)</strong>—when she gets you all 99% of the way, Mom walked in and killed the climax.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:#60a5fa;">🔵 BLUE BALLS (BB):</strong> <em>Robbed at the Two-Minute Warning.</em> Missed the Vegas line by <strong>&le;3.0 points (one field goal or less)</strong>—when the projection had you 99% of the way to the finish line before a red-zone fumble or half-point hook killed the climax.</div>
                         <div style="margin-top: 4px;">• <strong style="color:var(--accent-danger);">❌ MISS (L):</strong> <em>Walk of Shame.</em> Missed the closing line by more than 3.0 points. No excuses—we post every receipt.</div>
                     </div>
 
@@ -1498,7 +1581,6 @@ function renderHistoricalLedger() {
     }
 
     const ledgerObj = (AppState.rawPayload && AppState.rawPayload.historical_ledger) || {};
-    // Permanent archive entries override stale ungraded data.json entries
     const entriesMap = Object.assign({}, ledgerObj.entries || {}, PERMANENT_LEDGER_ARCHIVE);
     const showBallsDeep = (AppState.activeMode === "balls_deep" || AppState.activeMode === "davinci");
 
@@ -1545,7 +1627,7 @@ function renderHistoricalLedger() {
     const renderedMatchups = new Set();
     const activeSlateMatchups = new Set(AppState.processedGames.map(g => g.matchup));
 
-    // 1. Render ONLY truly completed/FINAL archived games first (prevents stale pre-kickoff snapshots & duplicates)
+    // 1. Render ONLY truly completed/FINAL archived games first
     Object.keys(entriesMap).forEach(archId => {
         const entry = entriesMap[archId];
         if (!entry) return;
@@ -1559,11 +1641,8 @@ function renderHistoricalLedger() {
         const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[cleanMatchup];
         const isFinal = entry.status === "FINAL" || (espnMatch && espnMatch.state === "post");
 
-        // If this matchup is on the active upcoming slate and NOT final, skip the old archive snapshot
-        // so it renders live updated lines & projections in Loop 2 below.
         if (activeSlateMatchups.has(cleanMatchup) && !isFinal) return;
 
-        // Also skip any ungraded old scraper snapshot that isn't final
         const hasGradedResult = entry.spread_record && (
             entry.spread_record.result_tip === "HIT" ||
             entry.spread_record.result_tip === "MISS" ||
@@ -1642,8 +1721,8 @@ function renderHistoricalLedger() {
         });
     });
 
-    // 2. Render active/upcoming slate games using live scraped lines & v213 projections
-    AppState.processedGames.forEach(g => {
+    // 2. Render current week's active/upcoming slate games using live scraped lines & v214 projections
+    AppState.processedGames.filter(g => g.isCurrentWeek).forEach(g => {
         if (renderedMatchups.has(g.matchup)) return;
         if (!isRankedLedgerEntry(g.matchup, g.league)) return;
         renderedMatchups.add(g.matchup);
