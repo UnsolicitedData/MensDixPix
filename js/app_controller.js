@@ -972,7 +972,7 @@ function buildMasterBoardLegendHTML() {
     `;
 }
 
-// Flagship 5-Pack Banner with Corner Toggle for "Wednesday Night at Porky's" (Top 5 Traps & Fades)
+// Flagship 5-Pack Banner with Pinned Top-Right Corner Toggle for "Wednesday Night at Porky's"
 function renderFlagshipFivePack() {
     const container = document.getElementById("flagship-five-pack-container");
     if (!container) return;
@@ -982,7 +982,7 @@ function renderFlagshipFivePack() {
         return;
     }
 
-    container.style.maxWidth = "860px";
+    container.style.maxWidth = "920px";
     container.style.margin = "0 auto 24px auto";
     container.style.border = "none";
     container.style.backgroundColor = "transparent";
@@ -1015,13 +1015,13 @@ function renderFlagshipFivePack() {
 
     const cornerToggleHTML = isPorkys
         ? `
-            <button onclick="window.toggleFivePackView(event)" style="cursor:pointer; font-family:var(--font-mono); font-size:10.5px; font-weight:800; padding:5px 10px; border-radius:6px; background:rgba(245,158,11,0.16); color:var(--accent-gold); border:1px solid rgba(245,158,11,0.55); transition:all 0.15s ease;">
-                👑 Back to Main Stage 5-Pack ➔
+            <button onclick="window.toggleFivePackView(event)" title="Back to Flagship 5-Pack" style="position:absolute; top:12px; right:14px; cursor:pointer; font-family:var(--font-mono); font-size:10.5px; font-weight:800; padding:4px 10px; border-radius:6px; background:rgba(15,23,42,0.88); color:var(--accent-gold); border:1px solid rgba(245,158,11,0.65); box-shadow:0 2px 8px rgba(0,0,0,0.4); transition:all 0.15s ease;">
+                👑 Main Stage ➔
             </button>
         `
         : `
-            <button onclick="window.toggleFivePackView(event)" style="cursor:pointer; font-family:var(--font-mono); font-size:10.5px; font-weight:800; padding:5px 10px; border-radius:6px; background:rgba(239,68,68,0.16); color:#f87171; border:1px solid rgba(239,68,68,0.55); transition:all 0.15s ease;">
-                🐷 Flip to "Wednesday Night at Porky's" (Top 5 Fades) ➔
+            <button onclick="window.toggleFivePackView(event)" title="Flip to Wednesday Night at Porky's (Top 5 Fades)" style="position:absolute; top:12px; right:14px; cursor:pointer; font-family:var(--font-mono); font-size:10.5px; font-weight:800; padding:4px 10px; border-radius:6px; background:rgba(15,23,42,0.88); color:#f87171; border:1px solid rgba(239,68,68,0.65); box-shadow:0 2px 8px rgba(0,0,0,0.4); transition:all 0.15s ease;">
+                🐷 Porky's Fades ➔
             </button>
         `;
 
@@ -1104,17 +1104,16 @@ function renderFlagshipFivePack() {
         ${buildMasterBoardLegendHTML()}
 
         <div style="border: 1px solid ${outerBorderColor}; border-radius: 8px; background-color: #111827; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); overflow: hidden;">
-            <div id="flagship-banner-toggle" style="cursor: pointer; padding: 14px 18px; background: ${headerGradient}; user-select: none;">
-                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 6px;">
-                    <div style="font-size: 15px; font-weight: 800; color: ${isPorkys ? '#f87171' : 'var(--accent-gold)'}; letter-spacing: 0.03em;">
-                        ${isPorkys
-                            ? '🐷 WEDNESDAY NIGHT AT PORKY\'S // TOP 5 B-SQUAD TRAPS &amp; PUBLIC FADES'
-                            : '👑 THE DIXPIX FLAGSHIP 5-PACK // FEATURING "THE MÉNAGE À TROIS"'}
-                    </div>
-                    ${cornerToggleHTML}
+            <div id="flagship-banner-toggle" style="position: relative; cursor: pointer; padding: 14px 145px 14px 145px; text-align: center; background: ${headerGradient}; user-select: none;">
+                ${cornerToggleHTML}
+
+                <div style="font-size: 15px; font-weight: 800; color: ${isPorkys ? '#f87171' : 'var(--accent-gold)'}; letter-spacing: 0.03em;">
+                    ${isPorkys
+                        ? '🐷 WEDNESDAY NIGHT AT PORKY\'S // TOP 5 B-SQUAD TRAPS &amp; FADES'
+                        : '👑 THE DIXPIX FLAGSHIP 5-PACK // FEATURING "THE MÉNAGE À TROIS"'}
                 </div>
 
-                <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); text-align: center;">
+                <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
                     ${isPorkys
                         ? 'Champagne Room Bouncer Alert: <strong style="color:#f87171;">Public Bait Trap on Left</strong> ➔ <strong style="color:var(--accent-emerald);">Recommended Fade on Right</strong>'
                         : `Active Engine: <strong style="color: var(--accent-cyan);">${modeTitle}</strong> • <span style="color: var(--accent-emerald);">Current Week Slate (Thru MNF)</span>`}
@@ -1122,7 +1121,7 @@ function renderFlagshipFivePack() {
 
                 ${singleLockedStatusHTML}
 
-                <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); text-decoration: underline; margin-top: 6px; text-align: center;">
+                <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); text-decoration: underline; margin-top: 6px;">
                     ${isExpanded
                         ? (isPorkys ? 'Click to collapse Porky\'s Fades ▲' : 'Click to collapse 5-Pack ▲')
                         : (isPorkys ? 'Click to expand all 5 Porky\'s Traps &amp; Fades ▼' : 'Click to unlock &amp; expand all 5 Flagship Plays ▼')}
