@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v218)
- * - Pinned Top-Right Corner Toggle: "👑 Main Stage" <-> "🐷 Wednesday Night at Porky's (Top 5 Safe Floor Fades)"
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v219)
+ * - Responsive Mobile & Desktop 5-Pack Header: Full-width compact layout on phones (<=720px), pinned top-right corner toggle on desktop
  * - Porky's Safe Floor Counter-Strike (-2φ at -175) + One-Click "🐷 Load Porky's Safe Floor Fades (5)" in Parlay Calculator
  * - "💣 GRENADES DODGED (≤-10% EV)" ("You were a little too drunk to make that call last night") in Legends, Cards & Ticker
  * - Custom Blue Balls Definition ("...when she had you 99% of the way to the finish line and then Mom walks in.")
@@ -249,6 +249,7 @@ function isGameInCurrentWeek(commenceTimeStr, cutoffMs) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+    ensureTickerStylesInjected();
     bindUIControls();
     pollDataFeed();
     setInterval(pollDataFeed, 5000);
@@ -983,8 +984,10 @@ function buildMasterBoardLegendHTML() {
     `;
 }
 
-// Flagship 5-Pack Banner with Pinned Top-Right Corner Toggle for "Wednesday Night at Porky's" (Safe Floor Fade Edition)
+// Flagship 5-Pack Banner with Responsive Mobile/Desktop Corner Toggle for "Wednesday Night at Porky's"
 function renderFlagshipFivePack() {
+    ensureTickerStylesInjected();
+
     const container = document.getElementById("flagship-five-pack-container");
     if (!container) return;
 
@@ -1026,12 +1029,12 @@ function renderFlagshipFivePack() {
 
     const cornerToggleHTML = isPorkys
         ? `
-            <button onclick="window.toggleFivePackView(event)" title="Back to Flagship 5-Pack" style="position:absolute; top:12px; right:14px; cursor:pointer; font-family:var(--font-mono); font-size:10.5px; font-weight:800; padding:4px 10px; border-radius:6px; background:rgba(15,23,42,0.88); color:var(--accent-gold); border:1px solid rgba(245,158,11,0.65); box-shadow:0 2px 8px rgba(0,0,0,0.4); transition:all 0.15s ease;">
+            <button class="five-pack-corner-btn" onclick="window.toggleFivePackView(event)" title="Back to Flagship 5-Pack" style="cursor:pointer; font-family:var(--font-mono); font-size:10.5px; font-weight:800; padding:4px 10px; border-radius:6px; background:rgba(15,23,42,0.88); color:var(--accent-gold); border:1px solid rgba(245,158,11,0.65); box-shadow:0 2px 8px rgba(0,0,0,0.4); transition:all 0.15s ease;">
                 👑 Main Stage ➔
             </button>
         `
         : `
-            <button onclick="window.toggleFivePackView(event)" title="Flip to Wednesday Night at Porky's (Top 5 Fades)" style="position:absolute; top:12px; right:14px; cursor:pointer; font-family:var(--font-mono); font-size:10.5px; font-weight:800; padding:4px 10px; border-radius:6px; background:rgba(15,23,42,0.88); color:#f87171; border:1px solid rgba(239,68,68,0.65); box-shadow:0 2px 8px rgba(0,0,0,0.4); transition:all 0.15s ease;">
+            <button class="five-pack-corner-btn" onclick="window.toggleFivePackView(event)" title="Flip to Wednesday Night at Porky's (Top 5 Fades)" style="cursor:pointer; font-family:var(--font-mono); font-size:10.5px; font-weight:800; padding:4px 10px; border-radius:6px; background:rgba(15,23,42,0.88); color:#f87171; border:1px solid rgba(239,68,68,0.65); box-shadow:0 2px 8px rgba(0,0,0,0.4); transition:all 0.15s ease;">
                 🐷 Porky's Fades ➔
             </button>
         `;
@@ -1123,16 +1126,16 @@ function renderFlagshipFivePack() {
         ${buildMasterBoardLegendHTML()}
 
         <div style="border: 1px solid ${outerBorderColor}; border-radius: 8px; background-color: #111827; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); overflow: hidden;">
-            <div id="flagship-banner-toggle" style="position: relative; cursor: pointer; padding: 14px 145px 14px 145px; text-align: center; background: ${headerGradient}; user-select: none;">
+            <div id="flagship-banner-toggle" style="background: ${headerGradient};">
                 ${cornerToggleHTML}
 
-                <div style="font-size: 15px; font-weight: 800; color: ${isPorkys ? '#f87171' : 'var(--accent-gold)'}; letter-spacing: 0.03em;">
+                <div style="font-size: 15px; font-weight: 800; color: ${isPorkys ? '#f87171' : 'var(--accent-gold)'}; letter-spacing: 0.03em; line-height: 1.35;">
                     ${isPorkys
                         ? '🐷 WEDNESDAY NIGHT AT PORKY\'S // TOP 5 B-SQUAD TRAPS &amp; SAFE FLOOR FADES'
                         : '👑 THE DIXPIX FLAGSHIP 5-PACK // FEATURING "THE MÉNAGE À TROIS"'}
                 </div>
 
-                <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
+                <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 4px; line-height: 1.4;">
                     ${isPorkys
                         ? '💣 Wingman Grenade Alert: <strong style="color:#f87171;">1:45 AM Public Grenade on Left</strong> ➔ <strong style="color:var(--accent-cyan);">🛡️ Safe Floor Counter-Strike (-2&phi;) on Right</strong>'
                         : `Active Engine: <strong style="color: var(--accent-cyan);">${modeTitle}</strong> • <span style="color: var(--accent-emerald);">Current Week Slate (Thru MNF)</span>`}
@@ -2046,7 +2049,7 @@ function renderHistoricalLedger() {
         });
     });
 
-    // 2. Render current week's active/upcoming slate games using live scraped lines & v218 projections
+    // 2. Render current week's active/upcoming slate games using live scraped lines & v219 projections
     AppState.processedGames.filter(g => g.isCurrentWeek).forEach(g => {
         if (renderedMatchups.has(g.matchup)) return;
         if (!isRankedLedgerEntry(g.matchup, g.league)) return;
@@ -2212,7 +2215,7 @@ function renderHistoricalLedger() {
 }
 
 // ==========================================
-// FIXED-BOTTOM ZERO-TOKEN ESPN LIVE SCROLLING TICKER (📡 DIXPIX LIVE WIRE // 300s CRAWL)
+// RESPONSIVE 5-PACK CSS & FIXED-BOTTOM ZERO-TOKEN ESPN LIVE WIRE TICKER (300s CRAWL)
 // ==========================================
 function ensureTickerStylesInjected() {
     if (document.getElementById("dixpix-ticker-keyframes")) return;
@@ -2225,6 +2228,28 @@ function ensureTickerStylesInjected() {
         }
         #dixpix-live-wire-track:hover {
             animation-play-state: paused !important;
+        }
+        #flagship-banner-toggle {
+            position: relative;
+            cursor: pointer;
+            padding: 14px 145px;
+            text-align: center;
+            user-select: none;
+        }
+        .five-pack-corner-btn {
+            position: absolute;
+            top: 12px;
+            right: 14px;
+        }
+        @media (max-width: 720px) {
+            #flagship-banner-toggle {
+                padding: 12px 14px !important;
+            }
+            .five-pack-corner-btn {
+                position: static !important;
+                display: inline-block !important;
+                margin-bottom: 8px !important;
+            }
         }
     `;
     document.head.appendChild(styleEl);
@@ -2276,7 +2301,7 @@ function renderLiveBottomTicker() {
     const joinedStrip = tickerItems.join(` <span style="color:rgba(245,158,11,0.55);margin:0 18px;">//</span> `);
 
     tickerBar.innerHTML = `
-        <div style="flex-shrink:0; height:100%; padding:0 14px; background:linear-gradient(90deg, rgba(245,158,11,0.25), rgba(15,23,42,0.98)); border-right:1px solid rgba(245,158,11,0.55); display:flex; align-items:center; gap:8px; color:var(--accent-gold); font-weight:800; letter-spacing:0.04em; z-index:2;">
+        <div style="flex-shrink:0; height:100%; padding:0 12px; background:linear-gradient(90deg, rgba(245,158,11,0.25), rgba(15,23,42,0.98)); border-right:1px solid rgba(245,158,11,0.55); display:flex; align-items:center; gap:7px; color:var(--accent-gold); font-weight:800; letter-spacing:0.03em; z-index:2;">
             <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--accent-emerald); box-shadow:0 0 8px var(--accent-emerald);"></span>
             📡 DIXPIX LIVE WIRE
         </div>
