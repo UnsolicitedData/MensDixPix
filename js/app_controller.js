@@ -2024,7 +2024,7 @@ function renderLiveBottomTicker() {
             📡 DIXPIX LIVE WIRE
         </div>
         <div style="flex:1; overflow:hidden; white-space:nowrap; position:relative;">
-            <div id="dixpix-live-wire-track" style="display:inline-block; white-space:nowrap; padding-left:24px; animation: dixpixMarqueeScroll 75s linear infinite;">
+            <div id="dixpix-live-wire-track" style="display:inline-block; white-space:nowrap; padding-left:24px; animation: dixpixMarqueeScroll 240s linear infinite;">
                 <span>${joinedStrip}</span>
                 <span style="color:rgba(245,158,11,0.55);margin:0 18px;">//</span>
                 <span>${joinedStrip}</span>
