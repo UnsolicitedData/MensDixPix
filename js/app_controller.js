@@ -1,21 +1,24 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v217)
- * - "Wednesday Night at Porky's" 5-Pack Toggle: Side-by-Side Trap Line (Left) -> Recommended Fade (Right)
- * - One-Click "🐷 Load Porky's Fades (5)" in the Combinatorics Parlay & Round Robin Calculator
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v218)
+ * - Pinned Top-Right Corner Toggle: "👑 Main Stage" <-> "🐷 Wednesday Night at Porky's (Top 5 Safe Floor Fades)"
+ * - Porky's Safe Floor Counter-Strike (-2φ at -175) + One-Click "🐷 Load Porky's Safe Floor Fades (5)" in Parlay Calculator
+ * - "💣 GRENADES DODGED (≤-10% EV)" ("You were a little too drunk to make that call last night") in Legends, Cards & Ticker
+ * - Custom Blue Balls Definition ("...when she had you 99% of the way to the finish line and then Mom walks in.")
  * - Strict Compendium Firewall: Just the Tip = Pure Modules 1-9 (I_flow = 0.000) | Balls Deep & DaVinci = Coupled M11-M13 (Ψ_11,12 + M_rise)
  * - Restored Floor-to-Ceiling Bracket: 🛡️ Safe Floor Anchor (-2φ, 80-92% Win) + 🎯 Ceiling Escalator (+φ, +145/+155 Alt-Lines)
- * - Fixed-Bottom Zero-Token ESPN Live Scrolling Ticker (300s smooth crawl) + 100+ Clean Team Code Overrides
+ * - Fixed-Bottom Zero-Token ESPN Live Scrolling Ticker (300s smooth crawl) + 100+ Clean Team Code Overrides + Zero Dashed Borders
  */
 
 const AppState = {
     rawPayload: null,
     lastDataHash: "",
-    activeMode: "tip",           // "tip" | "balls_deep" | "davinci"
-    fivePackView: "main_stage",  // "main_stage" | "porkys"
-    intensitySlider: 0.0,        // -3.236 (-2φ) to +3.236 (+2φ)
+    activeMode: "tip",                // "tip" | "balls_deep" | "davinci"
+    fivePackView: "main_stage",       // "main_stage" | "porkys"
+    intensitySlider: 0.0,             // -3.236 (-2φ) to +3.236 (+2φ)
     filters: { nfl: true, ncaa: true },
     comboFilters: { team: "ALL", market: "ALL", tier: "ALL" },
     selectedParlayLegs: new Set(),
+    safeFloorParlayLegs: new Set(),   // Tracks legs loaded at -2φ Safe Floor (-175) odds
     mnfCutoffMs: Infinity,
     processedGames: [],
     processedProps: [],
@@ -267,7 +270,7 @@ window.unlockBallsDeepMode = function(event) {
     recalculateAndRenderAll();
 };
 
-// Corner Toggle between Main Stage 5-Pack and "Wednesday Night at Porky's" Top 5 Fades
+// Pinned Corner Toggle between Main Stage 5-Pack and "Wednesday Night at Porky's" Top 5 Safe Floor Fades
 window.toggleFivePackView = function(event) {
     if (event) {
         event.preventDefault();
@@ -275,7 +278,7 @@ window.toggleFivePackView = function(event) {
     }
     const savedY = window.scrollY;
     AppState.fivePackView = (AppState.fivePackView === "main_stage") ? "porkys" : "main_stage";
-    openCardMemory.add("FLAGSHIP_5_PACK_DRAWER"); // Auto-open drawer on mode flip so picks show immediately
+    openCardMemory.add("FLAGSHIP_5_PACK_DRAWER");
     renderFlagshipFivePack();
     window.scrollTo(window.scrollX, savedY);
 };
@@ -301,8 +304,10 @@ window.toggleLegendDrawer = function(memoryKey, targetRenderFnName, event) {
 
 window.toggleParlayLeg = function(propKey) {
     const savedY = window.scrollY;
+    if (!AppState.safeFloorParlayLegs) AppState.safeFloorParlayLegs = new Set();
     if (AppState.selectedParlayLegs.has(propKey)) {
         AppState.selectedParlayLegs.delete(propKey);
+        AppState.safeFloorParlayLegs.delete(propKey);
     } else {
         AppState.selectedParlayLegs.add(propKey);
     }
@@ -312,7 +317,9 @@ window.toggleParlayLeg = function(propKey) {
 
 window.loadFlagshipPreset = function(onlyMenage = false) {
     const savedY = window.scrollY;
+    if (!AppState.safeFloorParlayLegs) AppState.safeFloorParlayLegs = new Set();
     AppState.selectedParlayLegs.clear();
+    AppState.safeFloorParlayLegs.clear();
     AppState.flagshipFivePack.forEach(p => {
         if (!onlyMenage || (p.flagshipSlot && p.flagshipSlot.includes("MÉNAGE"))) {
             AppState.selectedParlayLegs.add(p.propKey);
@@ -328,10 +335,13 @@ window.loadPorkysPreset = function(event) {
         event.stopPropagation();
     }
     const savedY = window.scrollY;
+    if (!AppState.safeFloorParlayLegs) AppState.safeFloorParlayLegs = new Set();
     AppState.selectedParlayLegs.clear();
+    AppState.safeFloorParlayLegs.clear();
     AppState.porkysFivePack.forEach(item => {
         if (item.fadeProp && item.fadeProp.propKey) {
             AppState.selectedParlayLegs.add(item.fadeProp.propKey);
+            AppState.safeFloorParlayLegs.add(item.fadeProp.propKey);
         }
     });
     renderCombinatoricsDeck();
@@ -344,6 +354,7 @@ window.clearParlaySlip = function(event) {
         event.stopPropagation();
     }
     const savedY = window.scrollY;
+    if (AppState.safeFloorParlayLegs) AppState.safeFloorParlayLegs.clear();
     AppState.selectedParlayLegs.clear();
     renderCombinatoricsDeck();
     window.scrollTo(window.scrollX, savedY);
@@ -852,7 +863,7 @@ function recalculateAndRenderAll() {
 
     AppState.flagshipFivePack = [...menageTop3, ...flexTop2];
 
-    // 2. Build "Wednesday Night at Porky's" Top 5 Public Traps & Fades (Sorted by worst negative EV trap first)
+    // 2. Build "Wednesday Night at Porky's" Top 5 Public Traps & Safe Floor Fades
     trapPairsPool.sort((a, b) => a.trapProp.tipEvPct - b.trapProp.tipEvPct);
     AppState.porkysFivePack = trapPairsPool.slice(0, 5).map((pair, idx) => {
         const slotLabel = idx < 3
@@ -972,7 +983,7 @@ function buildMasterBoardLegendHTML() {
     `;
 }
 
-// Flagship 5-Pack Banner with Pinned Top-Right Corner Toggle for "Wednesday Night at Porky's"
+// Flagship 5-Pack Banner with Pinned Top-Right Corner Toggle for "Wednesday Night at Porky's" (Safe Floor Fade Edition)
 function renderFlagshipFivePack() {
     const container = document.getElementById("flagship-five-pack-container");
     if (!container) return;
@@ -1056,7 +1067,15 @@ function renderFlagshipFivePack() {
         const fmtTrapProj = Number(trap.tipProjectedMean) > 0 ? `+${trap.tipProjectedMean}` : `${trap.tipProjectedMean}`;
         const fmtFadeProj = Number(fade.tipProjectedMean) > 0 ? `+${fade.tipProjectedMean}` : `${fade.tipProjectedMean}`;
         const trapEvStr = `${trap.tipEvPct > 0 ? '+' : ''}${trap.tipEvPct}% EV`;
-        const fadeEvStr = `${fade.tipEvPct > 0 ? '+' : ''}${fade.tipEvPct}% EV`;
+
+        // Safe Floor (-2φ) Counter-Strike Fade metrics
+        const fadeTeamCode = fade.isHomeSpread ? fade.homeTeam : fade.awayTeam;
+        const safeFloorProbRaw = (fade.safeFloorWinPct || 82.0) / 100.0;
+        const m2SafeFloor = calcExpectedValueAndKelly(safeFloorProbRaw, -175);
+        const safeFloorEvPct = Number(m2SafeFloor.evPercentage.toFixed(2));
+        const safeFloorEvStr = `${safeFloorEvPct > 0 ? '+' : ''}${safeFloorEvPct}% EV`;
+        const safeFloorTier = getTierFromEv(safeFloorEvPct);
+        const fmtBaseSpread = fade.baseLine > 0 ? `+${fade.baseLine}` : `${fade.baseLine}`;
 
         const slotBadgeStyle = item.isTopThreeTrap
             ? "background:rgba(239,68,68,0.18); color:#f87171; border:1px solid rgba(239,68,68,0.55);"
@@ -1080,18 +1099,18 @@ function renderFlagshipFivePack() {
                         </div>
                     </div>
 
-                    <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.42); border-radius: 6px; padding: 8px 10px;">
+                    <div style="background: rgba(6, 182, 212, 0.09); border: 1px solid rgba(16, 185, 129, 0.45); border-radius: 6px; padding: 8px 10px;">
                         <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; margin-bottom: 3px;">
-                            <span style="font-family:var(--font-mono); font-size:10px; font-weight:800; color:var(--accent-emerald);">
-                                👉 RECOMMENDED COUNTER-STRIKE FADE
+                            <span style="font-family:var(--font-mono); font-size:10px; font-weight:800; color:var(--accent-cyan);">
+                                🛡️ RECOMMENDED SAFE FLOOR FADE (-2&phi;)
                             </span>
-                            ${renderTierBadgeHTML(fade.tipBadge)}
+                            ${renderTierBadgeHTML(safeFloorTier)}
                         </div>
                         <div style="font-size: 12.5px; font-weight: 800; color: var(--text-primary); margin-bottom: 2px;">
-                            ✅ FADE WITH: ${fade.player}
+                            ✅ FADE TO FLOOR: ${fadeTeamCode} ${fade.safeFloorLabel} <span style="font-weight:600; font-size:11px; color:var(--text-secondary);">[Base: ${fmtBaseSpread}]</span>
                         </div>
-                        <div style="font-family: var(--font-mono); font-size: 11.5px; color: ${getTierColor(fade.tipBadge)};">
-                            Proj: <strong>${fmtFadeProj}</strong> | Win: <strong>${fade.tipModelPct}%</strong> (${fadeEvStr})
+                        <div style="font-family: var(--font-mono); font-size: 11.5px; color: ${getTierColor(safeFloorTier)};">
+                            Proj: <strong>${fmtFadeProj}</strong> | Floor Win: <strong>${fade.safeFloorWinPct}%</strong> (${safeFloorEvStr})
                         </div>
                     </div>
                 </div>
@@ -1109,13 +1128,13 @@ function renderFlagshipFivePack() {
 
                 <div style="font-size: 15px; font-weight: 800; color: ${isPorkys ? '#f87171' : 'var(--accent-gold)'}; letter-spacing: 0.03em;">
                     ${isPorkys
-                        ? '🐷 WEDNESDAY NIGHT AT PORKY\'S // TOP 5 B-SQUAD TRAPS &amp; FADES'
+                        ? '🐷 WEDNESDAY NIGHT AT PORKY\'S // TOP 5 B-SQUAD TRAPS &amp; SAFE FLOOR FADES'
                         : '👑 THE DIXPIX FLAGSHIP 5-PACK // FEATURING "THE MÉNAGE À TROIS"'}
                 </div>
 
                 <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
                     ${isPorkys
-                        ? '💣 Wingman Grenade Alert: <strong style="color:#f87171;">1:45 AM Public Grenade on Left</strong> ➔ <strong style="color:var(--accent-emerald);">Sober Counter-Strike Fade on Right</strong>'
+                        ? '💣 Wingman Grenade Alert: <strong style="color:#f87171;">1:45 AM Public Grenade on Left</strong> ➔ <strong style="color:var(--accent-cyan);">🛡️ Safe Floor Counter-Strike (-2&phi;) on Right</strong>'
                         : `Active Engine: <strong style="color: var(--accent-cyan);">${modeTitle}</strong> • <span style="color: var(--accent-emerald);">Current Week Slate (Thru MNF)</span>`}
                 </div>
 
@@ -1123,8 +1142,8 @@ function renderFlagshipFivePack() {
 
                 <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); text-decoration: underline; margin-top: 6px;">
                     ${isExpanded
-                        ? (isPorkys ? 'Click to collapse Porky\'s Fades ▲' : 'Click to collapse 5-Pack ▲')
-                        : (isPorkys ? 'Click to expand all 5 Porky\'s Traps &amp; Fades ▼' : 'Click to unlock &amp; expand all 5 Flagship Plays ▼')}
+                        ? (isPorkys ? 'Click to collapse Porky\'s Safe Floor Fades ▲' : 'Click to collapse 5-Pack ▲')
+                        : (isPorkys ? 'Click to expand all 5 Porky\'s Traps &amp; Safe Floor Fades ▼' : 'Click to unlock &amp; expand all 5 Flagship Plays ▼')}
                 </div>
             </div>
 
@@ -1335,22 +1354,30 @@ function render_game_cards(data) {
 }
 
 // ==========================================
-// COMBINATORICS & ROUND ROBIN DECK (WITH ONE-CLICK PORKY'S FADE LOADER)
+// COMBINATORICS & ROUND ROBIN DECK (WITH SAFE FLOOR PORKY'S FADE LOADER)
 // ==========================================
 function renderCombinatoricsDeck() {
     const container = document.getElementById("combinatorics-container");
     if (!container) return;
 
+    if (!AppState.safeFloorParlayLegs) AppState.safeFloorParlayLegs = new Set();
+
     const isUnlockedMode = (AppState.activeMode === "balls_deep" || AppState.activeMode === "davinci");
-    const modeTag = AppState.activeMode === "tip"
-        ? "JUST THE TIP BASELINE (M1–M9)"
-        : (AppState.activeMode === "balls_deep" ? "BALLS DEEP FLOOR & CEILING ACTIVE" : "DAVINCI OVERRIDE ACTIVE");
+    const hasFloorLegs = AppState.safeFloorParlayLegs.size > 0;
+    const modeTag = hasFloorLegs
+        ? "🐷 PORKY'S SAFE FLOOR (-2φ) FADE SLIP ACTIVE (-175 ALT LINES)"
+        : (AppState.activeMode === "tip"
+            ? "JUST THE TIP BASELINE (M1–M9)"
+            : (AppState.activeMode === "balls_deep" ? "BALLS DEEP FLOOR & CEILING ACTIVE" : "DAVINCI OVERRIDE ACTIVE"));
 
     const selectedProps = AppState.processedProps.filter(p => AppState.selectedParlayLegs.has(p.propKey));
-    const legsPayload = selectedProps.map(p => ({
-        americanOdds: p.baseOdds,
-        trueProb: p.activeModelProbRaw
-    }));
+    const legsPayload = selectedProps.map(p => {
+        const useSafeFloor = AppState.safeFloorParlayLegs.has(p.propKey);
+        return {
+            americanOdds: useSafeFloor ? -175 : p.baseOdds,
+            trueProb: useSafeFloor ? ((p.safeFloorWinPct || 82.0) / 100.0) : p.activeModelProbRaw
+        };
+    });
 
     const m10 = calcProfitBoostParlayEV(legsPayload, 1.30);
     const rrTiers = (typeof calcRoundRobinMatrix === "function") ? calcRoundRobinMatrix(legsPayload) : [];
@@ -1372,7 +1399,7 @@ function renderCombinatoricsDeck() {
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 10px;">
                 <div>
                     <span style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-cyan); font-size: 14px;">
-                        🧮 PARLAY &amp; ROUND ROBIN CALCULATOR // <span style="color: var(--accent-gold);">${modeTag}</span>
+                        🧮 PARLAY &amp; ROUND ROBIN CALCULATOR // <span style="color: ${hasFloorLegs ? '#f87171' : 'var(--accent-gold)'};">${modeTag}</span>
                     </span>
                     <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-left: 10px;">
                         Tap any pick below to stack legs
@@ -1386,7 +1413,7 @@ function renderCombinatoricsDeck() {
                         🔥 Load Flagship 5-Pack (5)
                     </button>
                     <button class="calc-action-btn" onclick="window.loadPorkysPreset(event)" style="border-color: #f87171; color: #f87171;">
-                        🐷 Load Porky's Fades (5)
+                        🐷 Load Porky's Safe Floor Fades (5)
                     </button>
                     <button class="calc-action-btn" onclick="window.clearParlaySlip(event)">
                         ✕ Clear Slip (${selectedProps.length})
@@ -1397,7 +1424,7 @@ function renderCombinatoricsDeck() {
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; font-family: var(--font-mono); font-size: 12px;">
                 <div style="background: var(--bg-base); padding: 10px; border-radius: 6px; border: 1px solid var(--border-subtle);">
                     <div style="color: var(--text-secondary); font-size: 10px;">SELECTED LEGS</div>
-                    <div style="font-size: 16px; font-weight: 800; color: var(--text-primary);">${selectedProps.length} Legs</div>
+                    <div style="font-size: 16px; font-weight: 800; color: var(--text-primary);">${selectedProps.length} Legs ${hasFloorLegs ? '<span style="font-size:11px;color:var(--accent-cyan);">(-2&phi; Floor)</span>' : ''}</div>
                 </div>
                 <div style="background: var(--bg-base); padding: 10px; border-radius: 6px; border: 1px solid var(--border-subtle);">
                     <div style="color: var(--text-secondary); font-size: 10px;">JOINT WIN PROBABILITY</div>
@@ -1455,6 +1482,7 @@ function renderCombinatoricsDeck() {
             <div style="padding: 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px;">
                 ${filteredPool.map(p => {
                     const isSelected = AppState.selectedParlayLegs.has(p.propKey);
+                    const isFloorSelected = AppState.safeFloorParlayLegs.has(p.propKey);
                     const isSpread = p.marketType === "spread";
                     const tierColor = getTierColor(p.tierBadge);
                     const fmtProj = (isSpread && Number(p.projectedMean) > 0) ? `+${p.projectedMean}` : `${p.projectedMean}`;
@@ -1464,8 +1492,8 @@ function renderCombinatoricsDeck() {
                     return `
                         <div onclick="window.toggleParlayLeg('${p.propKey}')" style="cursor: pointer; padding: 12px 14px; border-radius: 8px; background: ${isSelected ? 'rgba(6, 182, 212, 0.14)' : 'var(--bg-elevated)'}; border: 1px solid ${isSelected ? 'var(--accent-cyan)' : 'var(--border-subtle)'}; transition: all 0.15s ease;">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                                <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);">
-                                    ${isSelected ? '✅ IN SLIP // ' : ''}${p.matchup} ${!p.isCurrentWeek ? '🔭' : ''}
+                                <span style="font-family: var(--font-mono); font-size: 11px; color: ${isFloorSelected ? 'var(--accent-cyan)' : 'var(--text-secondary)'}; font-weight: ${isFloorSelected ? '800' : '400'};">
+                                    ${isFloorSelected ? '🛡️ SAFE FLOOR IN SLIP // ' : (isSelected ? '✅ IN SLIP // ' : '')}${p.matchup} ${!p.isCurrentWeek ? '🔭' : ''}
                                 </span>
                                 <div style="display: flex; gap: 6px;">
                                     ${p.flagshipSlot ? `<span class="${p.flagshipSlot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}">${p.flagshipSlot}</span>` : ''}
@@ -1473,13 +1501,14 @@ function renderCombinatoricsDeck() {
                                 </div>
                             </div>
                             <div style="font-weight: 700; font-size: 13px; color: var(--text-primary); margin-bottom: 4px;">
-                                ${p.activePlayerLabel || p.player} <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);">(${p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds})</span>
+                                ${isFloorSelected ? `${p.isHomeSpread ? p.homeTeam : p.awayTeam} ${p.safeFloorLabel}` : (p.activePlayerLabel || p.player)}
+                                <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);">(${isFloorSelected ? '-175' : (p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds)})</span>
                             </div>
-                            <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 12px; color: ${tierColor};">
+                            <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 12px; color: ${isFloorSelected ? 'var(--accent-cyan)' : tierColor};">
                                 <span>Proj: <strong>${fmtProj}</strong></span>
-                                <span>Win: <strong>${p.activeModelPct}%</strong> (${evStr})</span>
+                                <span>Win: <strong>${isFloorSelected ? p.safeFloorWinPct : p.activeModelPct}%</strong> (${isFloorSelected ? 'Safe Floor -2φ' : evStr})</span>
                             </div>
-                            ${isUnlockedMode ? `
+                            ${(isUnlockedMode || isFloorSelected) ? `
                                 <div style="margin-top: 6px; padding-top: 5px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px; font-family: var(--font-mono); font-size: 10.5px;">
                                     <span style="color: var(--accent-cyan);">🛡️ ${p.safeFloorLabel} (${p.safeFloorWinPct}%)</span>
                                     <span style="color: var(--accent-gold);">🎯 ${p.bdAltLabel} (${altEvStr})</span>
@@ -2017,7 +2046,7 @@ function renderHistoricalLedger() {
         });
     });
 
-    // 2. Render current week's active/upcoming slate games using live scraped lines & v217 projections
+    // 2. Render current week's active/upcoming slate games using live scraped lines & v218 projections
     AppState.processedGames.filter(g => g.isCurrentWeek).forEach(g => {
         if (renderedMatchups.has(g.matchup)) return;
         if (!isRankedLedgerEntry(g.matchup, g.league)) return;
