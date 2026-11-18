@@ -1,7 +1,8 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v220)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v221)
+ * - Added 6th Clickable Ledger Vault Card: "🛡️ SAFE FLOORS (-2φ) & 🎯 CEILINGS (+φ)" tracking Floor & Alt-Line Escalator hit rates
+ * - Removed "Click card to view..." footer clutter from all 6 Ledger Cards for a tighter, cleaner card grid
  * - Auto-Sweeps FINAL games off Tab 1 Master Pick Board into Clickable Historical Ledger Card Vaults
- * - 5 Clickable Ledger Scorecard Vaults: Tucks all completed games inside their respective cards so the Upcoming table never floods
  * - Flagship 5-Pack Week Dropdown ("Week X — Y/5") right on the 5-Pack Ledger Card to filter weekly 5-Pack receipts
  * - Updated Money Shot Decoder ("Covered the Vegas closing number, walked out, and left the money on the dresser.")
  * - Responsive Mobile & Desktop 5-Pack Header + Porky's Safe Floor Counter-Strike (-2φ at -175) + Grenades Dodged + 300s Live Wire Ticker
@@ -12,7 +13,7 @@ const AppState = {
     lastDataHash: "",
     activeMode: "tip",                // "tip" | "balls_deep" | "davinci"
     fivePackView: "main_stage",       // "main_stage" | "porkys"
-    activeLedgerVault: null,          // null | "flagship_5pack" | "overall_smash" | "all_tease" | "grenades_dodged" | "tip_vs_bd"
+    activeLedgerVault: null,          // null | "flagship_5pack" | "overall_smash" | "all_tease" | "grenades_dodged" | "floors_ceilings" | "tip_vs_bd"
     selectedFivePackWeek: "ALL",      // "ALL" | "Week 10" | "Week 11" ...
     intensitySlider: 0.0,             // -3.236 (-2φ) to +3.236 (+2φ)
     filters: { nfl: true, ncaa: true },
@@ -257,7 +258,6 @@ function inferFootballWeekLabel(entryOrGame, fallbackLabel = "Week 10") {
     if (timeStr) {
         const ms = new Date(timeStr).getTime();
         if (!isNaN(ms)) {
-            // 2026 NFL Week 1 anchor: Sept 8, 2026 Tuesday 5AM cutoff
             const week1StartMs = new Date("2026-09-02T00:00:00Z").getTime();
             const diffDays = Math.floor((ms - week1StartMs) / (1000 * 60 * 60 * 24));
             const weekNum = Math.max(1, Math.min(18, Math.floor(diffDays / 7) + 1));
@@ -315,7 +315,7 @@ window.toggleFivePackView = function(event) {
     window.scrollTo(window.scrollX, savedY);
 };
 
-// Toggles the 5 Clickable Historical Ledger Vault Cards open/closed
+// Toggles the 6 Clickable Historical Ledger Vault Cards open/closed
 window.toggleLedgerVault = function(vaultKey, event) {
     if (event) {
         event.preventDefault();
@@ -709,8 +709,10 @@ function recalculateAndRenderAll() {
                 let finalCalculatedLine = vegasLine;
                 let activeModelProb = 0.50;
 
+                let safeFloorHookNum = vegasLine;
                 let safeFloorLabel = "";
                 let safeFloorWinPct = 82.0;
+                let ceilingHookNum = vegasLine;
                 let bdAltLineLabel = "";
                 let bdLongerOdds = 145;
                 let bdReachProb = 0.50;
@@ -736,12 +738,14 @@ function recalculateAndRenderAll() {
                     }
 
                     const safeSpreadHook = snapToHalfPointHook(vegasLine, +3.5);
+                    safeFloorHookNum = safeSpreadHook;
                     const safeCoverGap = safeSpreadHook - finalCalculatedLine;
                     const safeProbRaw = Math.min(0.96, Math.max(0.68, calcPointGapWinProb(safeCoverGap)));
                     safeFloorWinPct = Number((safeProbRaw * 100).toFixed(1));
                     safeFloorLabel = `Alt ${safeSpreadHook > 0 ? '+' + safeSpreadHook.toFixed(1) : safeSpreadHook.toFixed(1)} (-175)`;
 
                     const altSpreadHook = snapToHalfPointHook(vegasLine, -3.0);
+                    ceilingHookNum = altSpreadHook;
                     bdAltLineLabel = `Alt ${altSpreadHook > 0 ? '+' + altSpreadHook.toFixed(1) : altSpreadHook.toFixed(1)} (+145)`;
                     bdLongerOdds = 145;
                     const altCoverGap = altSpreadHook - finalCalculatedLine;
@@ -774,6 +778,7 @@ function recalculateAndRenderAll() {
                     const safeTotalHook = isUnderTip
                         ? (Math.floor(vegasLine + 3.5) + 0.5)
                         : (Math.floor(vegasLine - 3.5) + 0.5);
+                    safeFloorHookNum = safeTotalHook;
                     const safeTotalEdge = isUnderTip
                         ? (safeTotalHook - finalCalculatedLine)
                         : (finalCalculatedLine - safeTotalHook);
@@ -784,6 +789,7 @@ function recalculateAndRenderAll() {
                     const altTotalHook = isUnderTip
                         ? (Math.floor(vegasLine - 3.0) + 0.5)
                         : (Math.floor(vegasLine + 3.0) + 0.5);
+                    ceilingHookNum = altTotalHook;
                     bdAltLineLabel = `Alt ${isUnderTip ? 'U' : 'O'} ${altTotalHook.toFixed(1)} (+155)`;
                     bdLongerOdds = 155;
                     const altTotalEdge = isUnderTip
@@ -802,11 +808,13 @@ function recalculateAndRenderAll() {
                     activeModelProb = (mode === "tip") ? tipModelProb : bdModelProb;
 
                     const safeFloorMilestone = Math.max(5, Math.round((baseProjectedLine * 0.70) / 5) * 5);
+                    safeFloorHookNum = safeFloorMilestone;
                     const gammaFloorRes = calcGammaSurvivalProb(finalCalculatedLine, varianceSigma2, safeFloorMilestone);
                     safeFloorWinPct = Number((Math.min(0.97, Math.max(0.82, gammaFloorRes.trueOverProb)) * 100).toFixed(1));
                     safeFloorLabel = `${safeFloorMilestone}+ Safe Floor (-190)`;
 
                     const ceilingMilestone = Math.max(10, Math.round((baseProjectedLine * 1.25) / 5) * 5);
+                    ceilingHookNum = ceilingMilestone;
                     bdAltLineLabel = `${ceilingMilestone}+ Escalator (+160)`;
                     bdLongerOdds = 160;
                     bdReachProb = Math.max(0.05, activeModelProb - 0.10);
@@ -859,8 +867,10 @@ function recalculateAndRenderAll() {
                     vigFreePct: Number((vigFreeOver * 100).toFixed(2)),
                     bdModelPct: Number((bdModelProb * 100).toFixed(2)),
                     bdEvPct: Number(m2Bd.evPercentage.toFixed(2)),
+                    safeFloorHookNum,
                     safeFloorLabel,
                     safeFloorWinPct,
+                    ceilingHookNum,
                     bdAltLabel: bdAltLineLabel,
                     bdAltEvPct: Number(m2BdAlt.evPercentage.toFixed(2)),
                     activeModelPct: activeWinPct,
@@ -1786,7 +1796,7 @@ function renderBioWeatherLab() {
 }
 
 // ==========================================
-// PERMANENT ARCHIVE SEED + ZERO-TOKEN ESPN SCOREBOARD SYNC & CLICKABLE VAULT LEDGER
+// PERMANENT ARCHIVE SEED + ZERO-TOKEN ESPN SCOREBOARD SYNC & 6 CLICKABLE VAULT CARDS
 // ==========================================
 const BLUE_BALLS_MARGIN = 3.0; // <= 3.0 pts miss from Vegas line = BLUE BALLS
 
@@ -1821,6 +1831,8 @@ const PERMANENT_LEDGER_ARCHIVE = {
             flagship_slot: "MÉNAGE À TROIS #2",
             result_tip: "HIT",
             result_bd: "HIT",
+            result_floor: "HIT",
+            result_ceiling: "HIT",
             miss_by_pts: 0
         },
         total_record: {
@@ -1841,6 +1853,8 @@ const PERMANENT_LEDGER_ARCHIVE = {
             flagship_slot: "",
             result_tip: "BLUE_BALLS",
             result_bd: "BLUE_BALLS",
+            result_floor: "HIT",
+            result_ceiling: "MISS",
             miss_by_pts: 1.5
         }
     }
@@ -1990,7 +2004,6 @@ function renderHistoricalLedger() {
     const rawEntries = ledgerObj.entries || {};
     const showBallsDeep = (AppState.activeMode === "balls_deep" || AppState.activeMode === "davinci");
 
-    // Merge raw data.json historical entries with PERMANENT_LEDGER_ARCHIVE while preserving any flagship_slot tags
     const entriesMap = Object.assign({}, rawEntries, PERMANENT_LEDGER_ARCHIVE);
     Object.keys(rawEntries).forEach(k => {
         const rawE = rawEntries[k];
@@ -2029,11 +2042,12 @@ function renderHistoricalLedger() {
         total_smash:    makeBucket(),
         all_tease:      makeBucket(),
         champagne_room: { dodged: 0, total: 0 },
+        safe_floors:    makeBucket(),
+        ceilings:       makeBucket(),
         tip_all:        makeBucket(),
         balls_deep_all: makeBucket()
     };
 
-    // Weekly 5-Pack tracker: { "Week 10": { hits, misses, blueBalls, total, menage: {...}, rows: [] } }
     const fivePackByWeek = {};
     const ensureWeekFivePackBucket = (wk) => {
         if (!fivePackByWeek[wk]) {
@@ -2049,12 +2063,12 @@ function renderHistoricalLedger() {
         return fivePackByWeek[wk];
     };
 
-    // Vault row collections for the 5 clickable cards
     const vaultRows = {
         flagship_5pack: [],
         overall_smash: [],
         all_tease: [],
         grenades_dodged: [],
+        floors_ceilings: [],
         tip_vs_bd: []
     };
 
@@ -2087,6 +2101,20 @@ function renderHistoricalLedger() {
                 <td style="color:${tipColor};">Proj: <strong>${fmtTipProj}</strong> (${tipWinPct}% | ${tipEvPct > 0 ? '+' : ''}${tipEvPct}% EV)</td>
                 <td>${showBallsDeepFlag ? `<span style="color:${bdColor};">Proj: <strong>${fmtBdProj}</strong> (${bdWinPct}% | ${bdEvPct > 0 ? '+' : ''}${bdEvPct}% EV)<br>${floorInfoHTML}<small style="color:var(--accent-gold);">🎯 ${bdAltLabel} (${bdAltEvPct > 0 ? '+' : ''}${bdAltEvPct}% EV)</small></span>` : renderLockCellHTML()}</td>
                 <td>${renderGradeBadge(gradedTip, missByPts)}</td>
+            </tr>
+        `;
+    };
+
+    const buildFloorCeilingVaultRowHTML = (weekLabel, cleanMatchup, statusLabel, type, pickLabel, vegasLine, safeFloorLabel, safeFloorWinPct, gradedFloor, floorMissBy, bdAltLabel, bdAltEvPct, gradedCeiling, ceilingMissBy) => {
+        return `
+            <tr>
+                <td><span style="font-family:var(--font-mono); font-size:10px; color:var(--accent-gold); font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+                <td>${type}</td>
+                <td><strong>${pickLabel}</strong><br><span style="font-size:11px; color:var(--text-secondary);">Base Line: ${vegasLine}</span></td>
+                <td style="color:var(--accent-cyan); font-weight:700;">🛡️ ${safeFloorLabel || 'Safe Floor (-2φ)'}<br><small style="color:var(--text-secondary);">Floor Win Prob: ${safeFloorWinPct || 85.0}%</small></td>
+                <td>${renderGradeBadge(gradedFloor, floorMissBy)}</td>
+                <td style="color:var(--accent-gold); font-weight:700;">🎯 ${bdAltLabel || 'Ceiling Escalator (+φ)'}<br><small style="color:var(--text-secondary);">Alt EV: ${bdAltEvPct > 0 ? '+' : ''}${bdAltEvPct || 0}% EV</small></td>
+                <td>${renderGradeBadge(gradedCeiling, ceilingMissBy)}</td>
             </tr>
         `;
     };
@@ -2150,28 +2178,62 @@ function renderHistoricalLedger() {
         archivedRecords.forEach(({ type, rec }) => {
             const isSpread = type === "SPREAD";
             const pickLabel = cleanLabelCodes(rec.pick_label || rec.player || cleanMatchup);
-            const vegasLine = rec.vegas_line !== undefined ? rec.vegas_line : (rec.line !== undefined ? rec.line : (rec.baseLine || 0));
+            const vegasLine = rec.vegas_line !== undefined ? Number(rec.vegas_line) : (rec.line !== undefined ? Number(rec.line) : Number(rec.baseLine || 0));
             const baseOdds = rec.odds !== undefined ? rec.odds : (rec.baseOdds || -110);
-            const tipProj = rec.tip_proj !== undefined ? rec.tip_proj : (rec.tipProjectedMean || vegasLine);
+            const tipProj = rec.tip_proj !== undefined ? Number(rec.tip_proj) : Number(rec.tipProjectedMean || vegasLine);
             const tipWinPct = rec.tip_win_pct !== undefined ? rec.tip_win_pct : (rec.tipModelPct || 50);
             const tipEvPct = rec.tip_ev_pct !== undefined ? rec.tip_ev_pct : (rec.tipEvPct || 0);
             const ledgerTier = getTierFromEv(tipEvPct);
             const tipColor = getTierColor(ledgerTier);
 
-            const bdProj = rec.bd_proj !== undefined ? rec.bd_proj : (rec.bdProjectedMean || tipProj);
+            const bdProj = rec.bd_proj !== undefined ? Number(rec.bd_proj) : Number(rec.bdProjectedMean || tipProj);
             const bdWinPct = rec.bd_win_pct !== undefined ? rec.bd_win_pct : (rec.bdModelPct || tipWinPct);
             const bdEvPct = rec.bd_ev_pct !== undefined ? rec.bd_ev_pct : (rec.bdEvPct || tipEvPct);
             const bdTier = getTierFromEv(bdEvPct);
             const bdColor = getTierColor(bdTier);
-            const safeFloorLabel = rec.safe_floor_label || rec.safeFloorLabel || "";
-            const safeFloorWinPct = rec.safe_floor_win_pct || rec.safeFloorWinPct || 84.0;
+
+            const isUnderTip = !isSpread && (tipProj < vegasLine);
+            const defaultFloorHook = isSpread
+                ? snapToHalfPointHook(vegasLine, +3.5)
+                : (isUnderTip ? (Math.floor(vegasLine + 3.5) + 0.5) : (Math.floor(vegasLine - 3.5) + 0.5));
+            const safeFloorLabel = rec.safe_floor_label || rec.safeFloorLabel || (isSpread
+                ? `Alt ${defaultFloorHook > 0 ? '+' + defaultFloorHook.toFixed(1) : defaultFloorHook.toFixed(1)} (-175)`
+                : `Alt ${isUnderTip ? 'U' : 'O'} ${defaultFloorHook.toFixed(1)} (-175)`);
+            const safeFloorWinPct = rec.safe_floor_win_pct || rec.safeFloorWinPct || 84.5;
+
             const bdAltLabel = rec.bd_alt_label || rec.bdAltLabel || "Alt Escalator";
             const bdAltEvPct = rec.bd_alt_ev_pct !== undefined ? rec.bd_alt_ev_pct : (rec.bdAltEvPct || 0);
             const slot = rec.flagship_slot || rec.flagshipSlot || "";
 
             let gradedTip = rec.result_tip || rec.result || "PENDING";
             let gradedBd = rec.result_bd || gradedTip;
-            const missByPts = rec.miss_by_pts || 0;
+            const missByPts = Number(rec.miss_by_pts || 0);
+
+            // Derive Safe Floor (-2φ) & Ceiling (+φ) grades if not explicitly hardcoded
+            let gradedFloor = rec.result_floor || "";
+            let floorMissBy = 0;
+            if (!gradedFloor) {
+                if (gradedTip === "HIT" || gradedTip === "BLUE_BALLS") {
+                    // +3.5 pts of Safe Floor cushion turns any HIT or <=3.0 pt BLUE_BALLS into a Safe Floor HIT
+                    gradedFloor = "HIT";
+                } else if (gradedTip === "MISS") {
+                    const remMiss = Number((missByPts - 3.5).toFixed(1));
+                    if (remMiss <= 0) gradedFloor = "HIT";
+                    else if (remMiss <= BLUE_BALLS_MARGIN) { gradedFloor = "BLUE_BALLS"; floorMissBy = remMiss; }
+                    else { gradedFloor = "MISS"; floorMissBy = remMiss; }
+                }
+            }
+
+            let gradedCeiling = rec.result_ceiling || "";
+            let ceilingMissBy = 0;
+            if (!gradedCeiling) {
+                if (gradedTip === "BLUE_BALLS" || gradedTip === "MISS") {
+                    gradedCeiling = "MISS";
+                    ceilingMissBy = Number((missByPts + 3.0).toFixed(1));
+                } else if (gradedTip === "HIT") {
+                    gradedCeiling = "HIT";
+                }
+            }
 
             const fmtTipProj = (isSpread && Number(tipProj) > 0) ? `+${tipProj}` : `${tipProj}`;
             const fmtBdProj = (isSpread && Number(bdProj) > 0) ? `+${bdProj}` : `${bdProj}`;
@@ -2187,6 +2249,16 @@ function renderHistoricalLedger() {
                 tallyGrade("tip_all", gradedTip);
                 tallyGrade("balls_deep_all", gradedBd);
                 vaultRows.tip_vs_bd.push(rowHTML);
+
+                tallyGrade("safe_floors", gradedFloor);
+                tallyGrade("ceilings", gradedCeiling);
+                vaultRows.floors_ceilings.push(
+                    buildFloorCeilingVaultRowHTML(
+                        weekLabel, cleanMatchup, statusLabel, type, pickLabel, vegasLine,
+                        safeFloorLabel, safeFloorWinPct, gradedFloor, floorMissBy,
+                        bdAltLabel, bdAltEvPct, gradedCeiling, ceilingMissBy
+                    )
+                );
 
                 if (slot) {
                     tallyGrade("flagship_5pack", gradedTip);
@@ -2275,6 +2347,10 @@ function renderHistoricalLedger() {
             let gradedTip = "PENDING";
             let gradedBd = "PENDING";
             let missByPts = 0;
+            let gradedFloor = "PENDING";
+            let floorMissBy = 0;
+            let gradedCeiling = "PENDING";
+            let ceilingMissBy = 0;
 
             if (isFinal && espnMatch) {
                 const tipResObj = isSpread
@@ -2283,9 +2359,20 @@ function renderHistoricalLedger() {
                 const bdResObj = isSpread
                     ? gradeSpreadPick(p.isHomeSpread, p.baseLine, espnMatch.homeScore, espnMatch.awayScore)
                     : gradeTotalPick(p.bdProjectedMean, p.baseLine, espnMatch.homeScore, espnMatch.awayScore);
+                const floorResObj = isSpread
+                    ? gradeSpreadPick(p.isHomeSpread, p.safeFloorHookNum, espnMatch.homeScore, espnMatch.awayScore)
+                    : gradeTotalPick(p.tipProjectedMean, p.safeFloorHookNum, espnMatch.homeScore, espnMatch.awayScore);
+                const ceilingResObj = isSpread
+                    ? gradeSpreadPick(p.isHomeSpread, p.ceilingHookNum, espnMatch.homeScore, espnMatch.awayScore)
+                    : gradeTotalPick(p.tipProjectedMean, p.ceilingHookNum, espnMatch.homeScore, espnMatch.awayScore);
+
                 gradedTip = tipResObj.outcome;
                 gradedBd = bdResObj.outcome;
                 missByPts = tipResObj.missBy;
+                gradedFloor = floorResObj.outcome;
+                floorMissBy = floorResObj.missBy;
+                gradedCeiling = ceilingResObj.outcome;
+                ceilingMissBy = ceilingResObj.missBy;
             }
 
             if (isFinal && (gradedTip === "HIT" || gradedTip === "MISS" || gradedTip === "BLUE_BALLS")) {
@@ -2299,6 +2386,16 @@ function renderHistoricalLedger() {
                 tallyGrade("tip_all", gradedTip);
                 tallyGrade("balls_deep_all", gradedBd);
                 vaultRows.tip_vs_bd.push(rowHTML);
+
+                tallyGrade("safe_floors", gradedFloor);
+                tallyGrade("ceilings", gradedCeiling);
+                vaultRows.floors_ceilings.push(
+                    buildFloorCeilingVaultRowHTML(
+                        weekLabel, g.matchup, statusLabel, isSpread ? "SPREAD" : "TOTAL (O/U)", p.player, p.baseLine,
+                        p.safeFloorLabel, p.safeFloorWinPct, gradedFloor, floorMissBy,
+                        p.bdAltLabel, p.bdAltEvPct, gradedCeiling, ceilingMissBy
+                    )
+                );
 
                 if (p.flagshipSlot) {
                     tallyGrade("flagship_5pack", gradedTip);
@@ -2381,12 +2478,13 @@ function renderHistoricalLedger() {
         </select>
     `;
 
-    // Build the Active Clickable Vault Drawer HTML (opens directly below the 5 scorecard cards when clicked)
+    // Build the Active Clickable Vault Drawer HTML (opens directly below the 6 scorecard cards when clicked)
     let activeVaultDrawerHTML = "";
     if (AppState.activeLedgerVault) {
         let vaultTitle = "";
         let vaultAccentColor = "var(--accent-cyan)";
         let selectedRowsHTML = "";
+        const isFloorsCeilingsVault = (AppState.activeLedgerVault === "floors_ceilings");
 
         if (AppState.activeLedgerVault === "flagship_5pack") {
             const wkFilter = AppState.selectedFivePackWeek;
@@ -2411,11 +2509,39 @@ function renderHistoricalLedger() {
             vaultTitle = `💣 GRENADES DODGED VAULT (&le;-10% EV PUBLIC TRAPS AVOIDED) // ${fmtTraps()}`;
             vaultAccentColor = "var(--accent-danger)";
             selectedRowsHTML = vaultRows.grenades_dodged.join("");
+        } else if (isFloorsCeilingsVault) {
+            vaultTitle = `🛡️ SAFE FLOORS (-2&phi;) &amp; 🎯 CEILING ESCALATORS (+&phi;) VAULT // Floors: ${fmtBucket("safe_floors")} • Ceilings: ${fmtBucket("ceilings")}`;
+            vaultAccentColor = "var(--accent-gold)";
+            selectedRowsHTML = vaultRows.floors_ceilings.join("");
         } else if (AppState.activeLedgerVault === "tip_vs_bd") {
             vaultTitle = `⚡ TIP vs. BALLS DEEP MASTER ARCHIVE (ALL COMPLETED GAMES)`;
             vaultAccentColor = "var(--accent-cyan)";
             selectedRowsHTML = vaultRows.tip_vs_bd.join("");
         }
+
+        const vaultTableHeadHTML = isFloorsCeilingsVault
+            ? `
+                <tr>
+                    <th>Week &amp; Final Score</th>
+                    <th>Market</th>
+                    <th>Base Model Pick</th>
+                    <th>🛡️ Safe Floor (-2&phi; / -175)</th>
+                    <th>Floor Result</th>
+                    <th>🎯 Ceiling Escalator (+&phi;)</th>
+                    <th>Ceiling Result</th>
+                </tr>
+            `
+            : `
+                <tr>
+                    <th>Week &amp; Final Score</th>
+                    <th>Market &amp; Slot</th>
+                    <th>Official Model Pick</th>
+                    <th>Vegas Closing</th>
+                    <th>Just the Tip Closing</th>
+                    <th>${AppState.activeLedgerVault === "grenades_dodged" ? "Counter-Strike Fade Outcome" : "Balls Deep Closing"}</th>
+                    <th>Graded Result</th>
+                </tr>
+            `;
 
         activeVaultDrawerHTML = `
             <div style="margin-bottom: 22px; border: 1px solid ${vaultAccentColor}; border-radius: 8px; background: #0f172a; box-shadow: 0 8px 24px rgba(0,0,0,0.5); overflow: hidden;">
@@ -2430,15 +2556,7 @@ function renderHistoricalLedger() {
                 <div class="table-responsive">
                     <table class="quant-table">
                         <thead>
-                            <tr>
-                                <th>Week &amp; Final Score</th>
-                                <th>Market &amp; Slot</th>
-                                <th>Official Model Pick</th>
-                                <th>Vegas Closing</th>
-                                <th>Just the Tip Closing</th>
-                                <th>${AppState.activeLedgerVault === "grenades_dodged" ? "Counter-Strike Fade Outcome" : "Balls Deep Closing"}</th>
-                                <th>Graded Result</th>
-                            </tr>
+                            ${vaultTableHeadHTML}
                         </thead>
                         <tbody>
                             ${selectedRowsHTML || `<tr><td colspan="7" style="text-align:center; color:var(--text-secondary); padding:18px;">No completed games in this vault yet—active games move here automatically as soon as they hit FINAL.</td></tr>`}
@@ -2453,21 +2571,10 @@ function renderHistoricalLedger() {
         ? `border: 2px solid var(--accent-cyan); box-shadow: 0 0 16px rgba(6, 182, 212, 0.35);`
         : `border: 1px solid ${defaultBorder};`;
 
-    const vaultFooterPrompt = (key, count) => {
-        const isOpen = AppState.activeLedgerVault === key;
-        return `<div style="font-size: 10.5px; color: var(--accent-cyan); margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.07); text-decoration: underline; font-weight: 700;">
-            ${isOpen ? '📂 Hide graded receipts ▲' : `📂 Click card to view ${count} graded receipt${count === 1 ? '' : 's'} ▼`}
-        </div>`;
-    };
-
-    const filteredFivePackCount = (AppState.selectedFivePackWeek === "ALL")
-        ? vaultRows.flagship_5pack.length
-        : (fivePackByWeek[AppState.selectedFivePackWeek] ? fivePackByWeek[AppState.selectedFivePackWeek].rows.length : 0);
-
     container.innerHTML = `
         ${buildLedgerLegendHTML()}
 
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(225px, 1fr)); gap: 14px; margin-bottom: 20px; font-family: var(--font-mono);">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-bottom: 20px; font-family: var(--font-mono);">
             <div onclick="window.toggleLedgerVault('flagship_5pack', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('flagship_5pack', 'rgba(245, 158, 11, 0.5)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
                 <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
                     <span style="font-size: 11px; color: var(--accent-gold); font-weight: 800;">👑 FLAGSHIP 5-PACK</span>
@@ -2475,7 +2582,6 @@ function renderHistoricalLedger() {
                 </div>
                 <div style="font-size: 14.5px; font-weight: 800; margin: 6px 0;">5-Pack: ${fmtBucketObj(activeFivePackRecordBucket)}</div>
                 <div style="font-size: 11.5px; color: var(--text-secondary);">Ménage à Trois: <strong>${fmtBucketObj(activeMenageRecordBucket)}</strong></div>
-                ${vaultFooterPrompt("flagship_5pack", filteredFivePackCount)}
             </div>
 
             <div onclick="window.toggleLedgerVault('overall_smash', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('overall_smash', 'rgba(16, 185, 129, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
@@ -2484,21 +2590,24 @@ function renderHistoricalLedger() {
                 <div style="font-size: 11px; color: var(--text-secondary);">
                     Spreads: <strong>${fmtBucket("spread_smash")}</strong><br>Totals: <strong>${fmtBucket("total_smash")}</strong>
                 </div>
-                ${vaultFooterPrompt("overall_smash", vaultRows.overall_smash.length)}
             </div>
 
             <div onclick="window.toggleLedgerVault('all_tease', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('all_tease', 'rgba(59, 130, 246, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
                 <div style="font-size: 11px; color: #60a5fa; font-weight: 800;">🔵 ALL TEASE, NO SQUEEZE (&plusmn;10% EV)</div>
                 <div style="font-size: 14.5px; font-weight: 800; margin: 6px 0; color: var(--text-primary);">${fmtBucket("all_tease")}</div>
                 <div style="font-size: 11px; color: var(--text-muted);">Coin-flip zone | BB = Missed line by &le;3 pts</div>
-                ${vaultFooterPrompt("all_tease", vaultRows.all_tease.length)}
             </div>
 
             <div onclick="window.toggleLedgerVault('grenades_dodged', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('grenades_dodged', 'rgba(239, 68, 68, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
                 <div style="font-size: 11px; color: var(--accent-danger); font-weight: 800;">💣 GRENADES DODGED (&le;-10% EV)</div>
                 <div style="font-size: 15.5px; font-weight: 800; margin: 6px 0; color: var(--accent-emerald);">${fmtTraps()}</div>
                 <div style="font-size: 11px; color: var(--text-muted);">You were a little too drunk to make that call last night</div>
-                ${vaultFooterPrompt("grenades_dodged", vaultRows.grenades_dodged.length)}
+            </div>
+
+            <div onclick="window.toggleLedgerVault('floors_ceilings', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('floors_ceilings', 'rgba(245, 158, 11, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
+                <div style="font-size: 11px; color: var(--accent-gold); font-weight: 800;">🛡️ SAFE FLOORS &amp; 🎯 CEILINGS</div>
+                <div style="font-size: 13px; font-weight: 800; margin: 6px 0; color: var(--accent-cyan);">🛡️ Floors (-2&phi;): ${fmtBucket("safe_floors")}</div>
+                <div style="font-size: 12.5px; font-weight: 800; color: var(--accent-gold);">🎯 Ceilings (+&phi;): ${fmtBucket("ceilings")}</div>
             </div>
 
             <div onclick="window.toggleLedgerVault('tip_vs_bd', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('tip_vs_bd', 'rgba(6, 182, 212, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
@@ -2508,7 +2617,6 @@ function renderHistoricalLedger() {
                     ? `<div style="font-size: 13px; font-weight: 800; color: var(--accent-emerald);">Balls Deep: ${fmtBucket("balls_deep_all")}</div>`
                     : `<div style="font-size: 11px; color: var(--accent-gold); cursor: pointer;" onclick="window.unlockBallsDeepMode(event)">🔒 Click to unlock Balls Deep Record</div>`
                 }
-                ${vaultFooterPrompt("tip_vs_bd", vaultRows.tip_vs_bd.length)}
             </div>
         </div>
 
@@ -2519,7 +2627,7 @@ function renderHistoricalLedger() {
                 🕒 ACTIVE WEEK // UPCOMING &amp; IN-PLAY CLOSING LINE LEDGER
             </span>
             <span style="font-size: 11px; color: var(--text-secondary);">
-                Completed games move automatically into the 5 Scorecard Vaults above upon hitting FINAL
+                Completed games move automatically into the 6 Scorecard Vaults above upon hitting FINAL
             </span>
         </div>
 
