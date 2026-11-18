@@ -2099,7 +2099,7 @@ function renderHistoricalLedger() {
                     <td><strong>${p.player}</strong> ${renderTierBadgeHTML(ledgerTier)}</td>
                     <td>${p.baseLine} (${p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds})</td>
                     <td style="color:${tipColor};">Proj: <strong>${fmtTipProj}</strong> (${p.tipModelPct}% | ${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV)</td>
-                    <td>${showBallsDeep ? `<span style="color:${bdColor};">Proj: <strong>${fmtBdProj}</strong> (${p.bdModelPct}% | ${p.bdEvPct > 0 ? '+' : ''}${bdEvPct}% EV)<br><small style="color:var(--accent-cyan);">🛡️ ${p.safeFloorLabel} (${p.safeFloorWinPct}%)</small> • <small style="color:var(--accent-gold);">🎯 ${p.bdAltLabel} (${p.bdAltEvPct > 0 ? '+' : ''}${p.bdAltEvPct}% EV)</small></span>` : renderLockCellHTML()}</td>
+                    <td>${showBallsDeep ? `<span style="color:${bdColor};">Proj: <strong>${fmtBdProj}</strong> (${p.bdModelPct}% | ${p.bdEvPct > 0 ? '+' : ''}${p.bdEvPct}% EV)<br><small style="color:var(--accent-cyan);">🛡️ ${p.safeFloorLabel} (${p.safeFloorWinPct}%)</small> • <small style="color:var(--accent-gold);">🎯 ${p.bdAltLabel} (${p.bdAltEvPct > 0 ? '+' : ''}${p.bdAltEvPct}% EV)</small></span>` : renderLockCellHTML()}</td>
                     <td>${renderGradeBadge(gradedTip, missByPts)}</td>
                 </tr>
             `;
@@ -2145,9 +2145,9 @@ function renderHistoricalLedger() {
             </div>
 
             <div style="background: var(--bg-elevated); border: 1px solid rgba(239, 68, 68, 0.45); border-radius: 8px; padding: 14px;">
-                <div style="font-size: 11px; color: var(--accent-danger); font-weight: 800;">🍾 CHAMPAGNE ROOM RULES (&le;-10% EV)</div>
+                <div style="font-size: 11px; color: var(--accent-danger); font-weight: 800;">💣 GRENADES DODGED (&le;-10% EV)</div>
                 <div style="font-size: 16px; font-weight: 800; margin: 6px 0; color: var(--accent-emerald);">${fmtTraps()}</div>
-                <div style="font-size: 11px; color: var(--text-muted);">Look, Don't Touch: Public traps avoided</div>
+                <div style="font-size: 11px; color: var(--text-muted);">You were a little too drunk to make that call last night</div>
             </div>
 
             <div style="background: var(--bg-elevated); border: 1px solid rgba(6, 182, 212, 0.45); border-radius: 8px; padding: 14px;">
@@ -2239,7 +2239,7 @@ function renderLiveBottomTicker() {
                 const dt = new Date(g.commenceTime);
                 kickStr = dt.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase() + " " + dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
             }
-            const badgeStr = topSpread.tipBadge === "SMASH" ? "🔥 SMASH" : (topSpread.tipBadge === "PASS" ? "🍾 PASS" : "⚖️ TEASE");
+            const badgeStr = topSpread.tipBadge === "SMASH" ? "🔥 SMASH" : (topSpread.tipBadge === "PASS" ? "💣 PASS" : "⚖️ TEASE");
             tickerItems.push(`<span style="color:var(--accent-cyan);font-weight:700;">🕒 ${kickStr}: ${g.matchup}</span> <span style="color:${tierColor};">[${badgeStr}: ${pickTag}]</span>`);
         }
     });
