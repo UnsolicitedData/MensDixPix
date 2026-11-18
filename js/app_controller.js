@@ -1,13 +1,10 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v212)
- * - 3-Tier EV System:
- *     1. SMASH (>= +10.0% EV): Green SMASH badge + Emerald text
- *     2. TOO CLOSE TO CALL (-9.99% to +9.99% EV): Blank (No badge) + Neutral Slate text
- *     3. PASS (<= -10.0% EV): Red PASS badge + Crimson text
- * - Flagship 5-Pack: All 5 Green SMASH plays with SMASH badge directly next to the Vegas Spread
- * - Single Lightning Bolt Rule in Balls Deep Cards: Only shows ⚡ BALLS DEEP PROJ on Totals and Spread sides with Win >= 50%
- * - Strict League Filter: Displays ONLY NFL and AP/CFP Top-25 Ranked NCAA Matchups
- * - Zero-Token ESPN Live Score Sync & Permanent Ledger Archive
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v213)
+ * - Clean Bare Lock Icons (no dashed border or opaque orange fill)
+ * - Collapsible Decoder Ring & Betting Guide Drawer on Master Pick Board
+ * - Collapsible Ledger Legend Drawer on Historical Ledger Tab
+ * - 3-Tier EV System: SMASH (>= +10% EV), TOO CLOSE (-9.9% to +9.9% EV, blank badge + neutral slate), PASS (<= -10% EV)
+ * - W - L - BB (Blue Balls <= 3.0 pts miss) + Champagne Room Rules Traps Avoided Counter
  */
 
 const AppState = {
@@ -143,6 +140,25 @@ window.unlockBallsDeepMode = function(event) {
     }
     AppState.activeMode = "balls_deep";
     recalculateAndRenderAll();
+};
+
+window.toggleLegendDrawer = function(memoryKey, targetRenderFnName, event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const savedY = window.scrollY;
+    if (openCardMemory.has(memoryKey)) {
+        openCardMemory.delete(memoryKey);
+    } else {
+        openCardMemory.add(memoryKey);
+    }
+    if (targetRenderFnName === "fivePack") {
+        renderFlagshipFivePack();
+    } else if (targetRenderFnName === "ledger") {
+        renderHistoricalLedger();
+    }
+    window.scrollTo(window.scrollX, savedY);
 };
 
 window.toggleParlayLeg = function(propKey) {
@@ -286,8 +302,9 @@ function snapToHalfPointHook(lineVal, subtractPts = 3.0) {
     return Math.floor(rawTarget) + 0.5;
 }
 
+// Clean bare lock icon (no dashed border or opaque orange background)
 function renderLockCellHTML() {
-    return `<span onclick="window.unlockBallsDeepMode(event)" title="Click to unlock Balls Deep Telemetry" style="cursor:pointer; display:inline-flex; align-items:center; justify-content:center; padding:3px 9px; border-radius:5px; background:rgba(245,158,11,0.12); border:1px dashed rgba(245,158,11,0.45); font-size:12px; transition:all 0.15s ease;">🔒</span>`;
+    return `<span onclick="window.unlockBallsDeepMode(event)" title="Click to unlock Balls Deep Telemetry" style="cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-size:15px; user-select:none;">🔒</span>`;
 }
 
 // ==========================================
@@ -660,6 +677,48 @@ function buildBallsDeepBoxHTML(engineProp, isSpread) {
     `;
 }
 
+// Collapsible Master Pick Board Decoder Ring & Betting Guide
+function buildMasterBoardLegendHTML() {
+    const legendKey = "MASTER_BOARD_LEGEND_DRAWER";
+    const isLegendOpen = openCardMemory.has(legendKey);
+
+    return `
+        <div style="margin-bottom: 14px; border: 1px solid rgba(6, 182, 212, 0.45); border-radius: 8px; background: #0f172a; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); overflow: hidden;">
+            <div onclick="window.toggleLegendDrawer('${legendKey}', 'fivePack', event)" style="cursor: pointer; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(90deg, rgba(6, 182, 212, 0.14), rgba(15, 23, 42, 0.9)); user-select: none;">
+                <span style="font-family: var(--font-mono); font-size: 12px; font-weight: 800; color: var(--accent-cyan); letter-spacing: 0.03em;">
+                    📖 NEW HERE? DIXPIX DECODER RING &amp; 15-SECOND BETTING GUIDE
+                </span>
+                <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); text-decoration: underline;">
+                    ${isLegendOpen ? 'Hide Guide ▲' : 'Click to Expand ▼'}
+                </span>
+            </div>
+
+            <div style="display: ${isLegendOpen ? 'block' : 'none'}; padding: 14px 18px; border-top: 1px solid var(--border-subtle); font-size: 12px; line-height: 1.55; color: var(--text-secondary);">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px;">
+                    <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
+                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">1. VEGAS LINE vs. MODEL PROJ</div>
+                        <div>• <strong>Bold Top Line</strong> (e.g. <em>MIA Spread +16.5</em> or <em>Total U 54.5</em>) is the <strong>Vegas Sportsbook Line</strong> you bet.</div>
+                        <div style="margin-top: 4px;">• <strong>Proj:</strong> is what the DixPix 13-Module Engine projects the actual final margin or total points to be. The gap between Vegas and <strong>Proj</strong> creates your Win % and Expected Value (EV%).</div>
+                    </div>
+
+                    <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
+                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">2. THE 3-TIER EV COLOR SYSTEM</div>
+                        <div>• <span class="badge-smash" style="font-size:10px;">SMASH</span> <strong style="color:var(--accent-emerald);">(&ge;+10.0% EV):</strong> Official high-conviction model play (57.6%+ win probability).</div>
+                        <div style="margin-top: 4px;">• <strong style="color:#94a3b8;">Neutral Slate / No Badge (&plusmn;10% EV):</strong> <em>All Tease, No Squeeze.</em> Vegas priced it tight; coin-flip territory.</div>
+                        <div style="margin-top: 4px;">• <span class="badge-pass" style="background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);font-size:10px;font-weight:800;">PASS</span> <strong style="color:var(--accent-danger);">(&le;-10.0% EV):</strong> <em>Champagne Room Rules.</em> Look, don't touch—public trap line to avoid.</div>
+                    </div>
+
+                    <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
+                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-gold); margin-bottom: 4px;">3. ENGINE MODES (TOP RIGHT)</div>
+                        <div>• <strong style="color:var(--accent-cyan);">Just the Tip:</strong> Free baseline showing Vegas Favorite spreads, Totals, and M7–M9 projections.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:var(--accent-emerald);">Balls Deep:</strong> Unlocks all Underdog spreads, coupled Biophysical/Turnover/Sacred Geometry overlay (&Psi;_11,12), <strong>⚡ BALLS DEEP PROJ</strong>, and <strong>🎯 Longer-Odds Escalator</strong> alt-lines (+145/+155).</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
 // Flagship 5-Pack: All 5 Green SMASH plays with SMASH badge right next to the Vegas spread
 function renderFlagshipFivePack() {
     const container = document.getElementById("flagship-five-pack-container");
@@ -672,10 +731,9 @@ function renderFlagshipFivePack() {
 
     container.style.maxWidth = "820px";
     container.style.margin = "0 auto 24px auto";
-    container.style.border = "1px solid rgba(245, 158, 11, 0.55)";
-    container.style.borderRadius = "8px";
-    container.style.backgroundColor = "#111827";
-    container.style.boxShadow = "0 8px 24px rgba(0, 0, 0, 0.5)";
+    container.style.border = "none";
+    container.style.backgroundColor = "transparent";
+    container.style.boxShadow = "none";
 
     const bannerKey = "FLAGSHIP_5_PACK_DRAWER";
     const isExpanded = openCardMemory.has(bannerKey);
@@ -697,44 +755,48 @@ function renderFlagshipFivePack() {
         `;
 
     container.innerHTML = `
-        <div id="flagship-banner-toggle" style="cursor: pointer; padding: 14px 20px; text-align: center; background: linear-gradient(90deg, rgba(245, 158, 11, 0.16), rgba(6, 182, 212, 0.10), rgba(245, 158, 11, 0.16)); user-select: none;">
-            <div style="font-size: 15px; font-weight: 800; color: var(--accent-gold); letter-spacing: 0.04em;">
-                👑 THE DIXPIX FLAGSHIP 5-PACK // FEATURING "THE MÉNAGE À TROIS"
-            </div>
-            <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
-                Active Engine: <strong style="color: var(--accent-cyan);">${modeTitle}</strong>
-            </div>
-            ${singleLockedStatusHTML}
-            <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); text-decoration: underline; margin-top: 6px;">
-                ${isExpanded ? 'Click to collapse 5-Pack ▲' : 'Click to unlock &amp; expand all 5 Flagship Plays ▼'}
-            </div>
-        </div>
+        ${buildMasterBoardLegendHTML()}
 
-        <div id="flagship-banner-drawer" style="display: ${isExpanded ? 'block' : 'none'}; padding: 14px 18px; border-top: 1px solid var(--border-subtle); background: var(--bg-surface);">
-            ${AppState.flagshipFivePack.map((p, idx) => {
-                const isMenage = p.flagshipSlot.includes("MÉNAGE");
-                const isSpread = p.marketType === "spread";
-                const fmtTipProj = (isSpread && Number(p.tipProjectedMean) > 0) ? `+${p.tipProjectedMean}` : `${p.tipProjectedMean}`;
-                const tipEvStr = `${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV`;
+        <div style="border: 1px solid rgba(245, 158, 11, 0.55); border-radius: 8px; background-color: #111827; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); overflow: hidden;">
+            <div id="flagship-banner-toggle" style="cursor: pointer; padding: 14px 20px; text-align: center; background: linear-gradient(90deg, rgba(245, 158, 11, 0.16), rgba(6, 182, 212, 0.10), rgba(245, 158, 11, 0.16)); user-select: none;">
+                <div style="font-size: 15px; font-weight: 800; color: var(--accent-gold); letter-spacing: 0.04em;">
+                    👑 THE DIXPIX FLAGSHIP 5-PACK // FEATURING "THE MÉNAGE À TROIS"
+                </div>
+                <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
+                    Active Engine: <strong style="color: var(--accent-cyan);">${modeTitle}</strong>
+                </div>
+                ${singleLockedStatusHTML}
+                <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); text-decoration: underline; margin-top: 6px;">
+                    ${isExpanded ? 'Click to collapse 5-Pack ▲' : 'Click to unlock &amp; expand all 5 Flagship Plays ▼'}
+                </div>
+            </div>
 
-                return `
-                    <div style="padding: 10px 0; ${idx < AppState.flagshipFivePack.length - 1 ? 'border-bottom: 1px solid #1e293b;' : ''}">
-                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
-                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                                <span class="${isMenage ? 'badge-menage' : 'badge-flex'}">${p.flagshipSlot}</span>
-                                <strong style="font-size: 13px; color: var(--text-primary);">${p.player}</strong>
-                                ${renderTierBadgeHTML(p.tipBadge)}
+            <div id="flagship-banner-drawer" style="display: ${isExpanded ? 'block' : 'none'}; padding: 14px 18px; border-top: 1px solid var(--border-subtle); background: var(--bg-surface);">
+                ${AppState.flagshipFivePack.map((p, idx) => {
+                    const isMenage = p.flagshipSlot.includes("MÉNAGE");
+                    const isSpread = p.marketType === "spread";
+                    const fmtTipProj = (isSpread && Number(p.tipProjectedMean) > 0) ? `+${p.tipProjectedMean}` : `${p.tipProjectedMean}`;
+                    const tipEvStr = `${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV`;
+
+                    return `
+                        <div style="padding: 10px 0; ${idx < AppState.flagshipFivePack.length - 1 ? 'border-bottom: 1px solid #1e293b;' : ''}">
+                            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                    <span class="${isMenage ? 'badge-menage' : 'badge-flex'}">${p.flagshipSlot}</span>
+                                    <strong style="font-size: 13px; color: var(--text-primary);">${p.player}</strong>
+                                    ${renderTierBadgeHTML(p.tipBadge)}
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 12px;">
+                                    <span style="color: ${getTierColor(p.tipBadge)};">
+                                        Proj: <strong>${fmtTipProj}</strong> | Win: <strong>${p.tipModelPct}%</strong> (${tipEvStr})
+                                    </span>
+                                </div>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 12px;">
-                                <span style="color: ${getTierColor(p.tipBadge)};">
-                                    Proj: <strong>${fmtTipProj}</strong> | Win: <strong>${p.tipModelPct}%</strong> (${tipEvStr})
-                                </span>
-                            </div>
+                            ${buildBallsDeepBoxHTML(p, isSpread)}
                         </div>
-                        ${buildBallsDeepBoxHTML(p, isSpread)}
-                    </div>
-                `;
-            }).join("")}
+                    `;
+                }).join("")}
+            </div>
         </div>
     `;
 
@@ -1385,6 +1447,48 @@ function gradeTotalPick(projectedTotal, vegasTotal, homeScore, awayScore) {
     return { outcome: "MISS", missBy: missPts };
 }
 
+// Collapsible Ledger Legend Drawer
+function buildLedgerLegendHTML() {
+    const legendKey = "LEDGER_LEGEND_DRAWER";
+    const isLegendOpen = openCardMemory.has(legendKey);
+
+    return `
+        <div style="margin-bottom: 16px; border: 1px solid rgba(59, 130, 246, 0.45); border-radius: 8px; background: #0f172a; overflow: hidden;">
+            <div onclick="window.toggleLegendDrawer('${legendKey}', 'ledger', event)" style="cursor: pointer; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(90deg, rgba(59, 130, 246, 0.16), rgba(15, 23, 42, 0.9)); user-select: none;">
+                <span style="font-family: var(--font-mono); font-size: 12px; font-weight: 800; color: #60a5fa; letter-spacing: 0.03em;">
+                    📖 LEDGER LEGEND: HOW WE GRADE HITS, BLUE BALLS (BB) &amp; CHAMPAGNE ROOM TRAPS
+                </span>
+                <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); text-decoration: underline;">
+                    ${isLegendOpen ? 'Hide Legend ▲' : 'Click to Expand ▼'}
+                </span>
+            </div>
+
+            <div style="display: ${isLegendOpen ? 'block' : 'none'}; padding: 14px 18px; border-top: 1px solid var(--border-subtle); font-size: 12px; line-height: 1.55; color: var(--text-secondary);">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px;">
+                    <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
+                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">3-PART RECORD (W - L - BB)</div>
+                        <div>• <strong style="color:var(--accent-emerald);">✅ HIT (W):</strong> Pick covered the Vegas closing line.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:#60a5fa;">🔵 BLUE BALLS (BB):</strong> Missed covering the Vegas line by <strong>&le;3.0 points (one field goal or less)</strong>—when the projection nailed the game flow but got clipped by the hook.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:var(--accent-danger);">❌ MISS (L):</strong> Missed the Vegas closing line by more than 3.0 points.</div>
+                    </div>
+
+                    <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
+                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">SMASH vs. ALL TEASE, NO SQUEEZE</div>
+                        <div>• <strong style="color:var(--accent-emerald);">🔥 Official SMASH (&ge;+10.0% EV):</strong> Institutional-edge plays that clear our +10% EV threshold, tracked alongside the <strong>Flagship 5-Pack</strong> and <strong>Ménage à Trois</strong>.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:#60a5fa;">🔵 All Tease, No Squeeze (&plusmn;10% EV):</strong> Coin-flip leans inside the -9.9% to +9.9% EV buffer—tracked separately so tight toss-ups never water down Official SMASH plays.</div>
+                    </div>
+
+                    <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
+                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-danger); margin-bottom: 4px;">🍾 CHAMPAGNE ROOM RULES (&le;-10% EV)</div>
+                        <div>• <strong>Look, Don't Touch:</strong> Tracks heavy public sides stamped with a red <strong>PASS (&le;-10.0% EV)</strong>.</div>
+                        <div style="margin-top: 4px;">• Every time a flagged public favorite fails to cover, <strong>Traps Dodged</strong> ticks up—measuring how many bad bets the engine saved your bankroll from taking.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
 function renderHistoricalLedger() {
     const container = document.getElementById("ledger-container");
     if (!container) return;
@@ -1636,6 +1740,8 @@ function renderHistoricalLedger() {
     };
 
     container.innerHTML = `
+        ${buildLedgerLegendHTML()}
+
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(225px, 1fr)); gap: 14px; margin-bottom: 20px; font-family: var(--font-mono);">
             <div style="background: var(--bg-elevated); border: 1px solid rgba(245, 158, 11, 0.5); border-radius: 8px; padding: 14px;">
                 <div style="font-size: 11px; color: var(--accent-gold); font-weight: 800;">👑 FLAGSHIP 5-PACK &amp; MÉNAGE À TROIS</div>
@@ -1694,5 +1800,4 @@ function renderHistoricalLedger() {
         </div>
     `;
 }
-// === END OF APP_CONTROLLER.JS ===
 // === END OF APP_CONTROLLER.JS ===
