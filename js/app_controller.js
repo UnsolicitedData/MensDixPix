@@ -1250,6 +1250,8 @@ function renderBioWeatherLab() {
 // ==========================================
 // PERMANENT ARCHIVE SEED + ZERO-TOKEN ESPN SCOREBOARD SYNC & LEDGER
 // ==========================================
+const BLUE_BALLS_MARGIN = 3.0; // <= 3.0 pts miss from Vegas line = BLUE BALLS
+
 const PERMANENT_LEDGER_ARCHIVE = {
     "nfl_mnf_lac_bal_2026_w10": {
         league: "NFL",
@@ -1257,6 +1259,7 @@ const PERMANENT_LEDGER_ARCHIVE = {
         status: "FINAL",
         final_score: "LAC 23 - BAL 20",
         is_locked: true,
+        trap_avoided: true, // LAC -6.5 (-27.6% EV PASS) failed to cover -> Bankroll saved
         spread_record: {
             pick_label: "BAL Spread (+6.5) (BAL vs LAC)",
             vegas_line: 6.5,
@@ -1272,7 +1275,8 @@ const PERMANENT_LEDGER_ARCHIVE = {
             bd_alt_ev_pct: 41.80,
             flagship_slot: "",
             result_tip: "HIT",
-            result_bd: "HIT"
+            result_bd: "HIT",
+            miss_by_pts: 0
         },
         total_record: {
             pick_label: "LAC@BAL Total (O 44.5)",
@@ -1288,8 +1292,9 @@ const PERMANENT_LEDGER_ARCHIVE = {
             bd_alt_label: "Alt O 47.5 (+155)",
             bd_alt_ev_pct: 14.20,
             flagship_slot: "",
-            result_tip: "MISS",
-            result_bd: "MISS"
+            result_tip: "BLUE_BALLS",
+            result_bd: "BLUE_BALLS",
+            miss_by_pts: 1.5
         }
     }
 };
@@ -1356,20 +1361,28 @@ function isRankedLedgerEntry(matchupStr, league) {
     return true;
 }
 
+// Grades Spread with <= 3.0 pt Blue Balls detection
 function gradeSpreadPick(isHomeSpread, baseLine, homeScore, awayScore) {
     const teamMargin = isHomeSpread ? (homeScore - awayScore) : (awayScore - homeScore);
     const coverDiff = teamMargin + Number(baseLine);
-    if (coverDiff > 0) return "HIT";
-    if (coverDiff < 0) return "MISS";
-    return "PUSH";
+    if (coverDiff > 0) return { outcome: "HIT", missBy: 0 };
+    if (coverDiff === 0) return { outcome: "PUSH", missBy: 0 };
+    const missPts = Number(Math.abs(coverDiff).toFixed(1));
+    if (missPts <= BLUE_BALLS_MARGIN) return { outcome: "BLUE_BALLS", missBy: missPts };
+    return { outcome: "MISS", missBy: missPts };
 }
 
+// Grades Total (O/U) with <= 3.0 pt Blue Balls detection
 function gradeTotalPick(projectedTotal, vegasTotal, homeScore, awayScore) {
     const actualTotal = homeScore + awayScore;
-    if (actualTotal === Number(vegasTotal)) return "PUSH";
-    const takingUnder = Number(projectedTotal) < Number(vegasTotal);
-    if (takingUnder) return actualTotal < Number(vegasTotal) ? "HIT" : "MISS";
-    return actualTotal > Number(vegasTotal) ? "HIT" : "MISS";
+    const line = Number(vegasTotal);
+    if (actualTotal === line) return { outcome: "PUSH", missBy: 0 };
+    const takingUnder = Number(projectedTotal) < line;
+    const coverDiff = takingUnder ? (line - actualTotal) : (actualTotal - line);
+    if (coverDiff > 0) return { outcome: "HIT", missBy: 0 };
+    const missPts = Number(Math.abs(coverDiff).toFixed(1));
+    if (missPts <= BLUE_BALLS_MARGIN) return { outcome: "BLUE_BALLS", missBy: missPts };
+    return { outcome: "MISS", missBy: missPts };
 }
 
 function renderHistoricalLedger() {
@@ -1384,29 +1397,42 @@ function renderHistoricalLedger() {
     const entriesMap = Object.assign({}, PERMANENT_LEDGER_ARCHIVE, ledgerObj.entries || {});
     const showBallsDeep = (AppState.activeMode === "balls_deep" || AppState.activeMode === "davinci");
 
-    const renderGradeBadge = (res) => {
-        if (res === "HIT") return `<span class="badge-smash" style="font-size:11px;">✅ HIT</span>`;
-        if (res === "MISS") return `<span class="badge-pass" style="background:rgba(239,68,68,0.18);color:var(--accent-danger);border-color:rgba(239,68,68,0.45);font-size:11px;">❌ MISS</span>`;
-        if (res === "PUSH") return `<span class="badge-pass" style="font-size:11px;">➖ PUSH</span>`;
+    const renderGradeBadge = (res, missBy = 0) => {
+        if (res === "HIT") {
+            return `<span class="badge-smash" style="font-size:11px;">✅ HIT</span>`;
+        }
+        if (res === "BLUE_BALLS") {
+            const marginTag = missBy > 0 ? ` (-${missBy} pts)` : "";
+            return `<span class="badge-pass" style="background:rgba(59,130,246,0.18);color:#60a5fa;border:1px solid rgba(59,130,246,0.55);font-size:11px;font-weight:800;">🔵 BLUE BALLS${marginTag}</span>`;
+        }
+        if (res === "MISS") {
+            return `<span class="badge-pass" style="background:rgba(239,68,68,0.18);color:var(--accent-danger);border-color:rgba(239,68,68,0.45);font-size:11px;">❌ MISS</span>`;
+        }
+        if (res === "PUSH") {
+            return `<span class="badge-pass" style="font-size:11px;">➖ PUSH</span>`;
+        }
         return `<span class="badge-pass" style="color:var(--accent-cyan);border-color:rgba(6,182,212,0.4);font-size:11px;">⏳ LOCKED / PENDING</span>`;
     };
 
+    const makeBucket = () => ({ hits: 0, misses: 0, blueBalls: 0, total: 0 });
     const buckets = {
-        flagship_5pack: { hits: 0, total: 0 },
-        menage_a_trois: { hits: 0, total: 0 },
-        overall_smash:  { hits: 0, total: 0 },
-        spread_smash:   { hits: 0, total: 0 },
-        total_smash:    { hits: 0, total: 0 },
-        too_close:      { hits: 0, total: 0 },
-        pass_audit:     { hits: 0, total: 0 },
-        tip_all:        { hits: 0, total: 0 },
-        balls_deep_all: { hits: 0, total: 0 }
+        flagship_5pack: makeBucket(),
+        menage_a_trois: makeBucket(),
+        overall_smash:  makeBucket(),
+        spread_smash:   makeBucket(),
+        total_smash:    makeBucket(),
+        all_tease:      makeBucket(),
+        champagne_room: { dodged: 0, total: 0 }, // Traps Avoided (<= -10% EV PASS sides that failed to cover)
+        tip_all:        makeBucket(),
+        balls_deep_all: makeBucket()
     };
 
     const tallyGrade = (bucketKey, res) => {
-        if (res !== "HIT" && res !== "MISS") return;
+        if (res !== "HIT" && res !== "MISS" && res !== "BLUE_BALLS") return;
         buckets[bucketKey].total += 1;
         if (res === "HIT") buckets[bucketKey].hits += 1;
+        else if (res === "BLUE_BALLS") buckets[bucketKey].blueBalls += 1;
+        else if (res === "MISS") buckets[bucketKey].misses += 1;
     };
 
     let archivedRowsHTML = "";
@@ -1433,6 +1459,11 @@ function renderHistoricalLedger() {
         const statusLabel = isFinal
             ? `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${scoreDisplay})</span>`
             : `<span style="color:var(--accent-gold);font-weight:700;">🔒 ARCHIVED SNAPSHOT</span>`;
+
+        if (isFinal && entry.trap_avoided) {
+            buckets.champagne_room.total += 1;
+            buckets.champagne_room.dodged += 1;
+        }
 
         const archivedRecords = [
             { type: "SPREAD", rec: entry.spread_record },
@@ -1461,8 +1492,9 @@ function renderHistoricalLedger() {
 
             let gradedTip = rec.result_tip || rec.result || "PENDING";
             let gradedBd = rec.result_bd || gradedTip;
+            const missByPts = rec.miss_by_pts || 0;
 
-            if (gradedTip === "HIT" || gradedTip === "MISS") {
+            if (gradedTip === "HIT" || gradedTip === "MISS" || gradedTip === "BLUE_BALLS") {
                 tallyGrade("tip_all", gradedTip);
                 tallyGrade("balls_deep_all", gradedBd);
                 if (slot) {
@@ -1473,9 +1505,7 @@ function renderHistoricalLedger() {
                     tallyGrade("overall_smash", gradedTip);
                     tallyGrade(isSpread ? "spread_smash" : "total_smash", gradedTip);
                 } else if (ledgerTier === "TOO_CLOSE") {
-                    tallyGrade("too_close", gradedTip);
-                } else {
-                    tallyGrade("pass_audit", gradedTip);
+                    tallyGrade("all_tease", gradedTip);
                 }
             }
 
@@ -1490,7 +1520,7 @@ function renderHistoricalLedger() {
                     <td>${vegasLine} (${baseOdds > 0 ? '+' + baseOdds : baseOdds})</td>
                     <td style="color:${tipColor};">Proj: <strong>${fmtTipProj}</strong> (${tipWinPct}% | ${tipEvPct > 0 ? '+' : ''}${tipEvPct}% EV)</td>
                     <td>${showBallsDeep ? `<span style="color:${bdColor};">Proj: <strong>${fmtBdProj}</strong> (${bdWinPct}% | ${bdEvPct > 0 ? '+' : ''}${bdEvPct}% EV)<br><small style="color:var(--accent-gold);">${bdAltLabel} (${bdAltEvPct > 0 ? '+' : ''}${bdAltEvPct}% EV)</small></span>` : renderLockCellHTML()}</td>
-                    <td>${renderGradeBadge(gradedTip)}</td>
+                    <td>${renderGradeBadge(gradedTip, missByPts)}</td>
                 </tr>
             `;
         });
@@ -1518,6 +1548,19 @@ function renderHistoricalLedger() {
 
         const gameSpreads = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "spread").sort((a, b) => b.tipEvPct - a.tipEvPct);
         const gameTotals = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "total");
+
+        // Champagne Room Rules: Check if the opposing PASS spread side (<= -10% EV) failed to cover
+        if (isFinal && espnMatch && gameSpreads.length > 1) {
+            const trapSide = gameSpreads[gameSpreads.length - 1];
+            if (trapSide && trapSide.tipEvPct <= PASS_EV_CUTOFF) {
+                const trapGrade = gradeSpreadPick(trapSide.isHomeSpread, trapSide.baseLine, espnMatch.homeScore, espnMatch.awayScore);
+                buckets.champagne_room.total += 1;
+                if (trapGrade.outcome !== "HIT") {
+                    buckets.champagne_room.dodged += 1;
+                }
+            }
+        }
+
         const topPicks = [
             { p: gameSpreads[0], savedRec: savedEntry.spread_record },
             { p: gameTotals[0], savedRec: savedEntry.total_record }
@@ -1534,17 +1577,21 @@ function renderHistoricalLedger() {
 
             let gradedTip = (savedRec && savedRec.result_tip) ? savedRec.result_tip : "PENDING";
             let gradedBd = (savedRec && savedRec.result_bd) ? savedRec.result_bd : gradedTip;
+            let missByPts = (savedRec && savedRec.miss_by_pts) ? savedRec.miss_by_pts : 0;
 
             if (isFinal && espnMatch && gradedTip === "PENDING") {
-                gradedTip = isSpread
+                const tipResObj = isSpread
                     ? gradeSpreadPick(p.isHomeSpread, p.baseLine, espnMatch.homeScore, espnMatch.awayScore)
                     : gradeTotalPick(p.tipProjectedMean, p.baseLine, espnMatch.homeScore, espnMatch.awayScore);
-                gradedBd = isSpread
+                const bdResObj = isSpread
                     ? gradeSpreadPick(p.isHomeSpread, p.baseLine, espnMatch.homeScore, espnMatch.awayScore)
                     : gradeTotalPick(p.bdProjectedMean, p.baseLine, espnMatch.homeScore, espnMatch.awayScore);
+                gradedTip = tipResObj.outcome;
+                gradedBd = bdResObj.outcome;
+                missByPts = tipResObj.missBy;
             }
 
-            if (gradedTip === "HIT" || gradedTip === "MISS") {
+            if (gradedTip === "HIT" || gradedTip === "MISS" || gradedTip === "BLUE_BALLS") {
                 tallyGrade("tip_all", gradedTip);
                 tallyGrade("balls_deep_all", gradedBd);
                 if (p.flagshipSlot) {
@@ -1555,9 +1602,7 @@ function renderHistoricalLedger() {
                     tallyGrade("overall_smash", gradedTip);
                     tallyGrade(isSpread ? "spread_smash" : "total_smash", gradedTip);
                 } else if (ledgerTier === "TOO_CLOSE") {
-                    tallyGrade("too_close", gradedTip);
-                } else {
-                    tallyGrade("pass_audit", gradedTip);
+                    tallyGrade("all_tease", gradedTip);
                 }
             }
 
@@ -1569,52 +1614,60 @@ function renderHistoricalLedger() {
                     <td>${p.baseLine} (${p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds})</td>
                     <td style="color:${tipColor};">Proj: <strong>${fmtTipProj}</strong> (${p.tipModelPct}% | ${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV)</td>
                     <td>${showBallsDeep ? `<span style="color:${bdColor};">Proj: <strong>${fmtBdProj}</strong> (${p.bdModelPct}% | ${p.bdEvPct > 0 ? '+' : ''}${p.bdEvPct}% EV)<br><small style="color:var(--accent-gold);">${p.bdAltLabel} (${p.bdAltEvPct > 0 ? '+' : ''}${p.bdAltEvPct}% EV)</small></span>` : renderLockCellHTML()}</td>
-                    <td>${renderGradeBadge(gradedTip)}</td>
+                    <td>${renderGradeBadge(gradedTip, missByPts)}</td>
                 </tr>
             `;
         });
     });
 
+    // Formats 3-part record: W - L - BB (Win%)
     const fmtBucket = (key) => {
         const b = buckets[key];
-        if (!b || !b.total) return "0 / 0 (0.0%)";
+        if (!b || !b.total) return "0W - 0L - 0BB (0.0%)";
         const pct = ((b.hits / b.total) * 100).toFixed(1);
-        return `${b.hits} / ${b.total} (${pct}%)`;
+        return `${b.hits}W - ${b.misses}L - <span style="color:#60a5fa;">${b.blueBalls}BB</span> (${pct}%)`;
+    };
+
+    const fmtTraps = () => {
+        const c = buckets.champagne_room;
+        if (!c || !c.total) return "0 / 0 Dodged (0.0%)";
+        const pct = ((c.dodged / c.total) * 100).toFixed(1);
+        return `${c.dodged} / ${c.total} Dodged (${pct}%)`;
     };
 
     container.innerHTML = `
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 20px; font-family: var(--font-mono);">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(225px, 1fr)); gap: 14px; margin-bottom: 20px; font-family: var(--font-mono);">
             <div style="background: var(--bg-elevated); border: 1px solid rgba(245, 158, 11, 0.5); border-radius: 8px; padding: 14px;">
                 <div style="font-size: 11px; color: var(--accent-gold); font-weight: 800;">👑 FLAGSHIP 5-PACK &amp; MÉNAGE À TROIS</div>
-                <div style="font-size: 18px; font-weight: 800; margin: 6px 0;">5-Pack: ${fmtBucket("flagship_5pack")}</div>
-                <div style="font-size: 12px; color: var(--text-secondary);">Ménage à Trois: <strong>${fmtBucket("menage_a_trois")}</strong></div>
+                <div style="font-size: 15px; font-weight: 800; margin: 6px 0;">5-Pack: ${fmtBucket("flagship_5pack")}</div>
+                <div style="font-size: 11.5px; color: var(--text-secondary);">Ménage à Trois: <strong>${fmtBucket("menage_a_trois")}</strong></div>
             </div>
 
             <div style="background: var(--bg-elevated); border: 1px solid rgba(16, 185, 129, 0.45); border-radius: 8px; padding: 14px;">
-                <div style="font-size: 11px; color: var(--accent-emerald); font-weight: 800;">🔥 OFFICIAL SMASH RECORD (&ge;+10.0% EV)</div>
-                <div style="font-size: 18px; font-weight: 800; margin: 6px 0;">Overall: ${fmtBucket("overall_smash")}</div>
-                <div style="font-size: 12px; color: var(--text-secondary);">
-                    Spreads: <strong>${fmtBucket("spread_smash")}</strong> | Totals: <strong>${fmtBucket("total_smash")}</strong>
+                <div style="font-size: 11px; color: var(--accent-emerald); font-weight: 800;">🔥 OFFICIAL SMASH (&ge;+10.0% EV)</div>
+                <div style="font-size: 15px; font-weight: 800; margin: 6px 0;">${fmtBucket("overall_smash")}</div>
+                <div style="font-size: 11px; color: var(--text-secondary);">
+                    Spreads: <strong>${fmtBucket("spread_smash")}</strong><br>Totals: <strong>${fmtBucket("total_smash")}</strong>
                 </div>
             </div>
 
-            <div style="background: var(--bg-elevated); border: 1px solid rgba(148, 163, 184, 0.45); border-radius: 8px; padding: 14px;">
-                <div style="font-size: 11px; color: #94a3b8; font-weight: 800;">⚖️ TOO CLOSE TO CALL (-9.9% to +9.9% EV)</div>
-                <div style="font-size: 18px; font-weight: 800; margin: 6px 0; color: var(--text-primary);">${fmtBucket("too_close")}</div>
-                <div style="font-size: 11px; color: var(--text-muted);">Coin-flip zone inside the &plusmn;10% EV buffer</div>
+            <div style="background: var(--bg-elevated); border: 1px solid rgba(59, 130, 246, 0.45); border-radius: 8px; padding: 14px;">
+                <div style="font-size: 11px; color: #60a5fa; font-weight: 800;">🔵 ALL TEASE, NO SQUEEZE (&plusmn;10% EV)</div>
+                <div style="font-size: 15px; font-weight: 800; margin: 6px 0; color: var(--text-primary);">${fmtBucket("all_tease")}</div>
+                <div style="font-size: 11px; color: var(--text-muted);">Coin-flip zone | BB = Missed line by &le;3 pts</div>
             </div>
 
             <div style="background: var(--bg-elevated); border: 1px solid rgba(239, 68, 68, 0.45); border-radius: 8px; padding: 14px;">
-                <div style="font-size: 11px; color: var(--accent-danger); font-weight: 800;">🛡️ PASS AUDIT (&le;-10.0% EV NO-BET)</div>
-                <div style="font-size: 18px; font-weight: 800; margin: 6px 0; color: var(--text-secondary);">${fmtBucket("pass_audit")}</div>
-                <div style="font-size: 11px; color: var(--text-muted);">Definitive trap lines (&le;-10% EV) avoided</div>
+                <div style="font-size: 11px; color: var(--accent-danger); font-weight: 800;">🍾 CHAMPAGNE ROOM RULES (&le;-10% EV)</div>
+                <div style="font-size: 16px; font-weight: 800; margin: 6px 0; color: var(--accent-emerald);">${fmtTraps()}</div>
+                <div style="font-size: 11px; color: var(--text-muted);">Look, Don't Touch: Public traps avoided</div>
             </div>
 
             <div style="background: var(--bg-elevated); border: 1px solid rgba(6, 182, 212, 0.45); border-radius: 8px; padding: 14px;">
                 <div style="font-size: 11px; color: var(--accent-cyan); font-weight: 800;">⚡ TIP vs. BALLS DEEP HEAD-TO-HEAD</div>
-                <div style="font-size: 14px; font-weight: 800; margin: 6px 0;">Just the Tip: ${fmtBucket("tip_all")}</div>
+                <div style="font-size: 13px; font-weight: 800; margin: 6px 0;">Tip: ${fmtBucket("tip_all")}</div>
                 ${showBallsDeep
-                    ? `<div style="font-size: 14px; font-weight: 800; color: var(--accent-emerald);">Balls Deep: ${fmtBucket("balls_deep_all")}</div>`
+                    ? `<div style="font-size: 13px; font-weight: 800; color: var(--accent-emerald);">Balls Deep: ${fmtBucket("balls_deep_all")}</div>`
                     : `<div style="font-size: 11px; color: var(--accent-gold); cursor: pointer;" onclick="window.unlockBallsDeepMode(event)">🔒 Click to unlock Balls Deep Record</div>`
                 }
             </div>
@@ -1641,4 +1694,5 @@ function renderHistoricalLedger() {
         </div>
     `;
 }
+// === END OF APP_CONTROLLER.JS ===
 // === END OF APP_CONTROLLER.JS ===
