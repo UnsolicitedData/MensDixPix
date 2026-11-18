@@ -1498,7 +1498,8 @@ function renderHistoricalLedger() {
     }
 
     const ledgerObj = (AppState.rawPayload && AppState.rawPayload.historical_ledger) || {};
-    const entriesMap = Object.assign({}, PERMANENT_LEDGER_ARCHIVE, ledgerObj.entries || {});
+    // Permanent archive entries override stale ungraded data.json entries
+    const entriesMap = Object.assign({}, ledgerObj.entries || {}, PERMANENT_LEDGER_ARCHIVE);
     const showBallsDeep = (AppState.activeMode === "balls_deep" || AppState.activeMode === "davinci");
 
     const renderGradeBadge = (res, missBy = 0) => {
@@ -1526,7 +1527,7 @@ function renderHistoricalLedger() {
         spread_smash:   makeBucket(),
         total_smash:    makeBucket(),
         all_tease:      makeBucket(),
-        champagne_room: { dodged: 0, total: 0 }, // Traps Avoided (<= -10% EV PASS sides that failed to cover)
+        champagne_room: { dodged: 0, total: 0 },
         tip_all:        makeBucket(),
         balls_deep_all: makeBucket()
     };
@@ -1541,30 +1542,41 @@ function renderHistoricalLedger() {
 
     let archivedRowsHTML = "";
     let upcomingRowsHTML = "";
-    const renderedGameIds = new Set();
+    const renderedMatchups = new Set();
+    const activeSlateMatchups = new Set(AppState.processedGames.map(g => g.matchup));
 
-    // 1. Render completed/archived games FIRST
+    // 1. Render ONLY truly completed/FINAL archived games first (prevents stale pre-kickoff snapshots & duplicates)
     Object.keys(entriesMap).forEach(archId => {
         const entry = entriesMap[archId];
         if (!entry) return;
 
         const cleanMatchup = cleanLabelCodes(entry.matchup || "");
+        if (!cleanMatchup || renderedMatchups.has(cleanMatchup)) return;
+
         const entryLeague = entry.league || "NFL";
         if (!isRankedLedgerEntry(cleanMatchup, entryLeague)) return;
 
-        const isStillUpcoming = AppState.processedGames.some(g => g.gameId === archId) && entry.status !== "FINAL";
-        if (isStillUpcoming) return;
-
-        renderedGameIds.add(archId);
-
         const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[cleanMatchup];
         const isFinal = entry.status === "FINAL" || (espnMatch && espnMatch.state === "post");
-        const scoreDisplay = entry.final_score || (espnMatch ? espnMatch.scoreStr : "COMPLETED");
-        const statusLabel = isFinal
-            ? `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${scoreDisplay})</span>`
-            : `<span style="color:var(--accent-gold);font-weight:700;">🔒 ARCHIVED SNAPSHOT</span>`;
 
-        if (isFinal && entry.trap_avoided) {
+        // If this matchup is on the active upcoming slate and NOT final, skip the old archive snapshot
+        // so it renders live updated lines & projections in Loop 2 below.
+        if (activeSlateMatchups.has(cleanMatchup) && !isFinal) return;
+
+        // Also skip any ungraded old scraper snapshot that isn't final
+        const hasGradedResult = entry.spread_record && (
+            entry.spread_record.result_tip === "HIT" ||
+            entry.spread_record.result_tip === "MISS" ||
+            entry.spread_record.result_tip === "BLUE_BALLS"
+        );
+        if (!isFinal && !hasGradedResult) return;
+
+        renderedMatchups.add(cleanMatchup);
+
+        const scoreDisplay = entry.final_score || (espnMatch ? espnMatch.scoreStr : "COMPLETED");
+        const statusLabel = `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${scoreDisplay})</span>`;
+
+        if (entry.trap_avoided) {
             buckets.champagne_room.total += 1;
             buckets.champagne_room.dodged += 1;
         }
@@ -1577,7 +1589,7 @@ function renderHistoricalLedger() {
         archivedRecords.forEach(({ type, rec }) => {
             const isSpread = type === "SPREAD";
             const pickLabel = cleanLabelCodes(rec.pick_label || rec.player || cleanMatchup);
-            const vegasLine = rec.vegas_line !== undefined ? rec.vegas_line : (rec.baseLine || 0);
+            const vegasLine = rec.vegas_line !== undefined ? rec.vegas_line : (rec.line !== undefined ? rec.line : (rec.baseLine || 0));
             const baseOdds = rec.odds !== undefined ? rec.odds : (rec.baseOdds || -110);
             const tipProj = rec.tip_proj !== undefined ? rec.tip_proj : (rec.tipProjectedMean || vegasLine);
             const tipWinPct = rec.tip_win_pct !== undefined ? rec.tip_win_pct : (rec.tipModelPct || 50);
@@ -1630,19 +1642,18 @@ function renderHistoricalLedger() {
         });
     });
 
-    // 2. Render active/upcoming slate games
+    // 2. Render active/upcoming slate games using live scraped lines & v213 projections
     AppState.processedGames.forEach(g => {
-        if (renderedGameIds.has(g.gameId)) return;
+        if (renderedMatchups.has(g.matchup)) return;
         if (!isRankedLedgerEntry(g.matchup, g.league)) return;
-        renderedGameIds.add(g.gameId);
+        renderedMatchups.add(g.matchup);
 
-        const savedEntry = entriesMap[g.gameId] || {};
         const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[g.matchup];
         const kickedOffByClock = g.commenceTime ? (new Date(g.commenceTime).getTime() <= Date.now()) : false;
 
-        let isFinal = savedEntry.status === "FINAL" || (espnMatch && espnMatch.state === "post");
-        let isLocked = isFinal || savedEntry.is_locked || kickedOffByClock || (espnMatch && espnMatch.state === "in");
-        let scoreDisplay = savedEntry.final_score || (espnMatch ? espnMatch.scoreStr : "");
+        const isFinal = Boolean(espnMatch && espnMatch.state === "post");
+        const isLocked = isFinal || kickedOffByClock || Boolean(espnMatch && espnMatch.state === "in");
+        const scoreDisplay = espnMatch ? espnMatch.scoreStr : "";
 
         const statusLabel = isFinal
             ? `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${scoreDisplay})</span>`
@@ -1653,7 +1664,6 @@ function renderHistoricalLedger() {
         const gameSpreads = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "spread").sort((a, b) => b.tipEvPct - a.tipEvPct);
         const gameTotals = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "total");
 
-        // Champagne Room Rules: Check if the opposing PASS spread side (<= -10% EV) failed to cover
         if (isFinal && espnMatch && gameSpreads.length > 1) {
             const trapSide = gameSpreads[gameSpreads.length - 1];
             if (trapSide && trapSide.tipEvPct <= PASS_EV_CUTOFF) {
@@ -1665,12 +1675,9 @@ function renderHistoricalLedger() {
             }
         }
 
-        const topPicks = [
-            { p: gameSpreads[0], savedRec: savedEntry.spread_record },
-            { p: gameTotals[0], savedRec: savedEntry.total_record }
-        ].filter(item => item.p);
+        const topPicks = [gameSpreads[0], gameTotals[0]].filter(Boolean);
 
-        topPicks.forEach(({ p, savedRec }) => {
+        topPicks.forEach((p) => {
             const isSpread = p.marketType === "spread";
             const fmtTipProj = (isSpread && Number(p.tipProjectedMean) > 0) ? `+${p.tipProjectedMean}` : `${p.tipProjectedMean}`;
             const fmtBdProj = (isSpread && Number(p.bdProjectedMean) > 0) ? `+${p.bdProjectedMean}` : `${p.bdProjectedMean}`;
@@ -1679,11 +1686,11 @@ function renderHistoricalLedger() {
             const bdTier = getTierFromEv(p.bdEvPct);
             const bdColor = getTierColor(bdTier);
 
-            let gradedTip = (savedRec && savedRec.result_tip) ? savedRec.result_tip : "PENDING";
-            let gradedBd = (savedRec && savedRec.result_bd) ? savedRec.result_bd : gradedTip;
-            let missByPts = (savedRec && savedRec.miss_by_pts) ? savedRec.miss_by_pts : 0;
+            let gradedTip = "PENDING";
+            let gradedBd = "PENDING";
+            let missByPts = 0;
 
-            if (isFinal && espnMatch && gradedTip === "PENDING") {
+            if (isFinal && espnMatch) {
                 const tipResObj = isSpread
                     ? gradeSpreadPick(p.isHomeSpread, p.baseLine, espnMatch.homeScore, espnMatch.awayScore)
                     : gradeTotalPick(p.tipProjectedMean, p.baseLine, espnMatch.homeScore, espnMatch.awayScore);
@@ -1724,7 +1731,6 @@ function renderHistoricalLedger() {
         });
     });
 
-    // Formats 3-part record: W - L - BB (Win%)
     const fmtBucket = (key) => {
         const b = buckets[key];
         if (!b || !b.total) return "0W - 0L - 0BB (0.0%)";
