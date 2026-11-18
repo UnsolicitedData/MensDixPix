@@ -930,7 +930,7 @@ function buildBallsDeepBoxHTML(engineProp, isSpread) {
     `;
 }
 
-// Collapsible Master Pick Board Decoder Ring & Betting Guide (VIP Club Edition)
+// Collapsible Master Pick Board Decoder Ring & Betting Guide (VIP Club & Wingman Edition)
 function buildMasterBoardLegendHTML() {
     const legendKey = "MASTER_BOARD_LEGEND_DRAWER";
     const isLegendOpen = openCardMemory.has(legendKey);
@@ -958,7 +958,7 @@ function buildMasterBoardLegendHTML() {
                         <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">2. THE VIP FLOOR CODE (3-TIER EV)</div>
                         <div>• <span class="badge-smash" style="font-size:10px;">SMASH</span> <strong style="color:var(--accent-emerald);">(&ge;+10.0% EV):</strong> <em>Green-Light Money Shot.</em> Full-contact value (57.6%+ win rate). Pull your stack out and make it rain.</div>
                         <div style="margin-top: 4px;">• <strong style="color:#94a3b8;">Neutral Slate / No Badge (&plusmn;10% EV):</strong> <em>All Tease, No Squeeze.</em> She's winking from the stage, but Vegas priced it too tight to drop cash on. Enjoy the view, keep your wallet holstered.</div>
-                        <div style="margin-top: 4px;">• <span class="badge-pass" style="background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);font-size:10px;font-weight:800;">PASS</span> <strong style="color:var(--accent-danger);">(&le;-10.0% EV):</strong> <em>Champagne Room Rules.</em> Look, don't touch—a glitter-covered public trap trying to hustle your bankroll with zero happy ending.</div>
+                        <div style="margin-top: 4px;">• <span class="badge-pass" style="background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);font-size:10px;font-weight:800;">PASS</span> <strong style="color:var(--accent-danger);">(&le;-10.0% EV):</strong> <em>Grenades Dodged.</em> You were a little too drunk to make that call last night—a 1:45 AM beer-goggle public trap trying to wreck your bankroll.</div>
                     </div>
 
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
@@ -1826,7 +1826,7 @@ function gradeTotalPick(projectedTotal, vegasTotal, homeScore, awayScore) {
     return { outcome: "MISS", missBy: missPts };
 }
 
-// Collapsible Ledger Legend Drawer (VIP Club Edition)
+// Collapsible Ledger Legend Drawer (VIP Club & Wingman Edition)
 function buildLedgerLegendHTML() {
     const legendKey = "LEDGER_LEGEND_DRAWER";
     const isLegendOpen = openCardMemory.has(legendKey);
@@ -1835,7 +1835,7 @@ function buildLedgerLegendHTML() {
         <div style="margin-bottom: 16px; border: 1px solid rgba(59, 130, 246, 0.45); border-radius: 8px; background: #0f172a; overflow: hidden;">
             <div onclick="window.toggleLegendDrawer('${legendKey}', 'ledger', event)" style="cursor: pointer; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(90deg, rgba(59, 130, 246, 0.16), rgba(15, 23, 42, 0.9)); user-select: none;">
                 <span style="font-family: var(--font-mono); font-size: 12px; font-weight: 800; color: #60a5fa; letter-spacing: 0.03em;">
-                    🍾 LEDGER DECODER: HOW WE GRADE MONEY SHOTS (W), BLUE BALLS (BB) &amp; BOUNCER SAVES
+                    💣 LEDGER DECODER: HOW WE GRADE MONEY SHOTS (W), BLUE BALLS (BB) &amp; GRENADES DODGED
                 </span>
                 <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); text-decoration: underline;">
                     ${isLegendOpen ? 'Hide Decoder ▲' : 'Click to Expand ▼'}
@@ -1858,9 +1858,9 @@ function buildLedgerLegendHTML() {
                     </div>
 
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
-                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-danger); margin-bottom: 4px;">🍾 CHAMPAGNE ROOM RULES (&le;-10% EV)</div>
-                        <div>• <strong>Look, Don't Touch:</strong> Tracks the overhyped public favorites featured in <strong>Wednesday Night at Porky's (&le;-10.0% EV)</strong>—the $500 lap dance where house rules say you can't even finish.</div>
-                        <div style="margin-top: 4px;">• Every time a casual-bait favorite fails to cover, <strong>Traps Dodged</strong> ticks up—counting how many times the bouncer saved your bankroll from a bad decision.</div>
+                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-danger); margin-bottom: 4px;">💣 GRENADES DODGED (&le;-10% EV)</div>
+                        <div>• <strong>Wingman Intervention:</strong> <em>You were a little too drunk to make that call last night.</em> Tracks the 1:45 AM beer-goggle public favorites we stamped with a red <strong>PASS (&le;-10.0% EV)</strong>—the ones that look like a 10 on TV after six drinks, right before they wreck your life.</div>
+                        <div style="margin-top: 4px;">• Every time a casual-bait favorite blows up and fails to cover, <strong>Grenades Dodged</strong> ticks up—counting how many times your wingman jumped on the grenade so you didn't wake up chewing your own arm off on Monday morning.</div>
                     </div>
                 </div>
             </div>
