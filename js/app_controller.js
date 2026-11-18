@@ -677,7 +677,7 @@ function buildBallsDeepBoxHTML(engineProp, isSpread) {
     `;
 }
 
-// Collapsible Master Pick Board Decoder Ring & Betting Guide
+// Collapsible Master Pick Board Decoder Ring & Betting Guide (VIP Club Edition)
 function buildMasterBoardLegendHTML() {
     const legendKey = "MASTER_BOARD_LEGEND_DRAWER";
     const isLegendOpen = openCardMemory.has(legendKey);
@@ -686,32 +686,32 @@ function buildMasterBoardLegendHTML() {
         <div style="margin-bottom: 14px; border: 1px solid rgba(6, 182, 212, 0.45); border-radius: 8px; background: #0f172a; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); overflow: hidden;">
             <div onclick="window.toggleLegendDrawer('${legendKey}', 'fivePack', event)" style="cursor: pointer; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(90deg, rgba(6, 182, 212, 0.14), rgba(15, 23, 42, 0.9)); user-select: none;">
                 <span style="font-family: var(--font-mono); font-size: 12px; font-weight: 800; color: var(--accent-cyan); letter-spacing: 0.03em;">
-                    📖 NEW HERE? DIXPIX DECODER RING &amp; 15-SECOND BETTING GUIDE
+                    👙 NEW TO THE CLUB? THE DIXPIX HOUSE RULES &amp; 15-SECOND BETTING GUIDE
                 </span>
                 <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); text-decoration: underline;">
-                    ${isLegendOpen ? 'Hide Guide ▲' : 'Click to Expand ▼'}
+                    ${isLegendOpen ? 'Hide House Rules ▲' : 'Click to Expand ▼'}
                 </span>
             </div>
 
             <div style="display: ${isLegendOpen ? 'block' : 'none'}; padding: 14px 18px; border-top: 1px solid var(--border-subtle); font-size: 12px; line-height: 1.55; color: var(--text-secondary);">
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px;">
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
-                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">1. VEGAS LINE vs. MODEL PROJ</div>
-                        <div>• <strong>Bold Top Line</strong> (e.g. <em>MIA Spread +16.5</em> or <em>Total U 54.5</em>) is the <strong>Vegas Sportsbook Line</strong> you bet.</div>
-                        <div style="margin-top: 4px;">• <strong>Proj:</strong> is what the DixPix 13-Module Engine projects the actual final margin or total points to be. The gap between Vegas and <strong>Proj</strong> creates your Win % and Expected Value (EV%).</div>
+                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">1. COVER CHARGE vs. REAL MEASUREMENTS</div>
+                        <div>• <strong>Bold Top Line</strong> (e.g. <em>MIA Spread +16.5</em> or <em>Total U 54.5</em>) is the <strong>Vegas Sportsbook Line</strong>—the cover charge on your betting slip.</div>
+                        <div style="margin-top: 4px;">• <strong>Proj:</strong> is what our 13-Module Engine says is <em>actually</em> under the hood once the stage lights come on. When Vegas pads its number and our <strong>Proj</strong> exposes the gap, that spread is where we print your Win % and EV%.</div>
                     </div>
 
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
-                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">2. THE 3-TIER EV COLOR SYSTEM</div>
-                        <div>• <span class="badge-smash" style="font-size:10px;">SMASH</span> <strong style="color:var(--accent-emerald);">(&ge;+10.0% EV):</strong> Official high-conviction model play (57.6%+ win probability).</div>
-                        <div style="margin-top: 4px;">• <strong style="color:#94a3b8;">Neutral Slate / No Badge (&plusmn;10% EV):</strong> <em>All Tease, No Squeeze.</em> Vegas priced it tight; coin-flip territory.</div>
-                        <div style="margin-top: 4px;">• <span class="badge-pass" style="background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);font-size:10px;font-weight:800;">PASS</span> <strong style="color:var(--accent-danger);">(&le;-10.0% EV):</strong> <em>Champagne Room Rules.</em> Look, don't touch—public trap line to avoid.</div>
+                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">2. THE VIP FLOOR CODE (3-TIER EV)</div>
+                        <div>• <span class="badge-smash" style="font-size:10px;">SMASH</span> <strong style="color:var(--accent-emerald);">(&ge;+10.0% EV):</strong> <em>Green-Light Money Shot.</em> Full-contact value (57.6%+ win rate). Pull your stack out and make it rain.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:#94a3b8;">Neutral Slate / No Badge (&plusmn;10% EV):</strong> <em>All Tease, No Squeeze.</em> She's winking from the stage, but Vegas priced it too tight to drop cash on. Enjoy the view, keep your wallet holstered.</div>
+                        <div style="margin-top: 4px;">• <span class="badge-pass" style="background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);font-size:10px;font-weight:800;">PASS</span> <strong style="color:var(--accent-danger);">(&le;-10.0% EV):</strong> <em>Champagne Room Rules.</em> Look, don't touch—a glitter-covered public trap trying to hustle your bankroll with zero happy ending.</div>
                     </div>
 
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
-                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-gold); margin-bottom: 4px;">3. ENGINE MODES (TOP RIGHT)</div>
-                        <div>• <strong style="color:var(--accent-cyan);">Just the Tip:</strong> Free baseline showing Vegas Favorite spreads, Totals, and M7–M9 projections.</div>
-                        <div style="margin-top: 4px;">• <strong style="color:var(--accent-emerald);">Balls Deep:</strong> Unlocks all Underdog spreads, coupled Biophysical/Turnover/Sacred Geometry overlay (&Psi;_11,12), <strong>⚡ BALLS DEEP PROJ</strong>, and <strong>🎯 Longer-Odds Escalator</strong> alt-lines (+145/+155).</div>
+                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-gold); margin-bottom: 4px;">3. PICK YOUR PLEASURE (TOP RIGHT)</div>
+                        <div>• <strong style="color:var(--accent-cyan);">Just the Tip:</strong> Free window-shopping from the main floor. Shows Vegas Favorite spreads, Totals, and baseline M7–M9 projections.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:var(--accent-emerald);">Balls Deep:</strong> Full backstage VIP pass. Strips off the training wheels to expose every Underdog spread, our coupled Biophysical/Turnover/Sacred Geometry climax (&Psi;_11,12), <strong>⚡ BALLS DEEP PROJ</strong>, and <strong>🎯 Longer-Odds Escalator</strong> alt-lines (+145/+155).</div>
                     </div>
                 </div>
             </div>
@@ -1447,7 +1447,7 @@ function gradeTotalPick(projectedTotal, vegasTotal, homeScore, awayScore) {
     return { outcome: "MISS", missBy: missPts };
 }
 
-// Collapsible Ledger Legend Drawer
+// Collapsible Ledger Legend Drawer (VIP Club Edition)
 function buildLedgerLegendHTML() {
     const legendKey = "LEDGER_LEGEND_DRAWER";
     const isLegendOpen = openCardMemory.has(legendKey);
@@ -1456,32 +1456,32 @@ function buildLedgerLegendHTML() {
         <div style="margin-bottom: 16px; border: 1px solid rgba(59, 130, 246, 0.45); border-radius: 8px; background: #0f172a; overflow: hidden;">
             <div onclick="window.toggleLegendDrawer('${legendKey}', 'ledger', event)" style="cursor: pointer; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(90deg, rgba(59, 130, 246, 0.16), rgba(15, 23, 42, 0.9)); user-select: none;">
                 <span style="font-family: var(--font-mono); font-size: 12px; font-weight: 800; color: #60a5fa; letter-spacing: 0.03em;">
-                    📖 LEDGER LEGEND: HOW WE GRADE HITS, BLUE BALLS (BB) &amp; CHAMPAGNE ROOM TRAPS
+                    🍾 LEDGER DECODER: HOW WE GRADE MONEY SHOTS (W), BLUE BALLS (BB) &amp; BOUNCER SAVES
                 </span>
                 <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); text-decoration: underline;">
-                    ${isLegendOpen ? 'Hide Legend ▲' : 'Click to Expand ▼'}
+                    ${isLegendOpen ? 'Hide Decoder ▲' : 'Click to Expand ▼'}
                 </span>
             </div>
 
             <div style="display: ${isLegendOpen ? 'block' : 'none'}; padding: 14px 18px; border-top: 1px solid var(--border-subtle); font-size: 12px; line-height: 1.55; color: var(--text-secondary);">
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px;">
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
-                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">3-PART RECORD (W - L - BB)</div>
-                        <div>• <strong style="color:var(--accent-emerald);">✅ HIT (W):</strong> Pick covered the Vegas closing line.</div>
-                        <div style="margin-top: 4px;">• <strong style="color:#60a5fa;">🔵 BLUE BALLS (BB):</strong> Missed covering the Vegas line by <strong>&le;3.0 points (one field goal or less)</strong>—when the projection nailed the game flow but got clipped by the hook.</div>
-                        <div style="margin-top: 4px;">• <strong style="color:var(--accent-danger);">❌ MISS (L):</strong> Missed the Vegas closing line by more than 3.0 points.</div>
+                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">THE MORNING-AFTER SCORECARD (W - L - BB)</div>
+                        <div>• <strong style="color:var(--accent-emerald);">✅ HIT (W):</strong> <em>The Money Shot.</em> Covered the Vegas closing number and walked out with the bookie's cash.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:#60a5fa;">🔵 BLUE BALLS (BB):</strong> <em>Robbed at the Two-Minute Warning.</em> Missed the Vegas line by <strong>&le;3.0 points (one field goal or less)</strong>—when the projection had you 99% of the way to the finish line before a red-zone fumble or half-point hook killed the climax.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:var(--accent-danger);">❌ MISS (L):</strong> <em>Walk of Shame.</em> Missed the closing line by more than 3.0 points. No excuses—we post every receipt.</div>
                     </div>
 
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
-                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">SMASH vs. ALL TEASE, NO SQUEEZE</div>
-                        <div>• <strong style="color:var(--accent-emerald);">🔥 Official SMASH (&ge;+10.0% EV):</strong> Institutional-edge plays that clear our +10% EV threshold, tracked alongside the <strong>Flagship 5-Pack</strong> and <strong>Ménage à Trois</strong>.</div>
-                        <div style="margin-top: 4px;">• <strong style="color:#60a5fa;">🔵 All Tease, No Squeeze (&plusmn;10% EV):</strong> Coin-flip leans inside the -9.9% to +9.9% EV buffer—tracked separately so tight toss-ups never water down Official SMASH plays.</div>
+                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">MAIN STAGE vs. LAP-DANCE COIN FLIPS</div>
+                        <div>• <strong style="color:var(--accent-emerald);">🔥 Official SMASH (&ge;+10.0% EV):</strong> Our headline earners that clear the +10% EV velvet rope, tracked alongside the <strong>Flagship 5-Pack</strong> and <strong>Ménage à Trois</strong>.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:#60a5fa;">🔵 All Tease, No Squeeze (&plusmn;10% EV):</strong> Tight toss-ups inside the -9.9% to +9.9% EV buffer—quarantined in their own booth so 50/50 bar-bet variance never waters down our Official SMASH record.</div>
                     </div>
 
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
                         <div style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-danger); margin-bottom: 4px;">🍾 CHAMPAGNE ROOM RULES (&le;-10% EV)</div>
-                        <div>• <strong>Look, Don't Touch:</strong> Tracks heavy public sides stamped with a red <strong>PASS (&le;-10.0% EV)</strong>.</div>
-                        <div style="margin-top: 4px;">• Every time a flagged public favorite fails to cover, <strong>Traps Dodged</strong> ticks up—measuring how many bad bets the engine saved your bankroll from taking.</div>
+                        <div>• <strong>Look, Don't Touch:</strong> Tracks the overhyped public favorites we stamped with a red <strong>PASS (&le;-10.0% EV)</strong>—the $500 lap dance where house rules say you can't even finish.</div>
+                        <div style="margin-top: 4px;">• Every time a casual-bait favorite fails to cover, <strong>Traps Dodged</strong> ticks up—counting how many times the bouncer saved your bankroll from a bad decision.</div>
                     </div>
                 </div>
             </div>
