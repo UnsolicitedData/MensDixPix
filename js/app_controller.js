@@ -1,12 +1,10 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v219)
- * - Responsive Mobile & Desktop 5-Pack Header: Full-width compact layout on phones (<=720px), pinned top-right corner toggle on desktop
- * - Porky's Safe Floor Counter-Strike (-2φ at -175) + One-Click "🐷 Load Porky's Safe Floor Fades (5)" in Parlay Calculator
- * - "💣 GRENADES DODGED (≤-10% EV)" ("You were a little too drunk to make that call last night") in Legends, Cards & Ticker
- * - Custom Blue Balls Definition ("...when she had you 99% of the way to the finish line and then Mom walks in.")
- * - Strict Compendium Firewall: Just the Tip = Pure Modules 1-9 (I_flow = 0.000) | Balls Deep & DaVinci = Coupled M11-M13 (Ψ_11,12 + M_rise)
- * - Restored Floor-to-Ceiling Bracket: 🛡️ Safe Floor Anchor (-2φ, 80-92% Win) + 🎯 Ceiling Escalator (+φ, +145/+155 Alt-Lines)
- * - Fixed-Bottom Zero-Token ESPN Live Scrolling Ticker (300s smooth crawl) + 100+ Clean Team Code Overrides + Zero Dashed Borders
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v220)
+ * - Auto-Sweeps FINAL games off Tab 1 Master Pick Board into Clickable Historical Ledger Card Vaults
+ * - 5 Clickable Ledger Scorecard Vaults: Tucks all completed games inside their respective cards so the Upcoming table never floods
+ * - Flagship 5-Pack Week Dropdown ("Week X — Y/5") right on the 5-Pack Ledger Card to filter weekly 5-Pack receipts
+ * - Updated Money Shot Decoder ("Covered the Vegas closing number, walked out, and left the money on the dresser.")
+ * - Responsive Mobile & Desktop 5-Pack Header + Porky's Safe Floor Counter-Strike (-2φ at -175) + Grenades Dodged + 300s Live Wire Ticker
  */
 
 const AppState = {
@@ -14,6 +12,8 @@ const AppState = {
     lastDataHash: "",
     activeMode: "tip",                // "tip" | "balls_deep" | "davinci"
     fivePackView: "main_stage",       // "main_stage" | "porkys"
+    activeLedgerVault: null,          // null | "flagship_5pack" | "overall_smash" | "all_tease" | "grenades_dodged" | "tip_vs_bd"
+    selectedFivePackWeek: "ALL",      // "ALL" | "Week 10" | "Week 11" ...
     intensitySlider: 0.0,             // -3.236 (-2φ) to +3.236 (+2φ)
     filters: { nfl: true, ncaa: true },
     comboFilters: { team: "ALL", market: "ALL", tier: "ALL" },
@@ -248,6 +248,37 @@ function isGameInCurrentWeek(commenceTimeStr, cutoffMs) {
     return ms <= cutoffMs;
 }
 
+// Infers football Week label (e.g., "Week 10", "Week 11") from timestamp or entry metadata
+function inferFootballWeekLabel(entryOrGame, fallbackLabel = "Week 10") {
+    if (!entryOrGame) return fallbackLabel;
+    if (entryOrGame.week_label) return entryOrGame.week_label;
+    if (entryOrGame.week) return `Week ${entryOrGame.week}`;
+    const timeStr = entryOrGame.commence_time || entryOrGame.commenceTime || entryOrGame.timestamp;
+    if (timeStr) {
+        const ms = new Date(timeStr).getTime();
+        if (!isNaN(ms)) {
+            // 2026 NFL Week 1 anchor: Sept 8, 2026 Tuesday 5AM cutoff
+            const week1StartMs = new Date("2026-09-02T00:00:00Z").getTime();
+            const diffDays = Math.floor((ms - week1StartMs) / (1000 * 60 * 60 * 24));
+            const weekNum = Math.max(1, Math.min(18, Math.floor(diffDays / 7) + 1));
+            return `Week ${weekNum}`;
+        }
+    }
+    return fallbackLabel;
+}
+
+// Checks if a game on Tab 1 has already finished (FINAL) so it can be swept into the Ledger vaults
+function isGameCompletedFinal(game) {
+    if (!game) return false;
+    if (game.status === "FINAL") return true;
+    const cleanHome = cleanTeamCode(game.home_team || game.homeTeam || "");
+    const cleanAway = cleanTeamCode(game.away_team || game.awayTeam || "");
+    const matchupKey = game.matchup || `${cleanAway} @ ${cleanHome}`;
+    const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[matchupKey];
+    if (espnMatch && espnMatch.state === "post") return true;
+    return false;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     ensureTickerStylesInjected();
     bindUIControls();
@@ -281,6 +312,30 @@ window.toggleFivePackView = function(event) {
     AppState.fivePackView = (AppState.fivePackView === "main_stage") ? "porkys" : "main_stage";
     openCardMemory.add("FLAGSHIP_5_PACK_DRAWER");
     renderFlagshipFivePack();
+    window.scrollTo(window.scrollX, savedY);
+};
+
+// Toggles the 5 Clickable Historical Ledger Vault Cards open/closed
+window.toggleLedgerVault = function(vaultKey, event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const savedY = window.scrollY;
+    AppState.activeLedgerVault = (AppState.activeLedgerVault === vaultKey) ? null : vaultKey;
+    renderHistoricalLedger();
+    window.scrollTo(window.scrollX, savedY);
+};
+
+// Changes the Selected Week inside the Flagship 5-Pack Ledger Card Dropdown and opens the 5-Pack Vault
+window.setFivePackVaultWeek = function(weekVal, event) {
+    if (event) {
+        event.stopPropagation();
+    }
+    const savedY = window.scrollY;
+    AppState.selectedFivePackWeek = weekVal || "ALL";
+    AppState.activeLedgerVault = "flagship_5pack";
+    renderHistoricalLedger();
     window.scrollTo(window.scrollX, savedY);
 };
 
@@ -620,6 +675,7 @@ function recalculateAndRenderAll() {
             gameId: game.game_id,
             league: gameLeague,
             isCurrentWeek,
+            weekLabel: inferFootballWeekLabel(game, "Week 11"),
             matchup: `${cleanAway} @ ${cleanHome}`,
             homeTeam: cleanHome,
             awayTeam: cleanAway,
@@ -782,6 +838,7 @@ function recalculateAndRenderAll() {
                     propKey,
                     commenceTime: game.commence_time,
                     isCurrentWeek,
+                    weekLabel: gameRecord.weekLabel,
                     gameId: game.game_id,
                     league: gameLeague,
                     matchup: gameRecord.matchup,
@@ -820,7 +877,7 @@ function recalculateAndRenderAll() {
         }
     });
 
-    // 1. Lock Main Stage Flagship 5-Pack Selection STRICTLY to THIS WEEK'S competitive games (thru MNF)
+    // 1. Lock Main Stage Flagship 5-Pack Selection STRICTLY to THIS WEEK'S active/upcoming games (thru MNF)
     AppState.processedProps.forEach(p => {
         p.flagshipSlot = "";
         p.porkysSlot = "";
@@ -1172,7 +1229,7 @@ function renderFlagshipFivePack() {
 }
 
 // ==========================================
-// INDEPENDENT MASONRY FLEX COLUMNS WITH SOLID MNF CUTOFF DIVIDER
+// INDEPENDENT MASONRY FLEX COLUMNS WITH AUTO-SWEEP FOR COMPLETED GAMES
 // ==========================================
 function buildMasonryGridForGames(gamesSlice, numCols, cardSubtitle) {
     const rowWrapper = document.createElement("div");
@@ -1197,6 +1254,9 @@ function buildMasonryGridForGames(gamesSlice, numCols, cardSubtitle) {
         const cardKey = game.game_id || `${game.away_team}@${game.home_team}`;
         const cleanHome = cleanTeamCode(game.home_team);
         const cleanAway = cleanTeamCode(game.away_team);
+        const matchupKey = `${cleanAway} @ ${cleanHome}`;
+        const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[matchupKey];
+        const isLiveInPlay = Boolean(espnMatch && espnMatch.state === "in");
 
         let gameDate = "TBD", gameTime = "TBD";
         if (game.commence_time) {
@@ -1212,7 +1272,7 @@ function buildMasonryGridForGames(gamesSlice, numCols, cardSubtitle) {
 
         const card = document.createElement("div");
         card.className = "game-card";
-        card.style.border = "1px solid #334155";
+        card.style.border = isLiveInPlay ? "1px solid rgba(245, 158, 11, 0.75)" : "1px solid #334155";
         card.style.borderRadius = "8px";
         card.style.backgroundColor = "#1e293b";
         card.style.padding = "15px";
@@ -1220,11 +1280,16 @@ function buildMasonryGridForGames(gamesSlice, numCols, cardSubtitle) {
         card.style.color = "#e2e8f0";
         card.style.width = "100%";
 
+        const liveScoreBanner = isLiveInPlay
+            ? `<div style="font-family:var(--font-mono); font-size:0.8em; color:var(--accent-gold); font-weight:800; text-align:center; margin-bottom:6px;">🔴 LIVE (${espnMatch.shortDetail || 'IN-PLAY'}): ${espnMatch.scoreStr}</div>`
+            : "";
+
         card.innerHTML = `
             <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #334155; padding-bottom: 10px; margin-bottom: 10px;">
                 <span style="font-size: 0.85em; color: #94a3b8;">${gameDate} @ ${gameTime}</span>
                 <span style="font-size: 0.85em; color: #94a3b8;">${weatherString}</span>
             </div>
+            ${liveScoreBanner}
             <div style="font-size: 1.25em; font-weight: bold; text-align: center; margin-bottom: 10px;">
                 ${cleanAway} @ ${cleanHome}
             </div>
@@ -1301,7 +1366,8 @@ function render_game_cards(data) {
     if (!container) return;
 
     const defaultLeague = (data.slate_info && data.slate_info.league) || "NFL";
-    const games = (data.games || []).filter(g => shouldIncludeGame(g, defaultLeague));
+    // Auto-sweep any game that has already ended (FINAL) off Tab 1 into the Historical Ledger Card Vaults
+    const games = (data.games || []).filter(g => shouldIncludeGame(g, defaultLeague) && !isGameCompletedFinal(g));
 
     if (games.length === 0) {
         container.innerHTML = "";
@@ -1720,18 +1786,23 @@ function renderBioWeatherLab() {
 }
 
 // ==========================================
-// PERMANENT ARCHIVE SEED + ZERO-TOKEN ESPN SCOREBOARD SYNC & LEDGER
+// PERMANENT ARCHIVE SEED + ZERO-TOKEN ESPN SCOREBOARD SYNC & CLICKABLE VAULT LEDGER
 // ==========================================
 const BLUE_BALLS_MARGIN = 3.0; // <= 3.0 pts miss from Vegas line = BLUE BALLS
 
 const PERMANENT_LEDGER_ARCHIVE = {
     "nfl_mnf_lac_bal_2026_w10": {
         league: "NFL",
+        week_label: "Week 10",
         matchup: "LAC @ BAL",
         status: "FINAL",
         final_score: "LAC 23 - BAL 20",
         is_locked: true,
         trap_avoided: true,
+        trap_pick_label: "LAC Spread (-6.5) (LAC @ BAL)",
+        trap_vegas_line: -6.5,
+        trap_tip_proj: -2.1,
+        trap_tip_ev_pct: -27.62,
         spread_record: {
             pick_label: "BAL Spread (+6.5) (BAL vs LAC)",
             vegas_line: 6.5,
@@ -1743,9 +1814,11 @@ const PERMANENT_LEDGER_ARCHIVE = {
             bd_proj: 1.4,
             bd_win_pct: 69.25,
             bd_ev_pct: 32.20,
+            safe_floor_label: "Alt +10.5 (-175)",
+            safe_floor_win_pct: 88.4,
             bd_alt_label: "Alt +3.5 (+145)",
             bd_alt_ev_pct: 41.80,
-            flagship_slot: "",
+            flagship_slot: "MÉNAGE À TROIS #2",
             result_tip: "HIT",
             result_bd: "HIT",
             miss_by_pts: 0
@@ -1761,6 +1834,8 @@ const PERMANENT_LEDGER_ARCHIVE = {
             bd_proj: 46.8,
             bd_win_pct: 58.10,
             bd_ev_pct: 10.92,
+            safe_floor_label: "Alt O 40.5 (-175)",
+            safe_floor_win_pct: 84.2,
             bd_alt_label: "Alt O 47.5 (+155)",
             bd_alt_ev_pct: 14.20,
             flagship_slot: "",
@@ -1822,6 +1897,9 @@ async function syncEspnLiveScores() {
         }
     }
 
+    if (AppState.rawPayload) {
+        render_game_cards(AppState.rawPayload);
+    }
     renderHistoricalLedger();
     renderLiveBottomTicker();
 }
@@ -1858,7 +1936,7 @@ function gradeTotalPick(projectedTotal, vegasTotal, homeScore, awayScore) {
     return { outcome: "MISS", missBy: missPts };
 }
 
-// Collapsible Ledger Legend Drawer (VIP Club & Wingman Edition)
+// Collapsible Ledger Legend Drawer (VIP Club & Wingman Edition — "left the money on the dresser")
 function buildLedgerLegendHTML() {
     const legendKey = "LEDGER_LEGEND_DRAWER";
     const isLegendOpen = openCardMemory.has(legendKey);
@@ -1878,7 +1956,7 @@ function buildLedgerLegendHTML() {
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px;">
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
                         <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">THE MORNING-AFTER SCORECARD (W - L - BB)</div>
-                        <div>• <strong style="color:var(--accent-emerald);">✅ HIT (W):</strong> <em>The Money Shot.</em> Covered the Vegas closing number. Left the money on the dresser and left.</div>
+                        <div>• <strong style="color:var(--accent-emerald);">✅ HIT (W):</strong> <em>The Money Shot.</em> Covered the Vegas closing number, walked out, and left the money on the dresser.</div>
                         <div style="margin-top: 4px;">• <strong style="color:#60a5fa;">🔵 BLUE BALLS (BB):</strong> <em>Robbed at the Two-Minute Warning.</em> Missed the Vegas line by <strong>&le;3.0 points (one field goal or less)</strong>—when she had you 99% of the way to the finish line and then Mom walks in.</div>
                         <div style="margin-top: 4px;">• <strong style="color:var(--accent-danger);">❌ MISS (L):</strong> <em>Walk of Shame.</em> Missed the closing line by more than 3.0 points. No excuses—we post every receipt.</div>
                     </div>
@@ -1909,8 +1987,21 @@ function renderHistoricalLedger() {
     }
 
     const ledgerObj = (AppState.rawPayload && AppState.rawPayload.historical_ledger) || {};
-    const entriesMap = Object.assign({}, ledgerObj.entries || {}, PERMANENT_LEDGER_ARCHIVE);
+    const rawEntries = ledgerObj.entries || {};
     const showBallsDeep = (AppState.activeMode === "balls_deep" || AppState.activeMode === "davinci");
+
+    // Merge raw data.json historical entries with PERMANENT_LEDGER_ARCHIVE while preserving any flagship_slot tags
+    const entriesMap = Object.assign({}, rawEntries, PERMANENT_LEDGER_ARCHIVE);
+    Object.keys(rawEntries).forEach(k => {
+        const rawE = rawEntries[k];
+        if (!rawE) return;
+        const cleanM = cleanLabelCodes(rawE.matchup || "");
+        if (cleanM === "LAC @ BAL" && rawE.spread_record && rawE.spread_record.flagship_slot) {
+            if (entriesMap["nfl_mnf_lac_bal_2026_w10"] && entriesMap["nfl_mnf_lac_bal_2026_w10"].spread_record) {
+                entriesMap["nfl_mnf_lac_bal_2026_w10"].spread_record.flagship_slot = rawE.spread_record.flagship_slot;
+            }
+        }
+    });
 
     const renderGradeBadge = (res, missBy = 0) => {
         if (res === "HIT") {
@@ -1942,20 +2033,65 @@ function renderHistoricalLedger() {
         balls_deep_all: makeBucket()
     };
 
-    const tallyGrade = (bucketKey, res) => {
-        if (res !== "HIT" && res !== "MISS" && res !== "BLUE_BALLS") return;
-        buckets[bucketKey].total += 1;
-        if (res === "HIT") buckets[bucketKey].hits += 1;
-        else if (res === "BLUE_BALLS") buckets[bucketKey].blueBalls += 1;
-        else if (res === "MISS") buckets[bucketKey].misses += 1;
+    // Weekly 5-Pack tracker: { "Week 10": { hits, misses, blueBalls, total, menage: {...}, rows: [] } }
+    const fivePackByWeek = {};
+    const ensureWeekFivePackBucket = (wk) => {
+        if (!fivePackByWeek[wk]) {
+            fivePackByWeek[wk] = {
+                hits: 0,
+                misses: 0,
+                blueBalls: 0,
+                total: 0,
+                menage: makeBucket(),
+                rows: []
+            };
+        }
+        return fivePackByWeek[wk];
     };
 
-    let archivedRowsHTML = "";
+    // Vault row collections for the 5 clickable cards
+    const vaultRows = {
+        flagship_5pack: [],
+        overall_smash: [],
+        all_tease: [],
+        grenades_dodged: [],
+        tip_vs_bd: []
+    };
+
+    const tallyGradeToObj = (targetObj, res) => {
+        if (res !== "HIT" && res !== "MISS" && res !== "BLUE_BALLS") return;
+        targetObj.total += 1;
+        if (res === "HIT") targetObj.hits += 1;
+        else if (res === "BLUE_BALLS") targetObj.blueBalls += 1;
+        else if (res === "MISS") targetObj.misses += 1;
+    };
+
+    const tallyGrade = (bucketKey, res) => {
+        tallyGradeToObj(buckets[bucketKey], res);
+    };
+
     let upcomingRowsHTML = "";
     const renderedMatchups = new Set();
     const activeSlateMatchups = new Set(AppState.processedGames.map(g => g.matchup));
 
-    // 1. Render ONLY truly completed/FINAL archived games first
+    const buildStandardVaultRowHTML = (weekLabel, cleanMatchup, statusLabel, type, slot, pickLabel, ledgerTier, vegasLine, baseOdds, tipColor, fmtTipProj, tipWinPct, tipEvPct, showBallsDeepFlag, bdColor, fmtBdProj, bdWinPct, bdEvPct, safeFloorLabel, safeFloorWinPct, bdAltLabel, bdAltEvPct, gradedTip, missByPts) => {
+        const floorInfoHTML = safeFloorLabel
+            ? `<small style="color:var(--accent-cyan);">🛡️ ${safeFloorLabel} (${safeFloorWinPct}%)</small> • `
+            : "";
+        return `
+            <tr>
+                <td><span style="font-family:var(--font-mono); font-size:10px; color:var(--accent-gold); font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+                <td>${type} ${slot ? `<br><span class="${slot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}">${slot}</span>` : ""}</td>
+                <td><strong>${pickLabel}</strong> ${renderTierBadgeHTML(ledgerTier)}</td>
+                <td>${vegasLine} (${baseOdds > 0 ? '+' + baseOdds : baseOdds})</td>
+                <td style="color:${tipColor};">Proj: <strong>${fmtTipProj}</strong> (${tipWinPct}% | ${tipEvPct > 0 ? '+' : ''}${tipEvPct}% EV)</td>
+                <td>${showBallsDeepFlag ? `<span style="color:${bdColor};">Proj: <strong>${fmtBdProj}</strong> (${bdWinPct}% | ${bdEvPct > 0 ? '+' : ''}${bdEvPct}% EV)<br>${floorInfoHTML}<small style="color:var(--accent-gold);">🎯 ${bdAltLabel} (${bdAltEvPct > 0 ? '+' : ''}${bdAltEvPct}% EV)</small></span>` : renderLockCellHTML()}</td>
+                <td>${renderGradeBadge(gradedTip, missByPts)}</td>
+            </tr>
+        `;
+    };
+
+    // 1. Process COMPLETED/FINAL archived games and store them in their respective Clickable Card Vaults
     Object.keys(entriesMap).forEach(archId => {
         const entry = entriesMap[archId];
         if (!entry) return;
@@ -1980,12 +2116,30 @@ function renderHistoricalLedger() {
 
         renderedMatchups.add(cleanMatchup);
 
+        const weekLabel = inferFootballWeekLabel(entry, "Week 10");
         const scoreDisplay = entry.final_score || (espnMatch ? espnMatch.scoreStr : "COMPLETED");
         const statusLabel = `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${scoreDisplay})</span>`;
 
         if (entry.trap_avoided) {
             buckets.champagne_room.total += 1;
             buckets.champagne_room.dodged += 1;
+            const trapLabel = cleanLabelCodes(entry.trap_pick_label || `${cleanMatchup} Public Favorite Trap`);
+            const trapLine = entry.trap_vegas_line !== undefined ? entry.trap_vegas_line : "--";
+            const trapProj = entry.trap_tip_proj !== undefined ? entry.trap_tip_proj : "--";
+            const trapEv = entry.trap_tip_ev_pct !== undefined ? `${entry.trap_tip_ev_pct}% EV` : "&le;-10% EV";
+            const fadeSideLabel = (entry.spread_record && entry.spread_record.pick_label) ? cleanLabelCodes(entry.spread_record.pick_label) : "Counter-Strike Dog";
+
+            vaultRows.grenades_dodged.push(`
+                <tr>
+                    <td><span style="font-family:var(--font-mono); font-size:10px; color:var(--accent-gold); font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+                    <td>PUBLIC GRENADE<br><span class="badge-pass" style="background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);font-size:10px;font-weight:800;">PASS</span></td>
+                    <td><strong style="color:var(--accent-danger);">🚫 TRAP: ${trapLabel}</strong></td>
+                    <td>${trapLine} (-110)</td>
+                    <td style="color:var(--accent-danger);">Proj: <strong>${trapProj}</strong> (${trapEv})</td>
+                    <td style="color:var(--accent-emerald);"><strong>✅ FADE HIT:</strong> ${fadeSideLabel}</td>
+                    <td><span class="badge-smash" style="font-size:11px;">💣 GRENADE DODGED</span></td>
+                </tr>
+            `);
         }
 
         const archivedRecords = [
@@ -2009,6 +2163,8 @@ function renderHistoricalLedger() {
             const bdEvPct = rec.bd_ev_pct !== undefined ? rec.bd_ev_pct : (rec.bdEvPct || tipEvPct);
             const bdTier = getTierFromEv(bdEvPct);
             const bdColor = getTierColor(bdTier);
+            const safeFloorLabel = rec.safe_floor_label || rec.safeFloorLabel || "";
+            const safeFloorWinPct = rec.safe_floor_win_pct || rec.safeFloorWinPct || 84.0;
             const bdAltLabel = rec.bd_alt_label || rec.bdAltLabel || "Alt Escalator";
             const bdAltEvPct = rec.bd_alt_ev_pct !== undefined ? rec.bd_alt_ev_pct : (rec.bdAltEvPct || 0);
             const slot = rec.flagship_slot || rec.flagshipSlot || "";
@@ -2017,39 +2173,47 @@ function renderHistoricalLedger() {
             let gradedBd = rec.result_bd || gradedTip;
             const missByPts = rec.miss_by_pts || 0;
 
-            if (gradedTip === "HIT" || gradedTip === "MISS" || gradedTip === "BLUE_BALLS") {
-                tallyGrade("tip_all", gradedTip);
-                tallyGrade("balls_deep_all", gradedBd);
-                if (slot) {
-                    tallyGrade("flagship_5pack", gradedTip);
-                    if (slot.includes("MÉNAGE")) tallyGrade("menage_a_trois", gradedTip);
-                }
-                if (ledgerTier === "SMASH") {
-                    tallyGrade("overall_smash", gradedTip);
-                    tallyGrade(isSpread ? "spread_smash" : "total_smash", gradedTip);
-                } else if (ledgerTier === "TOO_CLOSE") {
-                    tallyGrade("all_tease", gradedTip);
-                }
-            }
-
             const fmtTipProj = (isSpread && Number(tipProj) > 0) ? `+${tipProj}` : `${tipProj}`;
             const fmtBdProj = (isSpread && Number(bdProj) > 0) ? `+${bdProj}` : `${bdProj}`;
 
-            archivedRowsHTML += `
-                <tr>
-                    <td><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
-                    <td>${type} ${slot ? `<br><span class="badge-menage">${slot}</span>` : ""}</td>
-                    <td><strong>${pickLabel}</strong> ${renderTierBadgeHTML(ledgerTier)}</td>
-                    <td>${vegasLine} (${baseOdds > 0 ? '+' + baseOdds : baseOdds})</td>
-                    <td style="color:${tipColor};">Proj: <strong>${fmtTipProj}</strong> (${tipWinPct}% | ${tipEvPct > 0 ? '+' : ''}${tipEvPct}% EV)</td>
-                    <td>${showBallsDeep ? `<span style="color:${bdColor};">Proj: <strong>${fmtBdProj}</strong> (${bdWinPct}% | ${bdEvPct > 0 ? '+' : ''}${bdEvPct}% EV)<br><small style="color:var(--accent-gold);">${bdAltLabel} (${bdAltEvPct > 0 ? '+' : ''}${bdAltEvPct}% EV)</small></span>` : renderLockCellHTML()}</td>
-                    <td>${renderGradeBadge(gradedTip, missByPts)}</td>
-                </tr>
-            `;
+            const rowHTML = buildStandardVaultRowHTML(
+                weekLabel, cleanMatchup, statusLabel, type, slot, pickLabel, ledgerTier,
+                vegasLine, baseOdds, tipColor, fmtTipProj, tipWinPct, tipEvPct,
+                showBallsDeep, bdColor, fmtBdProj, bdWinPct, bdEvPct,
+                safeFloorLabel, safeFloorWinPct, bdAltLabel, bdAltEvPct, gradedTip, missByPts
+            );
+
+            if (gradedTip === "HIT" || gradedTip === "MISS" || gradedTip === "BLUE_BALLS") {
+                tallyGrade("tip_all", gradedTip);
+                tallyGrade("balls_deep_all", gradedBd);
+                vaultRows.tip_vs_bd.push(rowHTML);
+
+                if (slot) {
+                    tallyGrade("flagship_5pack", gradedTip);
+                    if (slot.includes("MÉNAGE")) tallyGrade("menage_a_trois", gradedTip);
+
+                    const wkObj = ensureWeekFivePackBucket(weekLabel);
+                    tallyGradeToObj(wkObj, gradedTip);
+                    if (slot.includes("MÉNAGE")) tallyGradeToObj(wkObj.menage, gradedTip);
+                    wkObj.rows.push(rowHTML);
+                    vaultRows.flagship_5pack.push({ weekLabel, rowHTML });
+                }
+
+                if (ledgerTier === "SMASH") {
+                    tallyGrade("overall_smash", gradedTip);
+                    tallyGrade(isSpread ? "spread_smash" : "total_smash", gradedTip);
+                    vaultRows.overall_smash.push(rowHTML);
+                } else if (ledgerTier === "TOO_CLOSE") {
+                    tallyGrade("all_tease", gradedTip);
+                    vaultRows.all_tease.push(rowHTML);
+                }
+            }
         });
     });
 
-    // 2. Render current week's active/upcoming slate games using live scraped lines & v219 projections
+    // 2. Process current week's slate:
+    //    - If a game has finished (FINAL via ESPN), route it into the Clickable Card Vaults above!
+    //    - If a game is UPCOMING or IN-PLAY, render it in the open Upcoming & In-Play table below!
     AppState.processedGames.filter(g => g.isCurrentWeek).forEach(g => {
         if (renderedMatchups.has(g.matchup)) return;
         if (!isRankedLedgerEntry(g.matchup, g.league)) return;
@@ -2061,6 +2225,7 @@ function renderHistoricalLedger() {
         const isFinal = Boolean(espnMatch && espnMatch.state === "post");
         const isLocked = isFinal || kickedOffByClock || Boolean(espnMatch && espnMatch.state === "in");
         const scoreDisplay = espnMatch ? espnMatch.scoreStr : "";
+        const weekLabel = g.weekLabel || "Week 11";
 
         const statusLabel = isFinal
             ? `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${scoreDisplay})</span>`
@@ -2073,12 +2238,26 @@ function renderHistoricalLedger() {
 
         if (isFinal && espnMatch && gameSpreads.length > 1) {
             const trapSide = gameSpreads[gameSpreads.length - 1];
+            const bestSide = gameSpreads[0];
             if (trapSide && trapSide.tipEvPct <= PASS_EV_CUTOFF) {
                 const trapGrade = gradeSpreadPick(trapSide.isHomeSpread, trapSide.baseLine, espnMatch.homeScore, espnMatch.awayScore);
                 buckets.champagne_room.total += 1;
-                if (trapGrade.outcome !== "HIT") {
+                const dodgedSuccess = (trapGrade.outcome !== "HIT");
+                if (dodgedSuccess) {
                     buckets.champagne_room.dodged += 1;
                 }
+                const fmtTrapProj = Number(trapSide.tipProjectedMean) > 0 ? `+${trapSide.tipProjectedMean}` : `${trapSide.tipProjectedMean}`;
+                vaultRows.grenades_dodged.push(`
+                    <tr>
+                        <td><span style="font-family:var(--font-mono); font-size:10px; color:var(--accent-gold); font-weight:800;">${weekLabel}</span><br><strong>${g.matchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+                        <td>PUBLIC GRENADE<br>${renderTierBadgeHTML("PASS")}</td>
+                        <td><strong style="color:var(--accent-danger);">🚫 TRAP: ${trapSide.player}</strong></td>
+                        <td>${trapSide.baseLine} (${trapSide.baseOdds})</td>
+                        <td style="color:var(--accent-danger);">Proj: <strong>${fmtTrapProj}</strong> (${trapSide.tipEvPct}% EV)</td>
+                        <td style="color:var(--accent-emerald);"><strong>${dodgedSuccess ? '✅ FADE HIT:' : '💥 TRAP COVERED:'}</strong> ${bestSide ? bestSide.player : ''}</td>
+                        <td>${dodgedSuccess ? `<span class="badge-smash" style="font-size:11px;">💣 GRENADE DODGED</span>` : `<span class="badge-pass" style="background:rgba(239,68,68,0.18);color:var(--accent-danger);font-size:11px;">💥 BLEW UP</span>`}</td>
+                    </tr>
+                `);
             }
         }
 
@@ -2109,41 +2288,61 @@ function renderHistoricalLedger() {
                 missByPts = tipResObj.missBy;
             }
 
-            if (gradedTip === "HIT" || gradedTip === "MISS" || gradedTip === "BLUE_BALLS") {
+            if (isFinal && (gradedTip === "HIT" || gradedTip === "MISS" || gradedTip === "BLUE_BALLS")) {
+                const rowHTML = buildStandardVaultRowHTML(
+                    weekLabel, g.matchup, statusLabel, isSpread ? "SPREAD" : "TOTAL (O/U)", p.flagshipSlot,
+                    p.player, ledgerTier, p.baseLine, p.baseOdds, tipColor, fmtTipProj, p.tipModelPct, p.tipEvPct,
+                    showBallsDeep, bdColor, fmtBdProj, p.bdModelPct, p.bdEvPct,
+                    p.safeFloorLabel, p.safeFloorWinPct, p.bdAltLabel, p.bdAltEvPct, gradedTip, missByPts
+                );
+
                 tallyGrade("tip_all", gradedTip);
                 tallyGrade("balls_deep_all", gradedBd);
+                vaultRows.tip_vs_bd.push(rowHTML);
+
                 if (p.flagshipSlot) {
                     tallyGrade("flagship_5pack", gradedTip);
                     if (p.flagshipSlot.includes("MÉNAGE")) tallyGrade("menage_a_trois", gradedTip);
+
+                    const wkObj = ensureWeekFivePackBucket(weekLabel);
+                    tallyGradeToObj(wkObj, gradedTip);
+                    if (p.flagshipSlot.includes("MÉNAGE")) tallyGradeToObj(wkObj.menage, gradedTip);
+                    wkObj.rows.push(rowHTML);
+                    vaultRows.flagship_5pack.push({ weekLabel, rowHTML });
                 }
+
                 if (ledgerTier === "SMASH") {
                     tallyGrade("overall_smash", gradedTip);
                     tallyGrade(isSpread ? "spread_smash" : "total_smash", gradedTip);
+                    vaultRows.overall_smash.push(rowHTML);
                 } else if (ledgerTier === "TOO_CLOSE") {
                     tallyGrade("all_tease", gradedTip);
+                    vaultRows.all_tease.push(rowHTML);
                 }
+            } else {
+                // Game has NOT ended yet -> Keep it open and visible in the Upcoming & In-Play table!
+                upcomingRowsHTML += `
+                    <tr>
+                        <td><strong>${g.matchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+                        <td>${isSpread ? 'SPREAD' : 'TOTAL (O/U)'} ${p.flagshipSlot ? `<br><span class="${p.flagshipSlot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}">${p.flagshipSlot}</span>` : ""}</td>
+                        <td><strong>${p.player}</strong> ${renderTierBadgeHTML(ledgerTier)}</td>
+                        <td>${p.baseLine} (${p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds})</td>
+                        <td style="color:${tipColor};">Proj: <strong>${fmtTipProj}</strong> (${p.tipModelPct}% | ${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV)</td>
+                        <td>${showBallsDeep ? `<span style="color:${bdColor};">Proj: <strong>${fmtBdProj}</strong> (${p.bdModelPct}% | ${p.bdEvPct > 0 ? '+' : ''}${p.bdEvPct}% EV)<br><small style="color:var(--accent-cyan);">🛡️ ${p.safeFloorLabel} (${p.safeFloorWinPct}%)</small> • <small style="color:var(--accent-gold);">🎯 ${p.bdAltLabel} (${p.bdAltEvPct > 0 ? '+' : ''}${p.bdAltEvPct}% EV)</small></span>` : renderLockCellHTML()}</td>
+                        <td>${renderGradeBadge(gradedTip, missByPts)}</td>
+                    </tr>
+                `;
             }
-
-            upcomingRowsHTML += `
-                <tr>
-                    <td><strong>${g.matchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
-                    <td>${isSpread ? 'SPREAD' : 'TOTAL (O/U)'} ${p.flagshipSlot ? `<br><span class="badge-menage">${p.flagshipSlot}</span>` : ""}</td>
-                    <td><strong>${p.player}</strong> ${renderTierBadgeHTML(ledgerTier)}</td>
-                    <td>${p.baseLine} (${p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds})</td>
-                    <td style="color:${tipColor};">Proj: <strong>${fmtTipProj}</strong> (${p.tipModelPct}% | ${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV)</td>
-                    <td>${showBallsDeep ? `<span style="color:${bdColor};">Proj: <strong>${fmtBdProj}</strong> (${p.bdModelPct}% | ${p.bdEvPct > 0 ? '+' : ''}${p.bdEvPct}% EV)<br><small style="color:var(--accent-cyan);">🛡️ ${p.safeFloorLabel} (${p.safeFloorWinPct}%)</small> • <small style="color:var(--accent-gold);">🎯 ${p.bdAltLabel} (${p.bdAltEvPct > 0 ? '+' : ''}${p.bdAltEvPct}% EV)</small></span>` : renderLockCellHTML()}</td>
-                    <td>${renderGradeBadge(gradedTip, missByPts)}</td>
-                </tr>
-            `;
         });
     });
 
-    const fmtBucket = (key) => {
-        const b = buckets[key];
+    const fmtBucketObj = (b) => {
         if (!b || !b.total) return "0W - 0L - 0BB (0.0%)";
         const pct = ((b.hits / b.total) * 100).toFixed(1);
         return `${b.hits}W - ${b.misses}L - <span style="color:#60a5fa;">${b.blueBalls}BB</span> (${pct}%)`;
     };
+
+    const fmtBucket = (key) => fmtBucketObj(buckets[key]);
 
     const fmtTraps = () => {
         const c = buckets.champagne_room;
@@ -2152,44 +2351,176 @@ function renderHistoricalLedger() {
         return `${c.dodged} / ${c.total} Dodged (${pct}%)`;
     };
 
+    // Build Flagship 5-Pack Week Dropdown Options with "X/5" score next to each week
+    const availableFivePackWeeks = Object.keys(fivePackByWeek).sort((a, b) => {
+        const numA = parseInt(a.replace(/\D/g, ""), 10) || 0;
+        const numB = parseInt(b.replace(/\D/g, ""), 10) || 0;
+        return numB - numA;
+    });
+
+    if (AppState.selectedFivePackWeek !== "ALL" && !fivePackByWeek[AppState.selectedFivePackWeek]) {
+        AppState.selectedFivePackWeek = "ALL";
+    }
+
+    const activeFivePackRecordBucket = (AppState.selectedFivePackWeek === "ALL")
+        ? buckets.flagship_5pack
+        : fivePackByWeek[AppState.selectedFivePackWeek];
+
+    const activeMenageRecordBucket = (AppState.selectedFivePackWeek === "ALL")
+        ? buckets.menage_a_trois
+        : fivePackByWeek[AppState.selectedFivePackWeek].menage;
+
+    const totalFivePackWeeksCount = Math.max(1, availableFivePackWeeks.length) * 5;
+    const weekDropdownHTML = `
+        <select onchange="window.setFivePackVaultWeek(this.value, event)" onclick="event.stopPropagation()" style="background:#0f172a; color:var(--accent-gold); border:1px solid rgba(245,158,11,0.55); border-radius:4px; padding:2px 6px; font-family:var(--font-mono); font-size:10.5px; font-weight:800; cursor:pointer;">
+            <option value="ALL" ${AppState.selectedFivePackWeek === "ALL" ? "selected" : ""}>All Weeks (${buckets.flagship_5pack.hits}/${totalFivePackWeeksCount})</option>
+            ${availableFivePackWeeks.map(wk => {
+                const wObj = fivePackByWeek[wk];
+                return `<option value="${wk}" ${AppState.selectedFivePackWeek === wk ? "selected" : ""}>${wk} (${wObj.hits}/5)</option>`;
+            }).join("")}
+        </select>
+    `;
+
+    // Build the Active Clickable Vault Drawer HTML (opens directly below the 5 scorecard cards when clicked)
+    let activeVaultDrawerHTML = "";
+    if (AppState.activeLedgerVault) {
+        let vaultTitle = "";
+        let vaultAccentColor = "var(--accent-cyan)";
+        let selectedRowsHTML = "";
+
+        if (AppState.activeLedgerVault === "flagship_5pack") {
+            const wkFilter = AppState.selectedFivePackWeek;
+            const wkScoreTag = wkFilter === "ALL"
+                ? `ALL WEEKS (${buckets.flagship_5pack.hits}/${totalFivePackWeeksCount} HIT)`
+                : `${wkFilter.toUpperCase()} (${fivePackByWeek[wkFilter].hits}/5 HIT)`;
+            vaultTitle = `👑 FLAGSHIP 5-PACK &amp; MÉNAGE À TROIS VAULT // ${wkScoreTag}`;
+            vaultAccentColor = "var(--accent-gold)";
+            const matchingRows = vaultRows.flagship_5pack
+                .filter(item => wkFilter === "ALL" || item.weekLabel === wkFilter)
+                .map(item => item.rowHTML);
+            selectedRowsHTML = matchingRows.join("");
+        } else if (AppState.activeLedgerVault === "overall_smash") {
+            vaultTitle = `🔥 OFFICIAL SMASH VAULT (&ge;+10.0% EV COMPLETED RECEIPTS) // ${fmtBucket("overall_smash")}`;
+            vaultAccentColor = "var(--accent-emerald)";
+            selectedRowsHTML = vaultRows.overall_smash.join("");
+        } else if (AppState.activeLedgerVault === "all_tease") {
+            vaultTitle = `🔵 ALL TEASE, NO SQUEEZE VAULT (&plusmn;10% EV COMPLETED RECEIPTS) // ${fmtBucket("all_tease")}`;
+            vaultAccentColor = "#60a5fa";
+            selectedRowsHTML = vaultRows.all_tease.join("");
+        } else if (AppState.activeLedgerVault === "grenades_dodged") {
+            vaultTitle = `💣 GRENADES DODGED VAULT (&le;-10% EV PUBLIC TRAPS AVOIDED) // ${fmtTraps()}`;
+            vaultAccentColor = "var(--accent-danger)";
+            selectedRowsHTML = vaultRows.grenades_dodged.join("");
+        } else if (AppState.activeLedgerVault === "tip_vs_bd") {
+            vaultTitle = `⚡ TIP vs. BALLS DEEP MASTER ARCHIVE (ALL COMPLETED GAMES)`;
+            vaultAccentColor = "var(--accent-cyan)";
+            selectedRowsHTML = vaultRows.tip_vs_bd.join("");
+        }
+
+        activeVaultDrawerHTML = `
+            <div style="margin-bottom: 22px; border: 1px solid ${vaultAccentColor}; border-radius: 8px; background: #0f172a; box-shadow: 0 8px 24px rgba(0,0,0,0.5); overflow: hidden;">
+                <div style="padding: 12px 16px; background: rgba(30, 41, 59, 0.85); border-bottom: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                    <span style="font-family: var(--font-mono); font-size: 12.5px; font-weight: 800; color: ${vaultAccentColor};">
+                        📂 ${vaultTitle}
+                    </span>
+                    <button class="calc-action-btn" onclick="window.toggleLedgerVault('${AppState.activeLedgerVault}', event)" style="font-size: 11px; padding: 4px 10px;">
+                        ✕ Close Vault ▲
+                    </button>
+                </div>
+                <div class="table-responsive">
+                    <table class="quant-table">
+                        <thead>
+                            <tr>
+                                <th>Week &amp; Final Score</th>
+                                <th>Market &amp; Slot</th>
+                                <th>Official Model Pick</th>
+                                <th>Vegas Closing</th>
+                                <th>Just the Tip Closing</th>
+                                <th>${AppState.activeLedgerVault === "grenades_dodged" ? "Counter-Strike Fade Outcome" : "Balls Deep Closing"}</th>
+                                <th>Graded Result</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${selectedRowsHTML || `<tr><td colspan="7" style="text-align:center; color:var(--text-secondary); padding:18px;">No completed games in this vault yet—active games move here automatically as soon as they hit FINAL.</td></tr>`}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }
+
+    const cardActiveStyle = (key, defaultBorder) => (AppState.activeLedgerVault === key)
+        ? `border: 2px solid var(--accent-cyan); box-shadow: 0 0 16px rgba(6, 182, 212, 0.35);`
+        : `border: 1px solid ${defaultBorder};`;
+
+    const vaultFooterPrompt = (key, count) => {
+        const isOpen = AppState.activeLedgerVault === key;
+        return `<div style="font-size: 10.5px; color: var(--accent-cyan); margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.07); text-decoration: underline; font-weight: 700;">
+            ${isOpen ? '📂 Hide graded receipts ▲' : `📂 Click card to view ${count} graded receipt${count === 1 ? '' : 's'} ▼`}
+        </div>`;
+    };
+
+    const filteredFivePackCount = (AppState.selectedFivePackWeek === "ALL")
+        ? vaultRows.flagship_5pack.length
+        : (fivePackByWeek[AppState.selectedFivePackWeek] ? fivePackByWeek[AppState.selectedFivePackWeek].rows.length : 0);
+
     container.innerHTML = `
         ${buildLedgerLegendHTML()}
 
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(225px, 1fr)); gap: 14px; margin-bottom: 20px; font-family: var(--font-mono);">
-            <div style="background: var(--bg-elevated); border: 1px solid rgba(245, 158, 11, 0.5); border-radius: 8px; padding: 14px;">
-                <div style="font-size: 11px; color: var(--accent-gold); font-weight: 800;">👑 FLAGSHIP 5-PACK &amp; MÉNAGE À TROIS</div>
-                <div style="font-size: 15px; font-weight: 800; margin: 6px 0;">5-Pack: ${fmtBucket("flagship_5pack")}</div>
-                <div style="font-size: 11.5px; color: var(--text-secondary);">Ménage à Trois: <strong>${fmtBucket("menage_a_trois")}</strong></div>
+            <div onclick="window.toggleLedgerVault('flagship_5pack', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('flagship_5pack', 'rgba(245, 158, 11, 0.5)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
+                    <span style="font-size: 11px; color: var(--accent-gold); font-weight: 800;">👑 FLAGSHIP 5-PACK</span>
+                    ${weekDropdownHTML}
+                </div>
+                <div style="font-size: 14.5px; font-weight: 800; margin: 6px 0;">5-Pack: ${fmtBucketObj(activeFivePackRecordBucket)}</div>
+                <div style="font-size: 11.5px; color: var(--text-secondary);">Ménage à Trois: <strong>${fmtBucketObj(activeMenageRecordBucket)}</strong></div>
+                ${vaultFooterPrompt("flagship_5pack", filteredFivePackCount)}
             </div>
 
-            <div style="background: var(--bg-elevated); border: 1px solid rgba(16, 185, 129, 0.45); border-radius: 8px; padding: 14px;">
+            <div onclick="window.toggleLedgerVault('overall_smash', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('overall_smash', 'rgba(16, 185, 129, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
                 <div style="font-size: 11px; color: var(--accent-emerald); font-weight: 800;">🔥 OFFICIAL SMASH (&ge;+10.0% EV)</div>
-                <div style="font-size: 15px; font-weight: 800; margin: 6px 0;">${fmtBucket("overall_smash")}</div>
+                <div style="font-size: 14.5px; font-weight: 800; margin: 6px 0;">${fmtBucket("overall_smash")}</div>
                 <div style="font-size: 11px; color: var(--text-secondary);">
                     Spreads: <strong>${fmtBucket("spread_smash")}</strong><br>Totals: <strong>${fmtBucket("total_smash")}</strong>
                 </div>
+                ${vaultFooterPrompt("overall_smash", vaultRows.overall_smash.length)}
             </div>
 
-            <div style="background: var(--bg-elevated); border: 1px solid rgba(59, 130, 246, 0.45); border-radius: 8px; padding: 14px;">
+            <div onclick="window.toggleLedgerVault('all_tease', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('all_tease', 'rgba(59, 130, 246, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
                 <div style="font-size: 11px; color: #60a5fa; font-weight: 800;">🔵 ALL TEASE, NO SQUEEZE (&plusmn;10% EV)</div>
-                <div style="font-size: 15px; font-weight: 800; margin: 6px 0; color: var(--text-primary);">${fmtBucket("all_tease")}</div>
+                <div style="font-size: 14.5px; font-weight: 800; margin: 6px 0; color: var(--text-primary);">${fmtBucket("all_tease")}</div>
                 <div style="font-size: 11px; color: var(--text-muted);">Coin-flip zone | BB = Missed line by &le;3 pts</div>
+                ${vaultFooterPrompt("all_tease", vaultRows.all_tease.length)}
             </div>
 
-            <div style="background: var(--bg-elevated); border: 1px solid rgba(239, 68, 68, 0.45); border-radius: 8px; padding: 14px;">
+            <div onclick="window.toggleLedgerVault('grenades_dodged', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('grenades_dodged', 'rgba(239, 68, 68, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
                 <div style="font-size: 11px; color: var(--accent-danger); font-weight: 800;">💣 GRENADES DODGED (&le;-10% EV)</div>
-                <div style="font-size: 16px; font-weight: 800; margin: 6px 0; color: var(--accent-emerald);">${fmtTraps()}</div>
+                <div style="font-size: 15.5px; font-weight: 800; margin: 6px 0; color: var(--accent-emerald);">${fmtTraps()}</div>
                 <div style="font-size: 11px; color: var(--text-muted);">You were a little too drunk to make that call last night</div>
+                ${vaultFooterPrompt("grenades_dodged", vaultRows.grenades_dodged.length)}
             </div>
 
-            <div style="background: var(--bg-elevated); border: 1px solid rgba(6, 182, 212, 0.45); border-radius: 8px; padding: 14px;">
+            <div onclick="window.toggleLedgerVault('tip_vs_bd', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('tip_vs_bd', 'rgba(6, 182, 212, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
                 <div style="font-size: 11px; color: var(--accent-cyan); font-weight: 800;">⚡ TIP vs. BALLS DEEP HEAD-TO-HEAD</div>
                 <div style="font-size: 13px; font-weight: 800; margin: 6px 0;">Tip: ${fmtBucket("tip_all")}</div>
                 ${showBallsDeep
                     ? `<div style="font-size: 13px; font-weight: 800; color: var(--accent-emerald);">Balls Deep: ${fmtBucket("balls_deep_all")}</div>`
                     : `<div style="font-size: 11px; color: var(--accent-gold); cursor: pointer;" onclick="window.unlockBallsDeepMode(event)">🔒 Click to unlock Balls Deep Record</div>`
                 }
+                ${vaultFooterPrompt("tip_vs_bd", vaultRows.tip_vs_bd.length)}
             </div>
+        </div>
+
+        ${activeVaultDrawerHTML}
+
+        <div style="margin-bottom: 10px; padding: 8px 14px; border-radius: 6px; background: rgba(15, 23, 42, 0.85); border: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; font-family: var(--font-mono);">
+            <span style="font-size: 12px; font-weight: 800; color: var(--accent-cyan);">
+                🕒 ACTIVE WEEK // UPCOMING &amp; IN-PLAY CLOSING LINE LEDGER
+            </span>
+            <span style="font-size: 11px; color: var(--text-secondary);">
+                Completed games move automatically into the 5 Scorecard Vaults above upon hitting FINAL
+            </span>
         </div>
 
         <div class="table-responsive">
@@ -2206,7 +2537,6 @@ function renderHistoricalLedger() {
                     </tr>
                 </thead>
                 <tbody>
-                    ${archivedRowsHTML}
                     ${upcomingRowsHTML}
                 </tbody>
             </table>
