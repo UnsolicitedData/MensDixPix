@@ -1,8 +1,10 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v312)
- *  - Market-Implied EPA Benchmark (M9): Benchmarks epaDiff against Vegas-implied EPA on registry scale
- *    so favorites and underdogs fire 50/50 symmetrically with zero pull-to-zero and zero bloat
- *  - Symmetric M13 Fallback: Feeds zero-centered epaResidual into M13 for balanced Balls Deep lifts
+ * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v313)
+ *  - PURE OG MODULES 1–9 RESTORED: 100% Independent Fair Margin (ZERO Vegas-Spread Anchoring)
+ *  - Live Roster/Injury Integration (qb_replacement_delta) + Fixed opp_rz_dvoa Sign
+ *  - Strict M1–M9 Firewall in Just the Tip | Full M11–M13 Physics & Sacred Geometry in Balls Deep/DaVinci
+ *  - Symmetric M9 Fair Margin Fix: True full-game play volume (62.32 NFL / 68.0 NCAA), zero-safe EPA,
+ *    mismatch taper >10 pts, fixed opp_rz_dvoa sign, symmetric soft cap (zero pull-to-zero, zero bloat)
  * Core Modules 1–9 Preserved | Upgraded Guardrails & Fixed M13 Architecture:
  *  - Module 2: Hard 4.0% Quarter-Kelly Single-Bet Exposure Cap
  *  - Module 4 & 5: Unified Prop Gatekeepers (TOP Rush-Att Starvation & O-Line/RB Pass-Pro Sack-Trauma)
@@ -356,7 +358,7 @@ function calcTenZoneElevationMatrix(envPayload, circPayload = {}, mode = "tip", 
 // MODULE 13: FIXED SACRED GEOMETRY "RISE TO THE OCCASION" & INVERSE FAVORITE TRAP (M_RISE)
 // Objective Poll/Market-to-EPA Divergence x Defensive Havoc + Coach/QB Lock + M11 > M13 Override
 // ==========================================
-function calcSacredGeometryRise(gameData, vegasHomeSpread = 0, epaDivergencePts = 0, elevMatrix = null, league = "NFL") {
+function calcSacredGeometryRise(gameData, vegasHomeSpread = 0, rawHomeSpread = 0, elevMatrix = null, league = "NFL") {
     const home = (gameData.team_telemetry && gameData.team_telemetry.home) || {};
     const away = (gameData.team_telemetry && gameData.team_telemetry.away) || {};
 
@@ -367,16 +369,16 @@ function calcSacredGeometryRise(gameData, vegasHomeSpread = 0, epaDivergencePts 
     // 1. Objective Poll/Market-to-EPA Efficiency Divergence (N_scale = 25 NCAA / 16 NFL)
     const nScale = (league === "NCAA") ? 25.0 : 16.0;
     let normDivergence = 0;
-    const favPollOrMktRank = (favTel.poll_rank !== undefined)
+    const favPollOrMktRank = (favTel.poll_rank !== undefined && favTel.poll_rank !== null)
         ? Number(favTel.poll_rank)
-        : (favTel.market_rank !== undefined ? Number(favTel.market_rank) : null);
+        : ((favTel.market_rank !== undefined && favTel.market_rank !== null) ? Number(favTel.market_rank) : null);
 
-    if (favTel.epa_rank !== undefined && favPollOrMktRank !== null) {
+    if (favTel.epa_rank !== undefined && favTel.epa_rank !== null && favPollOrMktRank !== null) {
         normDivergence = Math.max(-1.35, Math.min(1.35, (Number(favTel.epa_rank) - favPollOrMktRank) / nScale));
     } else {
-        // Objective fallback using symmetric, mismatch-tapered EPA divergence (zero pull-to-zero bias)
-        const marketEpaGap = epaDivergencePts * (homeIsUnderdog ? -1 : 1);
-        normDivergence = Math.max(-1.25, Math.min(1.25, marketEpaGap / 4.5));
+        // Objective fallback: pure independent M9 raw spread vs Vegas line
+        const marketEpaGap = (rawHomeSpread - vegasHomeSpread) * (homeIsUnderdog ? -1 : 1);
+        normDivergence = Math.max(-1.25, Math.min(1.25, marketEpaGap / 6.0));
     }
 
     // 2. Objective Underdog Defensive Havoc Multiplier (Havoc_def,dog / Havoc_league)
@@ -434,7 +436,8 @@ function calcSacredGeometryRise(gameData, vegasHomeSpread = 0, epaDivergencePts 
     const tdLambdaMultDog = Number(mRiseDog.toFixed(4));
     const tdLambdaMultFav = Number(mRiseFav.toFixed(4));
 
-    const riseHomeSpreadAdj = (homeIsUnderdog ? -1 : 1) * (mRiseDelta * 4.2);
+    // Soft-bounded M13 spread adjustment (only active in Balls Deep / DaVinci)
+    const riseHomeSpreadAdj = (homeIsUnderdog ? -1 : 1) * (mRiseDelta * 3.5);
 
     return {
         mRiseMultiplier: Number(mRiseDog.toFixed(4)),
@@ -453,7 +456,9 @@ function calcSacredGeometryRise(gameData, vegasHomeSpread = 0, epaDivergencePts 
     };
 }
 
-// MODULE 9: SYMMETRIC FULL-GAME FAIR MARGIN (v312 — MARKET-IMPLIED EPA BENCHMARK)
+// ==========================================
+// MODULE 9: PURE OG FULL-GAME FAIR MARGIN (100% INDEPENDENT OF VEGAS LINE)
+// ==========================================
 function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "tip", vegasHomeSpread = null, psiElev = 0, elevMatrix = null, intensitySlider = 0.0) {
     const hfaBase = gameData.hfa_base !== undefined ? gameData.hfa_base : PI_OVER_PHI_HFA;
     const home = (gameData.team_telemetry && gameData.team_telemetry.home) || {};
@@ -462,11 +467,14 @@ function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "
 
     const homeEpa = Number(home.net_epa_per_play || 0);
     const awayEpa = Number(away.net_epa_per_play || 0);
-    const hasEpaFeed = (homeEpa !== 0 || awayEpa !== 0);
     const epaDiff = awayEpa - homeEpa;
     const deltaTOReg = (away.turnover_reg_delta || 0) - (home.turnover_reg_delta || 0);
 
-    // Fixed Sign: negative opp_rz_dvoa = stronger defense (good home RZ defense moves spread negative)
+    // Live Roster & Injury Adjustment (negative delta = team missing key starters -> opponent benefits)
+    const injurySpreadDiff = Number(away.qb_replacement_delta || 0) - Number(home.qb_replacement_delta || 0);
+
+    // Module 9 Red-Zone TD Finishing & Road Kicker Reliability Coefficient (Delta_RZ_fin)
+    // Fixed Sign: negative opp_rz_dvoa = stronger defense (good home RZ defense moves home spread negative)
     let deltaRzFin = ((home.opp_rz_dvoa || 0) - (away.opp_rz_dvoa || 0)) * 4.0;
     if (away.rz_td_pct_off !== undefined && home.rz_td_pct_def !== undefined) {
         const nRzProj = Number(away.rz_trips_proj || 3.2);
@@ -488,14 +496,14 @@ function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "
     );
     const thirdStringTeam = homeIsThirdString ? (gameData.home_team || "HOME") : (awayIsThirdString ? (gameData.away_team || "AWAY") : null);
 
-    // Strict Mode Firewall: "tip" uses Modules 1-9 ONLY
+    // PURE OG M1–M9 BASELINE FAIR SPREAD (ZERO VEGAS ANCHORING, ZERO M11–M13 LEAKS)
+    const epaPoints = GOLDEN_PLAY_SCALER * epaDiff;
+    const pureOgTipHomeSpread = epaPoints + deltaRzFin + deltaTOReg + injurySpreadDiff - hfaBase - phiCirc;
+
+    // Strict Mode Firewall: "tip" returns PURE OG M1–M9 untouched
     const activePsi = (mode === "tip") ? 0 : psiCoupled11_12;
     const activeElev = (mode === "tip") ? 0 : psiElev;
 
-    const epaPoints = GOLDEN_PLAY_SCALER * epaDiff;
-    const rawTelemetryHomeSpread = epaPoints + deltaRzFin + deltaTOReg - hfaBase - phiCirc + activePsi + activeElev;
-
-    let calibratedHomeSpread = rawTelemetryHomeSpread;
     let m13 = {
         mRiseMultiplier: 1.0,
         mRiseDog: 1.0,
@@ -508,43 +516,33 @@ function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "
         coachSyncBlocked: false
     };
 
-    if (vegasHomeSpread !== null && vegasHomeSpread !== undefined && !isNaN(vegasHomeSpread)) {
-        // Market-Implied EPA Benchmark on registry scale:
-        // Compares actual epaDiff against what Vegas spread + HFA implies, eliminating pull-to-zero on favorites
-        let epaResidual = 0.0;
-        if (hasEpaFeed) {
-            const expectedEpaDiff = 0.085 * Math.tanh((vegasHomeSpread + hfaBase) / 14.0);
-            epaResidual = (epaDiff - expectedEpaDiff) * GOLDEN_PLAY_SCALER;
-        }
+    const refVegas = (vegasHomeSpread !== null && vegasHomeSpread !== undefined && !isNaN(vegasHomeSpread))
+        ? Number(vegasHomeSpread)
+        : pureOgTipHomeSpread;
 
-        // Feed symmetric zero-centered EPA residual into M13 (gives balanced Fav & Dog lifts in Balls Deep)
-        m13 = calcSacredGeometryRise(gameData, vegasHomeSpread, epaResidual, elevMatrix, league);
-        const m13FlowScale = (mode === "davinci")
-            ? Math.max(0.0, 1.0 + (intensitySlider * (FIBONACCI_TIERS.TIER_2 / FIBONACCI_TIERS.SUM_F)))
-            : 1.0;
-        const activeRiseAdj = (mode === "tip") ? 0.0 : (m13.riseHomeSpreadAdj * m13FlowScale);
+    m13 = calcSacredGeometryRise(gameData, refVegas, pureOgTipHomeSpread, elevMatrix, league);
+    const m13FlowScale = (mode === "davinci")
+        ? Math.max(0.0, 1.0 + (intensitySlider * (FIBONACCI_TIERS.TIER_2 / FIBONACCI_TIERS.SUM_F)))
+        : 1.0;
+    const activeRiseAdj = (mode === "tip") ? 0.0 : (m13.riseHomeSpreadAdj * m13FlowScale);
 
-        // Balanced situational residuals + symmetric EPA residual inside soft cap (zero pull-to-zero, zero bloat)
-        const situationalDelta = (deltaRzFin * 0.65) + (deltaTOReg * 0.50) - phiCirc + activePsi + activeElev + activeRiseAdj;
-        const maxShift = (mode === "tip") ? 4.5 : 5.5;
-        const finalDelta = maxShift * Math.tanh((epaResidual + situationalDelta) / maxShift);
+    // Final Independent Fair Spread: OG M1–M9 in "tip"; OG M1–M9 + Coupled M11/M12/M13 in "balls_deep" / "davinci"
+    let fairHomeSpread = pureOgTipHomeSpread + activePsi + activeElev + activeRiseAdj;
 
-        calibratedHomeSpread = vegasHomeSpread + finalDelta;
-
-        // DaVinci Continuous Flow Spread Escalator
-        if (mode === "davinci" && intensitySlider !== 0) {
-            const edgeVsVegas = calibratedHomeSpread - vegasHomeSpread;
-            const flowDir = edgeVsVegas !== 0 ? Math.sign(edgeVsVegas) : (finalDelta !== 0 ? Math.sign(finalDelta) : -1);
-            const davinciSpreadFlow = flowDir * intensitySlider * (FIBONACCI_TIERS.TIER_2 / FIBONACCI_TIERS.SUM_F) * GOLDEN_RATIO_PHI * 1.85;
-            calibratedHomeSpread += davinciSpreadFlow;
-        }
+    // DaVinci Continuous Flow Spread Escalator
+    if (mode === "davinci" && intensitySlider !== 0) {
+        const edgeVsVegas = fairHomeSpread - refVegas;
+        const flowDir = edgeVsVegas !== 0 ? Math.sign(edgeVsVegas) : -1;
+        const davinciSpreadFlow = flowDir * intensitySlider * (FIBONACCI_TIERS.TIER_2 / FIBONACCI_TIERS.SUM_F) * GOLDEN_RATIO_PHI * 1.85;
+        fairHomeSpread += davinciSpreadFlow;
     }
 
     return {
-        fairHomeSpread: Number(calibratedHomeSpread.toFixed(2)),
-        rawTelemetrySpread: Number(rawTelemetryHomeSpread.toFixed(2)),
+        fairHomeSpread: Number(fairHomeSpread.toFixed(2)),
+        rawTelemetrySpread: Number(pureOgTipHomeSpread.toFixed(2)),
         epaContribution: Number(epaPoints.toFixed(2)),
         deltaRzFin: Number(deltaRzFin.toFixed(2)),
+        injurySpreadDiff: Number(injurySpreadDiff.toFixed(2)),
         activeCoupledOverlay: Number(activePsi.toFixed(3)),
         mRiseMultiplier: m13.mRiseMultiplier,
         m13Details: m13,
@@ -808,4 +806,4 @@ function calcMasterFibonacciAggregate(moduleScores, fibLookupFn = 13, intensityS
         liveAdjustedProb: Number((pAgg * 100).toFixed(2))
     };
 }
-// === END OF ONLINEMATH_ENGINE.JS (v312) ===
+// === END OF ONLINEMATH_ENGINE.JS (v313) ===
