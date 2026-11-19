@@ -1,5 +1,5 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v212)
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v213)
 Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
   1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
   2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
@@ -21,6 +21,7 @@ import re
 import time
 import urllib.request
 import urllib.error
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 import requests
 
@@ -204,47 +205,48 @@ WEATHER_CACHE = {}
 
 # Name aliases for matching Odds API team names to ESPN FPI / Standings names
 TEAM_NAME_ALIASES = {
-    "ole miss": "ole miss rebels",
-    "mississippi": "ole miss rebels",
-    "uconn": "uconn huskies",
-    "connecticut": "uconn huskies",
-    "umass": "umass minutemen",
-    "massachusetts": "umass minutemen",
-    "pitt": "pittsburgh panthers",
-    "nc state": "nc state wolfpack",
-    "north carolina state": "nc state wolfpack",
-    "app state": "appalachian state mountaineers",
-    "appalachian state": "appalachian state mountaineers",
-    "ul monroe": "louisiana monroe warhawks",
-    "louisiana monroe": "louisiana monroe warhawks",
-    "ulm": "louisiana monroe warhawks",
-    "louisiana": "louisiana ragin cajuns",
-    "fiu": "florida international panthers",
-    "fau": "florida atlantic owls",
-    "usf": "south florida bulls",
-    "ucf": "ucf knights",
-    "uab": "uab blazers",
-    "utsa": "utsa roadrunners",
-    "utep": "utep miners",
-    "unlv": "unlv rebels",
-    "smu": "smu mustangs",
-    "tcu": "tcu horned frogs",
-    "byu": "byu cougars",
-    "lsu": "lsu tigers",
-    "usc": "usc trojans",
-    "ucla": "ucla bruins",
-    "miami": "miami hurricanes",
-    "miami oh": "miami oh redhawks",
-    "miami (oh)": "miami oh redhawks",
-    "hawai'i": "hawaii rainbow warriors",
-    "hawaii": "hawaii rainbow warriors",
-    "san jose state": "san jose state spartans",
-    "san josé state": "san jose state spartans",
-    "sam houston": "sam houston state bearkats",
-    "sam houston state": "sam houston state bearkats",
-    "southern miss": "southern mississippi golden eagles",
-    "southern mississippi": "southern mississippi golden eagles",
-    "wvu": "west virginia mountaineers"
+    "ole miss rebels": "ole miss rebels",
+    "mississippi rebels": "ole miss rebels",
+    "uconn huskies": "uconn huskies",
+    "connecticut huskies": "uconn huskies",
+    "umass minutemen": "umass minutemen",
+    "massachusetts minutemen": "umass minutemen",
+    "pitt panthers": "pittsburgh panthers",
+    "nc state wolfpack": "nc state wolfpack",
+    "north carolina state wolfpack": "nc state wolfpack",
+    "app state mountaineers": "appalachian state mountaineers",
+    "appalachian state mountaineers": "appalachian state mountaineers",
+    "ul monroe warhawks": "louisiana monroe warhawks",
+    "louisiana monroe warhawks": "louisiana monroe warhawks",
+    "ulm warhawks": "louisiana monroe warhawks",
+    "louisiana ragin cajuns": "louisiana ragin cajuns",
+    "fiu panthers": "florida international panthers",
+    "florida international golden panthers": "florida international panthers",
+    "fau owls": "florida atlantic owls",
+    "usf bulls": "south florida bulls",
+    "ucf knights": "ucf knights",
+    "central florida knights": "ucf knights",
+    "uab blazers": "uab blazers",
+    "utsa roadrunners": "utsa roadrunners",
+    "utep miners": "utep miners",
+    "unlv rebels": "unlv rebels",
+    "smu mustangs": "smu mustangs",
+    "tcu horned frogs": "tcu horned frogs",
+    "byu cougars": "byu cougars",
+    "lsu tigers": "lsu tigers",
+    "usc trojans": "usc trojans",
+    "ucla bruins": "ucla bruins",
+    "miami hurricanes": "miami hurricanes",
+    "miami (fl) hurricanes": "miami hurricanes",
+    "miami oh redhawks": "miami oh redhawks",
+    "miami (oh) redhawks": "miami oh redhawks",
+    "hawaii rainbow warriors": "hawaii rainbow warriors",
+    "san jose state spartans": "san jose state spartans",
+    "sam houston bearkats": "sam houston state bearkats",
+    "sam houston state bearkats": "sam houston state bearkats",
+    "southern miss golden eagles": "southern mississippi golden eagles",
+    "southern mississippi golden eagles": "southern mississippi golden eagles",
+    "ut martin skyhawks": "tennessee martin skyhawks"
 }
 
 def normalize_team_key(name):
@@ -256,27 +258,18 @@ def normalize_team_key(name):
         cleaned = TEAM_NAME_ALIASES[cleaned]
     return cleaned
 
-def lookup_by_name(lookup_dict, full_name, code=""):
+def lookup_by_name(lookup_dict, full_name, code="", allow_code=True):
+    """Strict exact-match lookup ONLY (normalized full team name or verified team code).
+    ZERO prefix or first-word fuzzy matching so 'Florida Atlantic' / 'Florida International' /
+    'Texas State' / 'Georgia State' can NEVER falsely inherit 'Florida' / 'Texas' / 'Georgia'.
+    """
     if not lookup_dict:
         return None
     norm = normalize_team_key(full_name)
     if norm in lookup_dict:
         return lookup_dict[norm]
-    # Try code match
-    if code and f"code:{code.upper()}" in lookup_dict:
+    if allow_code and code and f"code:{code.upper()}" in lookup_dict:
         return lookup_dict[f"code:{code.upper()}"]
-    # Try prefix match on school name (first 2 words or first word for unique schools)
-    tokens = norm.split()
-    if len(tokens) >= 2:
-        two_word = " ".join(tokens[:2])
-        for k, v in lookup_dict.items():
-            if not k.startswith("code:") and (k.startswith(two_word) or two_word.startswith(k)):
-                return v
-    if len(tokens) >= 1 and len(tokens[0]) >= 5:
-        first_word = tokens[0]
-        matches = [v for k, v in lookup_dict.items() if not k.startswith("code:") and k.split()[0] == first_word]
-        if len(matches) == 1:
-            return matches[0]
     return None
 
 # ==============================================================================
@@ -468,10 +461,6 @@ def fetch_espn_fpi(league="NCAA"):
             }
             ranked_entries.append((fpi_val, entry))
             fpi_map[normalize_team_key(dname)] = entry
-            if team_obj.get("location"):
-                loc_key = normalize_team_key(team_obj["location"])
-                if loc_key not in fpi_map:
-                    fpi_map[loc_key] = entry
             if abbr:
                 fpi_map[f"code:{abbr}"] = entry
 
@@ -652,8 +641,6 @@ def fetch_espn_ncaa_rankings():
             if rk > 0 and full_nm:
                 ranked_names.append(full_nm)
                 poll_map[normalize_team_key(full_nm)] = rk
-                if loc:
-                    poll_map[normalize_team_key(loc)] = rk
                 if abbr:
                     poll_map[f"code:{abbr}"] = rk
         print(f"[ESPN Rankings NCAA] Loaded {len(ranked_names)} live Top-25 teams ({chosen.get('name', 'Poll')}).")
@@ -730,10 +717,13 @@ def fetch_espn_game_injuries(event_id, league="NFL"):
 
 def get_team_meta(full_name, league="NFL", nflverse_map=None, fpi_map=None, standings_map=None, poll_map=None):
     # 1. Start from Stadium/Geography Registry (or clean regional neutral fallback — ZERO MD5 HASHES!)
+    is_verified_code = False
     if league == "NFL" and full_name in NFL_TEAM_REGISTRY:
         meta = dict(NFL_TEAM_REGISTRY[full_name])
+        is_verified_code = True
     elif league == "NCAA" and full_name in NCAA_TEAM_REGISTRY:
         meta = dict(NCAA_TEAM_REGISTRY[full_name])
+        is_verified_code = True
     else:
         words = [w for w in full_name.replace("&", "").replace("(", "").replace(")", "").split() if w]
         code = (words[0][:2] + words[1][:2]).upper() if len(words) >= 2 else full_name[:4].upper()
@@ -762,7 +752,7 @@ def get_team_meta(full_name, league="NFL", nflverse_map=None, fpi_map=None, stan
     meta["telemetry_source"] = "registry_fallback"
 
     # 2. Overlay Live Standings ONLY for verified full-season win streak / NFL win_pct (NEVER broken CFB PPG!)
-    st_hit = lookup_by_name(standings_map, full_name, code) if standings_map else None
+    st_hit = lookup_by_name(standings_map, full_name, code, allow_code=is_verified_code) if standings_map else None
     if st_hit and st_hit.get("games_played", 0) >= 3:
         meta["streak"] = st_hit["active_win_streak"]
         if league == "NFL":
@@ -771,7 +761,7 @@ def get_team_meta(full_name, league="NFL", nflverse_map=None, fpi_map=None, stan
     # 3. Overlay Live Performance Efficiency (ZERO MD5 HASHES, ZERO BROKEN STANDINGS PPG)
     if league == "NFL":
         nv_hit = nflverse_map.get(f"code:{code}") if nflverse_map else None
-        fpi_hit = lookup_by_name(fpi_map, full_name, code) if fpi_map else None
+        fpi_hit = lookup_by_name(fpi_map, full_name, code, allow_code=is_verified_code) if fpi_map else None
 
         if fpi_hit:
             meta["off_eff"] = fpi_hit.get("off_eff")
@@ -798,7 +788,7 @@ def get_team_meta(full_name, league="NFL", nflverse_map=None, fpi_map=None, stan
                 meta["close_pct"] = round(max(0.10, min(0.95, 1.0 - ((meta["epa_rank"] - 1) / 31.0))), 3)
             meta["telemetry_source"] = "espn_fpi_2026_live"
     else:
-        fpi_hit = lookup_by_name(fpi_map, full_name, code) if fpi_map else None
+        fpi_hit = lookup_by_name(fpi_map, full_name, code, allow_code=is_verified_code) if fpi_map else None
         if fpi_hit:
             meta["epa"] = fpi_hit["epa_equiv"]
             meta["rz_dvoa"] = fpi_hit["rz_dvoa"]
@@ -825,7 +815,7 @@ def get_team_meta(full_name, league="NFL", nflverse_map=None, fpi_map=None, stan
 
         # Overlay live Top-25 poll rank
         if poll_map:
-            prk = lookup_by_name(poll_map, full_name, code)
+            prk = lookup_by_name(poll_map, full_name, code, allow_code=is_verified_code)
             if prk:
                 meta["poll_rank"] = prk
 
@@ -838,6 +828,50 @@ def calc_haversine_miles(lat1, lon1, lat2, lon2):
     dlambda = math.radians(lon2 - lon1)
     a = math.sin(dphi / 2.0)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2.0)**2
     return round(2.0 * r_miles * math.atan2(math.sqrt(a), math.sqrt(1.0 - a)), 1)
+
+def prefetch_all_stadium_weather(metas_list):
+    """Batches all unique outdoor stadium coordinates into multi-location Open-Meteo requests (~2s total)."""
+    coords = []
+    seen = set()
+    for m in metas_list:
+        if m.get("is_dome"):
+            continue
+        lat = round(float(m.get("lat", 40.0)), 2)
+        lon = round(float(m.get("lon", -80.0)), 2)
+        ck = f"{lat}_{lon}"
+        if ck not in WEATHER_CACHE and ck not in seen:
+            seen.add(ck)
+            coords.append((lat, lon, ck))
+
+    # Open-Meteo supports comma-separated multi-location queries (chunk by 40 coords)
+    for start in range(0, len(coords), 40):
+        chunk = coords[start:start + 40]
+        lats_str = ",".join(str(c[0]) for c in chunk)
+        lons_str = ",".join(str(c[1]) for c in chunk)
+        url = (
+            f"https://api.open-meteo.com/v1/forecast?latitude={lats_str}&longitude={lons_str}"
+            f"&current=temperature_2m,wind_speed_10m,surface_pressure"
+            f"&temperature_unit=fahrenheit&wind_speed_unit=mph"
+        )
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=10)
+            if resp.status_code == 200:
+                payload = resp.json()
+                items = payload if isinstance(payload, list) else [payload]
+                for idx, item in enumerate(items):
+                    if idx >= len(chunk):
+                        break
+                    cur = item.get("current", {}) if isinstance(item, dict) else {}
+                    _, _, ck = chunk[idx]
+                    WEATHER_CACHE[ck] = {
+                        "temperature_f": cur.get("temperature_2m", 54.0),
+                        "wind_mph": cur.get("wind_speed_10m", 6.5),
+                        "pressure_hpa": cur.get("surface_pressure", 1013.25),
+                        "is_dome": False,
+                        "elevation_m": 0
+                    }
+        except Exception as e:
+            print(f"[Open-Meteo Batch Notice] {e}")
 
 def fetch_live_stadium_weather(home_meta):
     lat = round(float(home_meta.get("lat", 40.0)), 2)
@@ -863,24 +897,21 @@ def fetch_live_stadium_weather(home_meta):
         cached["is_dome"] = is_dome
         return cached
 
-    # 3-Strike Retry Loop with 10-Second Timeout for Synoptic Accuracy
-    for attempt in range(3):
-        try:
-            url = (
-                f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
-                f"&current=temperature_2m,wind_speed_10m,surface_pressure"
-                f"&temperature_unit=fahrenheit&wind_speed_unit=mph"
-            )
-            resp = requests.get(url, headers=HEADERS, timeout=10)
-            if resp.status_code == 200:
-                data = resp.json().get("current", {})
-                weather_payload["temperature_f"] = data.get("temperature_2m", 54.0)
-                weather_payload["wind_mph"] = data.get("wind_speed_10m", 6.5)
-                weather_payload["pressure_hpa"] = data.get("surface_pressure", 1013.25)
-                WEATHER_CACHE[cache_key] = dict(weather_payload)
-                break
-        except Exception:
-            time.sleep(1.5)
+    try:
+        url = (
+            f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
+            f"&current=temperature_2m,wind_speed_10m,surface_pressure"
+            f"&temperature_unit=fahrenheit&wind_speed_unit=mph"
+        )
+        resp = requests.get(url, headers=HEADERS, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json().get("current", {})
+            weather_payload["temperature_f"] = data.get("temperature_2m", 54.0)
+            weather_payload["wind_mph"] = data.get("wind_speed_10m", 6.5)
+            weather_payload["pressure_hpa"] = data.get("surface_pressure", 1013.25)
+            WEATHER_CACHE[cache_key] = dict(weather_payload)
+    except Exception:
+        pass
 
     return weather_payload
 
@@ -1226,21 +1257,62 @@ def build_master_payload():
     now_iso = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
     season_year = now_utc.year if now_utc.month >= 8 else (now_utc.year - 1)
 
-    # Pull all live 2026 telemetry feeds (0 Odds API credits)
-    nflverse_epa = fetch_nflverse_live_team_epa(season_year)
-    nfl_fpi = fetch_espn_fpi("NFL")
-    ncaa_fpi = fetch_espn_fpi("NCAA")
-    nfl_standings = fetch_espn_standings("NFL")
-    ncaa_standings = fetch_espn_standings("NCAA")
-    ncaa_poll_map, live_ranked_ncaa = fetch_espn_ncaa_rankings()
-    espn_scores = fetch_espn_scores()
+    # Pull all live 2026 telemetry feeds + Odds API concurrently (~4 seconds total)
+    with ThreadPoolExecutor(max_workers=9) as pool:
+        f_nv = pool.submit(fetch_nflverse_live_team_epa, season_year)
+        f_nfpi = pool.submit(fetch_espn_fpi, "NFL")
+        f_cfpi = pool.submit(fetch_espn_fpi, "NCAA")
+        f_nst = pool.submit(fetch_espn_standings, "NFL")
+        f_cst = pool.submit(fetch_espn_standings, "NCAA")
+        f_rk = pool.submit(fetch_espn_ncaa_rankings)
+        f_sc = pool.submit(fetch_espn_scores)
+        f_nodd = pool.submit(fetch_live_odds_for_sport, "americanfootball_nfl", "NFL")
+        f_codd = pool.submit(fetch_live_odds_for_sport, "americanfootball_ncaaf", "NCAA")
 
-    # Pull live Odds API lines (4 credits total: 2 NFL + 2 NCAA)
-    nfl_odds = fetch_live_odds_for_sport("americanfootball_nfl", "NFL")
-    ncaa_odds = fetch_live_odds_for_sport("americanfootball_ncaaf", "NCAA")
+        nflverse_epa = f_nv.result()
+        nfl_fpi = f_nfpi.result()
+        ncaa_fpi = f_cfpi.result()
+        nfl_standings = f_nst.result()
+        ncaa_standings = f_cst.result()
+        ncaa_poll_map, live_ranked_ncaa = f_rk.result()
+        espn_scores = f_sc.result()
+        nfl_odds = f_nodd.result()
+        ncaa_odds = f_codd.result()
 
     combined_odds = nfl_odds + ncaa_odds
     combined_odds.sort(key=lambda g: g.get("commence_time", ""))
+
+    # Prefetch all outdoor stadium weather in 2 batched calls + upcoming NFL injuries concurrently
+    home_metas_for_weather = []
+    nfl_injury_event_ids = []
+    for game in combined_odds:
+        lg = game.get("_league", "NFL")
+        h_full = game.get("home_team", "")
+        a_full = game.get("away_team", "")
+        hm = get_team_meta(h_full, lg, nflverse_epa if lg == "NFL" else None, nfl_fpi if lg == "NFL" else ncaa_fpi, nfl_standings if lg == "NFL" else ncaa_standings, None if lg == "NFL" else ncaa_poll_map)
+        home_metas_for_weather.append(hm)
+        if lg == "NFL":
+            am = get_team_meta(a_full, "NFL", nflverse_epa, nfl_fpi, nfl_standings, None)
+            c_str = game.get("commence_time", "")
+            try:
+                dt_u = datetime.strptime(c_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                if -timedelta(hours=4) <= (dt_u - now_utc) <= timedelta(days=8):
+                    ev = espn_scores.get(f"{am['code']}_{hm['code']}")
+                    if ev and ev.get("event_id"):
+                        nfl_injury_event_ids.append((f"{am['code']}_{hm['code']}", ev["event_id"]))
+            except Exception:
+                pass
+
+    prefetch_all_stadium_weather(home_metas_for_weather)
+    prefetched_nfl_injuries = {}
+    if nfl_injury_event_ids:
+        with ThreadPoolExecutor(max_workers=8) as inj_pool:
+            fut_map = {k: inj_pool.submit(fetch_espn_game_injuries, eid, "NFL") for k, eid in nfl_injury_event_ids}
+            for k, fut in fut_map.items():
+                try:
+                    prefetched_nfl_injuries[k] = fut.result()
+                except Exception:
+                    prefetched_nfl_injuries[k] = {}
 
     games_slate = []
     seen_matchups = set()
@@ -1284,13 +1356,11 @@ def build_master_payload():
         home_inj = {"qb_replacement_delta": 0.0, "lt_or_rb_pass_pro_out": False, "is_third_string_qb": False, "injuries_summary": []}
         away_inj = {"qb_replacement_delta": 0.0, "lt_or_rb_pass_pro_out": False, "is_third_string_qb": False, "injuries_summary": []}
         if game_league == "NFL" and is_upcoming_soon:
-            espn_ev = espn_scores.get(f"{away_code}_{home_code}")
-            if espn_ev and espn_ev.get("event_id"):
-                inj_map = fetch_espn_game_injuries(espn_ev["event_id"], "NFL")
-                if home_code in inj_map:
-                    home_inj = inj_map[home_code]
-                if away_code in inj_map:
-                    away_inj = inj_map[away_code]
+            inj_map = prefetched_nfl_injuries.get(f"{away_code}_{home_code}", {})
+            if home_code in inj_map:
+                home_inj = inj_map[home_code]
+            if away_code in inj_map:
+                away_inj = inj_map[away_code]
 
         env_weather = fetch_live_stadium_weather(home_meta)
         wind_mph = 0.0 if env_weather.get("is_dome") else float(env_weather.get("wind_mph", 0.0))
@@ -1518,7 +1588,7 @@ def build_master_payload():
             "league": "NFL_NCAA",
             "week": 12,
             "last_updated": now_iso,
-            "telemetry_version": "v212_live_feeds",
+            "telemetry_version": "v213_live_feeds",
             "ranked_ncaa_teams": live_ranked_ncaa
         },
         "games": games_slate,
@@ -1533,7 +1603,7 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v212)")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v213)")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("=========================================================")
 
