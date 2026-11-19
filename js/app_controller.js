@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v237)
- * Smooth Momentum Arc & Zero-Lag Slider Edition — Synced 1:1 with onlinemath_engine.js (v312)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v238)
+ * Pure OG M1–M9 + Live 2026 Telemetry Edition — Synced 1:1 with onlinemath_engine.js (v313) & scraper.py (v210)
  *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
  *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
  *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
@@ -8,7 +8,7 @@
  *  - Organic Continuous Momentum Arc (calcMomentumArc): flows Spreads, Totals, Safe Floors & Ceilings
  *    smoothly across [-2φ, +2φ] without artificial .5 or 5-yard snapping
  *  - Strict M1–M9 Mode Firewall: Zero M11/M13 alerts or badges in Just the Tip mode
- *  - Single-source-of-truth integration with v312 Guardrails (4.0% Quarter-Kelly Cap, M4/M5 Prop Gatekeepers,
+ *  - Single-source-of-truth integration with v313 Guardrails (4.0% Quarter-Kelly Cap, M4/M5 Prop Gatekeepers,
  *    M8 Totals-Weighted FAA Delay, M9 Red-Zone Finishing & 3rd-String QB TOP Redirect, M11>M13 Elevation Override)
  *  - Preserves all 6 Clickable Ledger Vault Cards, Flagship 5-Pack Week Dropdown, Porky's Safe Floor Fades,
  *    ESPN Live Scoreboard Sync, Auto-Sweep of FINAL games, and 300s Live Wire Ticker
@@ -246,6 +246,11 @@ function renderGameGuardrailChipsHTML(gameRecord) {
     if (gameRecord.m8 && gameRecord.m8.charterDelayShock > 0) {
         chips.push(`<span style="background:rgba(168,85,247,0.16); color:#d8b4fe; border:1px solid rgba(168,85,247,0.5); padding:2px 6px; border-radius:4px; font-size:10px; font-family:var(--font-mono); font-weight:800;">✈️ FAA DELAY (${gameRecord.m8.delayTotalDragPts} TOT)</span>`);
     }
+    if (gameRecord.m9Base && Math.abs(gameRecord.m9Base.injurySpreadDiff || 0) >= 0.75) {
+        const injPts = gameRecord.m9Base.injurySpreadDiff;
+        const favTeam = injPts < 0 ? gameRecord.homeTeam : gameRecord.awayTeam;
+        chips.push(`<span style="background:rgba(244,63,94,0.16); color:#fda4af; border:1px solid rgba(244,63,94,0.5); padding:2px 6px; border-radius:4px; font-size:10px; font-family:var(--font-mono); font-weight:800;">🚑 INJURY WIRE (${favTeam} +${Math.abs(injPts).toFixed(1)} pts)</span>`);
+    }
     if (chips.length === 0) return "";
     return `<div style="display:flex; flex-wrap:wrap; justify-content:center; gap:5px; margin-bottom:8px;">${chips.join("")}</div>`;
 }
@@ -253,7 +258,15 @@ function renderGameGuardrailChipsHTML(gameRecord) {
 function isRankedNCAAGame(game) {
     const hFull = game.home_full_name || "";
     const aFull = game.away_full_name || "";
-    if (RANKED_NCAA_FULL_NAMES.includes(hFull) || RANKED_NCAA_FULL_NAMES.includes(aFull)) {
+    const homeTel = (game.team_telemetry && game.team_telemetry.home) || {};
+    const awayTel = (game.team_telemetry && game.team_telemetry.away) || {};
+    if ((homeTel.poll_rank && homeTel.poll_rank <= 25) || (awayTel.poll_rank && awayTel.poll_rank <= 25)) {
+        return true;
+    }
+    const liveRanked = (AppState.rawPayload && AppState.rawPayload.slate_info && Array.isArray(AppState.rawPayload.slate_info.ranked_ncaa_teams) && AppState.rawPayload.slate_info.ranked_ncaa_teams.length > 0)
+        ? AppState.rawPayload.slate_info.ranked_ncaa_teams
+        : RANKED_NCAA_FULL_NAMES;
+    if (liveRanked.includes(hFull) || liveRanked.includes(aFull)) {
         return true;
     }
     return RANKED_NCAA_CODES.has(game.home_team) || RANKED_NCAA_CODES.has(game.away_team);
@@ -580,7 +593,7 @@ function renderLockCellHTML() {
 }
 
 // ==========================================
-// MASTER CALCULATION PIPELINE — SINGLE SOURCE OF TRUTH (ONLINEMATH_ENGINE v312)
+// MASTER CALCULATION PIPELINE — SINGLE SOURCE OF TRUTH (ONLINEMATH_ENGINE v313)
 // ==========================================
 function recalculateAndRenderAll(opts = {}) {
     const isSliderDrag = Boolean(opts && opts.isSliderDrag);
@@ -660,7 +673,7 @@ function recalculateAndRenderAll(opts = {}) {
 
         const gameWithLeague = Object.assign({}, game, { league: gameLeague });
 
-        // SINGLE-SOURCE-OF-TRUTH M9 + M11 + M13 FAIR MARGIN SYNTHESIS (v312)
+        // SINGLE-SOURCE-OF-TRUTH M9 + M11 + M13 FAIR MARGIN SYNTHESIS (v313)
         // Mode 1 ("tip") strictly enforces M1–M9 firewall (activePsi = 0, activeElev = 0, M13 = 0)
         const m9Base = calcFullGameFairMargin(
             gameWithLeague, m8.phiCircadianPenalty, 0, "tip", vegasHomeSpread, 0, elevTip, 0.0
@@ -680,23 +693,30 @@ function recalculateAndRenderAll(opts = {}) {
         const psiBd = Number((m9Bd.fairHomeSpread - m9Base.fairHomeSpread).toFixed(2));
         const psi11_12 = (mode === "tip") ? 0 : Number((m9.fairHomeSpread - m9Base.fairHomeSpread).toFixed(2));
 
-        // Total Projection with Fix #2 (Totals-Weighted FAA Delay Drag)
+        // Pure Vegas-Independent Total Projection (Live PPG For/Against when available + M7/M8 weather/delay drag)
         const windMph = envPayload.is_dome ? 0 : (envPayload.wind_mph || 0);
         const windPenalty = Math.max(0, (windMph - 10.0) * 0.25);
         const totalIntercept = (gameLeague === "NCAA") ? 51.450 : MODEL_TOTAL_INTERCEPT;
-        const epaTotalPts = ((homeTel.net_epa_per_play || 0) + (awayTel.net_epa_per_play || 0)) * playScaler;
-        const rzTotalPts = ((homeTel.opp_rz_dvoa || 0) + (awayTel.opp_rz_dvoa || 0)) * 10.0;
-        const rawTelemetryTotal = totalIntercept + epaTotalPts + rzTotalPts - windPenalty + m8.delayTotalDragPts;
 
-        let baseTelemetryTotal = Number(rawTelemetryTotal.toFixed(1));
-        if (gameLeague === "NCAA") {
-            const envTotalShift = -windPenalty + (m7.passGameModifierYards * 0.25) + m8.delayTotalDragPts;
-            const boundedTotalDelta = Math.max(-4.2, Math.min(4.2, ((rawTelemetryTotal - vegasTotalLine) * 0.22) + envTotalShift));
-            baseTelemetryTotal = Number((vegasTotalLine + boundedTotalDelta).toFixed(1));
+        let baseTelemetryTotal;
+        const hasLivePpg = (
+            homeTel.ppg_for > 0 && homeTel.ppg_against > 0 &&
+            awayTel.ppg_for > 0 && awayTel.ppg_against > 0
+        );
+        if (hasLivePpg) {
+            const rawPaceTotal = 0.5 * (
+                Number(homeTel.ppg_for) + Number(awayTel.ppg_against) +
+                Number(awayTel.ppg_for) + Number(homeTel.ppg_against)
+            );
+            baseTelemetryTotal = Number(
+                ((0.80 * rawPaceTotal) + (0.20 * totalIntercept) - windPenalty + m8.delayTotalDragPts).toFixed(1)
+            );
         } else {
-            const nflTotalGap = rawTelemetryTotal - vegasTotalLine;
-            const boundedNflDelta = 5.0 * Math.tanh((nflTotalGap * 0.55) / 5.0);
-            baseTelemetryTotal = Number((vegasTotalLine + boundedNflDelta).toFixed(1));
+            let epaSum = (homeTel.net_epa_per_play || 0) + (awayTel.net_epa_per_play || 0);
+            if (gameLeague === "NCAA") epaSum = Math.max(-0.20, Math.min(0.20, epaSum));
+            const epaTotalPts = epaSum * playScaler;
+            const rzTotalPts = ((homeTel.opp_rz_dvoa || 0) + (awayTel.opp_rz_dvoa || 0)) * 10.0;
+            baseTelemetryTotal = Number((totalIntercept + epaTotalPts + rzTotalPts - windPenalty + m8.delayTotalDragPts).toFixed(1));
         }
 
         const m13Details = (mode === "davinci" ? m9.m13Details : m9Bd.m13Details) || {
@@ -1207,7 +1227,7 @@ function buildMasterBoardLegendHTML() {
         <div style="margin-bottom: 14px; border: 1px solid rgba(6, 182, 212, 0.45); border-radius: 8px; background: #0f172a; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); overflow: hidden;">
             <div onclick="window.toggleLegendDrawer('${legendKey}', 'fivePack', event)" style="cursor: pointer; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(90deg, rgba(6, 182, 212, 0.14), rgba(15, 23, 42, 0.9)); user-select: none;">
                 <span style="font-family: var(--font-mono); font-size: 12px; font-weight: 800; color: var(--accent-cyan); letter-spacing: 0.03em;">
-                    👙 NEW TO THE CLUB? THE DIXPIX HOUSE RULES &amp; 15-SECOND BETTING GUIDE (v312 GUARDRAILS ACTIVE)
+                    👙 NEW TO THE CLUB? THE DIXPIX HOUSE RULES &amp; 15-SECOND BETTING GUIDE (v313 GUARDRAILS ACTIVE)
                 </span>
                 <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); text-decoration: underline;">
                     ${isLegendOpen ? 'Hide House Rules ▲' : 'Click to Expand ▼'}
@@ -1226,7 +1246,7 @@ function buildMasterBoardLegendHTML() {
                         <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">2. THE VIP FLOOR CODE (SYMMETRIC 3-TIER EV)</div>
                         <div>• <span class="badge-smash" style="font-size:10px;">SMASH</span> <strong style="color:var(--accent-emerald);">(&ge;+10.0% EV):</strong> <em>Green-Light Money Shot.</em> Full-contact value (57.6%+ win rate). Pull your stack out and make it rain.</div>
                         <div style="margin-top: 4px;">• <strong style="color:#94a3b8;">Neutral Slate / No Badge (-18.9% to +9.9% EV):</strong> <em>All Tease, No Squeeze.</em> Priced too tight to drop cash on. Keep your wallet holstered.</div>
-                        <div style="margin-top: 4px;">• <span class="badge-pass" style="background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);font-size:10px;font-weight:800;">PASS</span> <strong style="color:var(--accent-danger);">(&le;-19.0% EV or Gated):</strong> <em>Grenades Dodged.</em> Public trap or v312 guardrail stop (M4 TOP, M5 Sack-Trauma, M9 3rd-String QB).</div>
+                        <div style="margin-top: 4px;">• <span class="badge-pass" style="background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);font-size:10px;font-weight:800;">PASS</span> <strong style="color:var(--accent-danger);">(&le;-19.0% EV or Gated):</strong> <em>Grenades Dodged.</em> Public trap or v313 guardrail stop (M4 TOP, M5 Sack-Trauma, M9 3rd-String QB).</div>
                     </div>
 
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
@@ -1264,7 +1284,7 @@ function renderFlagshipFivePack() {
 
     const modeTitle = AppState.activeMode === "tip"
         ? "Just the Tip Baseline (M1–M9)"
-        : (AppState.activeMode === "balls_deep" ? "Balls Deep v312 Guardrails & Floor/Ceiling (M1–M13)" : "DaVinci Organic Momentum Flow Mode");
+        : (AppState.activeMode === "balls_deep" ? "Balls Deep v313 Guardrails & Floor/Ceiling (M1–M13)" : "DaVinci Organic Momentum Flow Mode");
 
     const singleLockedStatusHTML = AppState.activeMode === "tip"
         ? `
@@ -1274,7 +1294,7 @@ function renderFlagshipFivePack() {
         `
         : `
             <div style="margin: 10px auto 4px auto; max-width: 540px; padding: 6px 14px; border-radius: 6px; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.4); font-family: var(--font-mono); font-size: 11px; color: var(--accent-emerald); font-weight: 700; text-align: center;">
-                🔓 BALLS DEEP FLOOR (-2&phi;) &amp; CEILING (+&phi;) BRACKET UNLOCKED (v312 Ψ_11,12 + M13 ACTIVE)
+                🔓 BALLS DEEP FLOOR (-2&phi;) &amp; CEILING (+&phi;) BRACKET UNLOCKED (v313 Ψ_11,12 + M13 ACTIVE)
             </div>
         `;
 
@@ -1432,7 +1452,7 @@ function renderFlagshipFivePack() {
 }
 
 // ==========================================
-// INDEPENDENT MASONRY FLEX COLUMNS WITH AUTO-SWEEP & v312 GUARDRAIL CHIPS
+// INDEPENDENT MASONRY FLEX COLUMNS WITH AUTO-SWEEP & v313 GUARDRAIL CHIPS
 // ==========================================
 function buildMasonryGridForGames(gamesSlice, numCols, cardSubtitle) {
     const rowWrapper = document.createElement("div");
@@ -1647,7 +1667,7 @@ function renderCombinatoricsDeck() {
         ? "🐷 PORKY'S SAFE FLOOR (-2φ) FADE SLIP ACTIVE (-175 ALT LINES)"
         : (AppState.activeMode === "tip"
             ? "JUST THE TIP BASELINE (M1–M9)"
-            : (AppState.activeMode === "balls_deep" ? "BALLS DEEP v312 GUARDRAILS ACTIVE" : "DAVINCI MOMENTUM ARC ACTIVE"));
+            : (AppState.activeMode === "balls_deep" ? "BALLS DEEP v313 GUARDRAILS ACTIVE" : "DAVINCI MOMENTUM ARC ACTIVE"));
 
     const selectedProps = AppState.processedProps.filter(p => AppState.selectedParlayLegs.has(p.propKey));
     const legsPayload = selectedProps.map(p => {
@@ -1829,7 +1849,7 @@ function renderCombinatoricsDeck() {
 }
 
 // ==========================================
-// 13-MODULE COMPENDIUM BOARD (WIRED TO calcMasterFibonacciAggregate v312)
+// 13-MODULE COMPENDIUM BOARD (WIRED TO calcMasterFibonacciAggregate v313)
 // ==========================================
 function renderCompendiumBoard() {
     const tbody = document.getElementById("compendium-board-body");
@@ -1932,7 +1952,7 @@ function renderTelemetryInspector() {
     const showCoupledPsi = (AppState.activeMode === "balls_deep" || AppState.activeMode === "davinci");
     const modeDisplay = AppState.activeMode === "tip"
         ? "JUST THE TIP (M1–M9)"
-        : (AppState.activeMode === "balls_deep" ? "BALLS DEEP (v312 M1–M13)" : "DAVINCI");
+        : (AppState.activeMode === "balls_deep" ? "BALLS DEEP (v313 M1–M13)" : "DAVINCI");
 
     container.className = "table-responsive";
     container.innerHTML = `
@@ -2990,4 +3010,4 @@ function renderLiveBottomTicker() {
         </div>
     `;
 }
-// === END OF APP_CONTROLLER.JS (v237) ===
+// === END OF APP_CONTROLLER.JS (v238) ===
