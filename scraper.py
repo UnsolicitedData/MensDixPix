@@ -1,5 +1,5 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v210)
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v212)
 Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
   1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
   2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
@@ -487,10 +487,23 @@ def fetch_espn_fpi(league="NCAA"):
 
     return fpi_map
 
+def parse_record_games(record_str):
+    """Parses an ESPN W-L or W-L-T string (e.g. '8-2', '7-2-1') into (wins, losses, ties, gp)."""
+    if not record_str or not isinstance(record_str, str):
+        return None
+    m = re.match(r"^\s*(\d+)\s*-\s*(\d+)(?:\s*-\s*(\d+))?\s*$", record_str)
+    if not m:
+        return None
+    w = int(m.group(1))
+    l = int(m.group(2))
+    t = int(m.group(3)) if m.group(3) else 0
+    return (w, l, t, w + l + t)
+
 def fetch_espn_standings(league="NFL"):
     """
-    Pulls live 2026 ESPN Standings (pointsFor, pointsAgainst, gamesPlayed, winPercent, streak)
-    for independent scoring pace (Totals), win streak, and FBS verification.
+    Pulls live 2026 ESPN Standings (avgPointsFor/Against, overall record W-L, gamesPlayed, winPercent, streak).
+    Safeguards against ESPN college-football duplicate stat names (where conference/home/road splits share
+    'wins'/'losses' or omit 'gamesPlayed') and enforces strict physical PPG bounds [8.0, 55.0].
     """
     if league == "NFL":
         url = "https://site.api.espn.com/apis/v2/sports/football/nfl/standings"
@@ -510,27 +523,79 @@ def fetch_espn_standings(league="NFL"):
             if not dname:
                 continue
 
+            # Keep FIRST occurrence per stat name (ESPN lists overall before conference/split duplicates)
+            # and also parse explicit overall record string ('overall' / type=='total') for true full-season GP
             smap = {}
+            overall_parsed = None
+            max_record_gp = 0
             for s in ent.get("stats", []):
                 sname = s.get("name", "")
-                if sname and s.get("value") is not None:
+                stype = (s.get("type") or "").lower()
+                disp = s.get("summary") or s.get("displayValue") or ""
+
+                if sname.lower() == "overall" or stype == "total":
+                    parsed = parse_record_games(disp)
+                    if parsed and parsed[3] > 0:
+                        overall_parsed = parsed
+
+                # Track largest W-L string as a secondary lower bound on games played
+                if sname.lower() in ("overall", "total"):
+                    p2 = parse_record_games(disp)
+                    if p2:
+                        max_record_gp = max(max_record_gp, p2[3])
+
+                if sname and sname not in smap and s.get("value") is not None:
                     try:
                         smap[sname] = float(s["value"])
                     except (ValueError, TypeError):
                         pass
 
-            wins = smap.get("wins", 0.0)
-            losses = smap.get("losses", 0.0)
-            ties = smap.get("ties", 0.0)
-            gp = max(1.0, smap.get("gamesPlayed", wins + losses + ties))
+            if overall_parsed:
+                wins, losses, ties, rec_gp = overall_parsed
+            else:
+                wins = smap.get("wins", 0.0)
+                losses = smap.get("losses", 0.0)
+                ties = smap.get("ties", 0.0)
+                rec_gp = wins + losses + ties
+
+            gp = max(1.0, float(smap.get("gamesPlayed", 0.0)), float(rec_gp), float(max_record_gp))
             pf = smap.get("pointsFor", 0.0)
             pa = smap.get("pointsAgainst", 0.0)
+
+            # Prefer ESPN's direct per-game averages when present; otherwise divide season totals by true overall GP
+            raw_avg_pf = smap.get("avgPointsFor")
+            raw_avg_pa = smap.get("avgPointsAgainst")
+
+            if raw_avg_pf is not None and 8.0 <= raw_avg_pf <= 55.0:
+                ppg_for = round(raw_avg_pf, 2)
+            elif pf > 0 and gp >= 3:
+                cand_pf = round(pf / gp, 2)
+                ppg_for = cand_pf if (8.0 <= cand_pf <= 55.0) else None
+            else:
+                ppg_for = None
+
+            if raw_avg_pa is not None and 8.0 <= raw_avg_pa <= 55.0:
+                ppg_against = round(raw_avg_pa, 2)
+            elif pa > 0 and gp >= 3:
+                cand_pa = round(pa / gp, 2)
+                ppg_against = cand_pa if (8.0 <= cand_pa <= 55.0) else None
+            else:
+                ppg_against = None
+
+            # Final sanity pair check: never emit half-valid PPG or impossible scoring paces
+            if ppg_for is None or ppg_against is None:
+                ppg_for = None
+                ppg_against = None
+
             win_pct = smap.get("winPercent", wins / gp)
+            if overall_parsed and gp > 0:
+                win_pct = wins / gp
             streak_val = smap.get("streak", 0.0)
             active_win_streak = int(streak_val) if streak_val > 0 else 0
 
-            ppg_for = round(pf / gp, 2) if pf > 0 else None
-            ppg_against = round(pa / gp, 2) if pa > 0 else None
+            point_diff_pg = round(ppg_for - ppg_against, 2) if (ppg_for is not None and ppg_against is not None) else (
+                round((pf - pa) / gp, 2) if (gp >= 3 and (pf > 0 or pa > 0)) else 0.0
+            )
 
             rec = {
                 "games_played": int(gp),
@@ -538,7 +603,7 @@ def fetch_espn_standings(league="NFL"):
                 "active_win_streak": active_win_streak,
                 "ppg_for": ppg_for,
                 "ppg_against": ppg_against,
-                "point_diff_pg": round((pf - pa) / gp, 2) if (pf > 0 or pa > 0) else 0.0,
+                "point_diff_pg": point_diff_pg,
                 "is_fbs": True
             }
             standings_map[normalize_team_key(dname)] = rec
@@ -552,7 +617,9 @@ def fetch_espn_standings(league="NFL"):
         resp = requests.get(url, headers=HEADERS, timeout=14)
         if resp.status_code == 200:
             walk_node(resp.json())
-            print(f"[ESPN Standings {league}] Loaded live PPG & records for {sum(1 for k in standings_map if not k.startswith('code:'))} teams.")
+            valid_ppg = sum(1 for k, v in standings_map.items() if not k.startswith("code:") and v.get("ppg_for") is not None)
+            total_tm = sum(1 for k in standings_map if not k.startswith("code:"))
+            print(f"[ESPN Standings {league}] Loaded {total_tm} teams ({valid_ppg} with verified PPG in [8, 55]).")
     except Exception as e:
         print(f"[ESPN Standings {league} Notice] {e}")
 
@@ -687,64 +754,73 @@ def get_team_meta(full_name, league="NFL", nflverse_map=None, fpi_map=None, stan
     code = meta["code"]
     meta["epa_rank"] = None
     meta["poll_rank"] = None
-    meta["ppg_for"] = None
-    meta["ppg_against"] = None
+    meta["off_eff"] = None
+    meta["def_eff"] = None
+    meta["off_epa_per_play"] = None
+    meta["def_epa_per_play"] = None
     meta["is_fcs"] = False
     meta["telemetry_source"] = "registry_fallback"
 
-    # 2. Overlay Live Standings (PPG For/Against, Win%, Streak)
+    # 2. Overlay Live Standings ONLY for verified full-season win streak / NFL win_pct (NEVER broken CFB PPG!)
     st_hit = lookup_by_name(standings_map, full_name, code) if standings_map else None
-    if st_hit:
-        meta["close_pct"] = st_hit["win_pct"]
+    if st_hit and st_hit.get("games_played", 0) >= 3:
         meta["streak"] = st_hit["active_win_streak"]
-        meta["ppg_for"] = st_hit["ppg_for"]
-        meta["ppg_against"] = st_hit["ppg_against"]
+        if league == "NFL":
+            meta["close_pct"] = st_hit["win_pct"]
 
-    # 3. Overlay Live Performance Efficiency (ZERO MD5 HASHES)
+    # 3. Overlay Live Performance Efficiency (ZERO MD5 HASHES, ZERO BROKEN STANDINGS PPG)
     if league == "NFL":
         nv_hit = nflverse_map.get(f"code:{code}") if nflverse_map else None
         fpi_hit = lookup_by_name(fpi_map, full_name, code) if fpi_map else None
 
+        if fpi_hit:
+            meta["off_eff"] = fpi_hit.get("off_eff")
+            meta["def_eff"] = fpi_hit.get("def_eff")
+
         if nv_hit:
-            # Real 2026 nflverse Net EPA/play blended lightly (80/20) with FPI if FPI available for stability
             if fpi_hit:
                 meta["epa"] = round((0.80 * nv_hit["net_epa_per_play"]) + (0.20 * fpi_hit["epa_equiv"]), 4)
             else:
                 meta["epa"] = nv_hit["net_epa_per_play"]
+            meta["off_epa_per_play"] = nv_hit.get("off_epa_per_play")
+            meta["def_epa_per_play"] = nv_hit.get("def_epa_per_play")
             meta["to_reg"] = nv_hit["to_reg"]
             meta["rz_dvoa"] = nv_hit["rz_dvoa"]
             meta["epa_rank"] = nv_hit.get("epa_rank")
+            if meta["epa_rank"]:
+                meta["close_pct"] = round(max(0.10, min(0.95, 1.0 - ((meta["epa_rank"] - 1) / 31.0))), 3)
             meta["telemetry_source"] = "nflverse_2026_live"
         elif fpi_hit:
             meta["epa"] = fpi_hit["epa_equiv"]
             meta["rz_dvoa"] = fpi_hit["rz_dvoa"]
             meta["epa_rank"] = fpi_hit.get("epa_rank")
+            if meta["epa_rank"]:
+                meta["close_pct"] = round(max(0.10, min(0.95, 1.0 - ((meta["epa_rank"] - 1) / 31.0))), 3)
             meta["telemetry_source"] = "espn_fpi_2026_live"
-        elif st_hit and st_hit.get("games_played", 0) >= 3:
-            meta["epa"] = round((st_hit["point_diff_pg"] * 0.65) / GOLDEN_PLAY_SCALER, 4)
-            meta["telemetry_source"] = "espn_standings_2026"
     else:
         fpi_hit = lookup_by_name(fpi_map, full_name, code) if fpi_map else None
         if fpi_hit:
             meta["epa"] = fpi_hit["epa_equiv"]
             meta["rz_dvoa"] = fpi_hit["rz_dvoa"]
             meta["epa_rank"] = fpi_hit.get("epa_rank")
+            meta["off_eff"] = fpi_hit.get("off_eff")
+            meta["def_eff"] = fpi_hit.get("def_eff")
+            # Derive closing_rank_pct cleanly across ALL 136 FBS teams (fixes 0.05 bug!)
+            if meta["epa_rank"]:
+                meta["close_pct"] = round(max(0.10, min(0.95, 1.0 - ((meta["epa_rank"] - 1) / 135.0))), 3)
             meta["telemetry_source"] = "espn_fpi_2026_live"
-        elif st_hit and st_hit.get("games_played", 0) >= 3:
-            meta["epa"] = round((st_hit["point_diff_pg"] * 0.55) / GOLDEN_PLAY_SCALER, 4)
-            meta["rz_dvoa"] = round(max(-0.22, min(0.22, -meta["epa"] * 0.45)), 3)
-            meta["telemetry_source"] = "espn_standings_2026"
         else:
-            # If ESPN FPI (all ~134 FBS teams) loaded successfully and this team isn't in FPI or FBS Standings,
-            # it is an FCS opponent! Apply true FCS neutral-field baseline instead of a fake hash.
+            # If ESPN FPI (all ~136 FBS teams) loaded and this team isn't in FPI, it is an FCS opponent
             if fpi_map and len(fpi_map) >= 80:
                 meta["is_fcs"] = True
                 norm_nm = normalize_team_key(full_name)
                 is_elite_fcs = any(kw in norm_nm for kw in ELITE_FCS_KEYWORDS)
                 fcs_fpi = -12.5 if is_elite_fcs else -23.5
                 meta["epa"] = round(fcs_fpi / GOLDEN_PLAY_SCALER, 4)
+                meta["off_eff"] = 38.0 if is_elite_fcs else 20.0
+                meta["def_eff"] = 38.0 if is_elite_fcs else 20.0
                 meta["rz_dvoa"] = 0.06 if is_elite_fcs else 0.15
-                meta["close_pct"] = 0.650 if is_elite_fcs else 0.320
+                meta["close_pct"] = 0.650 if is_elite_fcs else 0.250
                 meta["telemetry_source"] = "fcs_calibrated_tier"
 
         # Overlay live Top-25 poll rank
@@ -901,28 +977,38 @@ def calc_coupled_balls_deep_psi(home_meta, away_meta, env_weather):
     return round(max(-2.85, min(2.85, -(sign * math.sqrt(abs(phi_bio * net_tov))))), 4)
 
 def calc_independent_total_tip(home_meta, away_meta, game_league, wind_mph):
-    """100% Vegas-independent Total projection using real live PPG For/Against when available."""
+    """
+    100% Vegas-independent Total projection:
+      - NFL: Real nflverse Offensive EPA/play + Defensive EPA/play allowed (pure EPA physics)
+      - NCAA: Real ESPN FPI Offensive Efficiency (0-100) minus Defensive Efficiency (0-100)
+      - Hard physical guardrail [28.0, 78.0] guarantees zero corrupted totals.
+    """
     wind_penalty = max(0.0, (wind_mph - 10.0) * 0.25)
     total_intercept = NCAA_TOTAL_INTERCEPT if game_league == "NCAA" else MODEL_TOTAL_INTERCEPT
 
-    h_pf = home_meta.get("ppg_for")
-    h_pa = home_meta.get("ppg_against")
-    a_pf = away_meta.get("ppg_for")
-    a_pa = away_meta.get("ppg_against")
+    if game_league == "NFL":
+        h_off = home_meta.get("off_epa_per_play")
+        h_def = home_meta.get("def_epa_per_play")
+        a_off = away_meta.get("off_epa_per_play")
+        a_def = away_meta.get("def_epa_per_play")
+        if all(v is not None for v in (h_off, h_def, a_off, a_def)):
+            delta = (GOLDEN_PLAY_SCALER * 0.5) * (h_off + h_def + a_off + a_def)
+            return round(max(28.0, min(65.0, total_intercept + delta - wind_penalty)), 1)
 
-    if all(v is not None and v > 0 for v in (h_pf, h_pa, a_pf, a_pa)):
-        raw_pace_total = 0.5 * (h_pf + a_pa + a_pf + h_pa)
-        # Regress 20% toward league scoring average for out-of-sample stability (ZERO Vegas input!)
-        regressed_total = (0.80 * raw_pace_total) + (0.20 * total_intercept) - wind_penalty
-        return round(regressed_total, 1)
+    h_oe = home_meta.get("off_eff")
+    h_de = home_meta.get("def_eff")
+    a_oe = away_meta.get("off_eff")
+    a_de = away_meta.get("def_eff")
+    if all(v is not None for v in (h_oe, h_de, a_oe, a_de)):
+        scaler = 0.16 if game_league == "NCAA" else 0.12
+        eff_delta = scaler * ((h_oe - 50.0) + (a_oe - 50.0) - (h_de - 50.0) - (a_de - 50.0))
+        return round(max(28.0, min(78.0, total_intercept + eff_delta - wind_penalty)), 1)
 
-    # Pure OG fallback if live PPG unavailable (cap EPA sum on high-FPI NCAA teams)
-    epa_sum = home_meta["epa"] + away_meta["epa"]
-    if game_league == "NCAA":
-        epa_sum = max(-0.20, min(0.20, epa_sum))
+    # Pure OG fallback
+    epa_sum = max(-0.20, min(0.20, home_meta["epa"] + away_meta["epa"]))
     epa_total_pts = epa_sum * GOLDEN_PLAY_SCALER
     rz_total_pts = (home_meta["rz_dvoa"] + away_meta["rz_dvoa"]) * 10.0
-    return round(total_intercept + epa_total_pts + rz_total_pts - wind_penalty, 1)
+    return round(max(28.0, min(78.0, total_intercept + epa_total_pts + rz_total_pts - wind_penalty)), 1)
 
 def calc_ev_pct(win_prob, american_odds=-110):
     dec = (american_odds / 100.0) + 1.0 if american_odds > 0 else (100.0 / abs(american_odds)) + 1.0
@@ -1353,10 +1439,14 @@ def build_master_payload():
                 tel_obj["epa_rank"] = meta_obj["epa_rank"]
             if meta_obj.get("poll_rank") is not None:
                 tel_obj["poll_rank"] = meta_obj["poll_rank"]
-            if meta_obj.get("ppg_for") is not None:
-                tel_obj["ppg_for"] = meta_obj["ppg_for"]
-            if meta_obj.get("ppg_against") is not None:
-                tel_obj["ppg_against"] = meta_obj["ppg_against"]
+            if meta_obj.get("off_eff") is not None:
+                tel_obj["off_eff"] = meta_obj["off_eff"]
+            if meta_obj.get("def_eff") is not None:
+                tel_obj["def_eff"] = meta_obj["def_eff"]
+            if meta_obj.get("off_epa_per_play") is not None:
+                tel_obj["off_epa_per_play"] = meta_obj["off_epa_per_play"]
+            if meta_obj.get("def_epa_per_play") is not None:
+                tel_obj["def_epa_per_play"] = meta_obj["def_epa_per_play"]
             if meta_obj.get("is_fcs"):
                 tel_obj["is_fcs"] = True
 
@@ -1428,7 +1518,7 @@ def build_master_payload():
             "league": "NFL_NCAA",
             "week": 12,
             "last_updated": now_iso,
-            "telemetry_version": "v210_live_feeds",
+            "telemetry_version": "v212_live_feeds",
             "ranked_ncaa_teams": live_ranked_ncaa
         },
         "games": games_slate,
@@ -1443,7 +1533,7 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v210)")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v212)")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("=========================================================")
 
