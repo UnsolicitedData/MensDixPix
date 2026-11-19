@@ -1,5 +1,7 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v310)
+ * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v311)
+ *  - Symmetric M9 Fair Margin Fix: True full-game play volume (62.32 NFL / 68.0 NCAA), zero-safe EPA,
+ *    mismatch taper >10 pts, fixed opp_rz_dvoa sign, symmetric soft cap (zero pull-to-zero, zero bloat)
  * Core Modules 1–9 Preserved | Upgraded Guardrails & Fixed M13 Architecture:
  *  - Module 2: Hard 4.0% Quarter-Kelly Single-Bet Exposure Cap
  *  - Module 4 & 5: Unified Prop Gatekeepers (TOP Rush-Att Starvation & O-Line/RB Pass-Pro Sack-Trauma)
@@ -353,7 +355,7 @@ function calcTenZoneElevationMatrix(envPayload, circPayload = {}, mode = "tip", 
 // MODULE 13: FIXED SACRED GEOMETRY "RISE TO THE OCCASION" & INVERSE FAVORITE TRAP (M_RISE)
 // Objective Poll/Market-to-EPA Divergence x Defensive Havoc + Coach/QB Lock + M11 > M13 Override
 // ==========================================
-function calcSacredGeometryRise(gameData, vegasHomeSpread = 0, rawHomeSpread = 0, elevMatrix = null, league = "NFL") {
+function calcSacredGeometryRise(gameData, vegasHomeSpread = 0, epaDivergencePts = 0, elevMatrix = null, league = "NFL") {
     const home = (gameData.team_telemetry && gameData.team_telemetry.home) || {};
     const away = (gameData.team_telemetry && gameData.team_telemetry.away) || {};
 
@@ -371,8 +373,8 @@ function calcSacredGeometryRise(gameData, vegasHomeSpread = 0, rawHomeSpread = 0
     if (favTel.epa_rank !== undefined && favPollOrMktRank !== null) {
         normDivergence = Math.max(-1.35, Math.min(1.35, (Number(favTel.epa_rank) - favPollOrMktRank) / nScale));
     } else {
-        // Objective fallback: how much Vegas overrates the favorite relative to raw EPA spread
-        const marketEpaGap = (rawHomeSpread - vegasHomeSpread) * (homeIsUnderdog ? -1 : 1);
+        // Objective fallback using symmetric, mismatch-tapered EPA divergence (zero pull-to-zero bias)
+        const marketEpaGap = epaDivergencePts * (homeIsUnderdog ? -1 : 1);
         normDivergence = Math.max(-1.25, Math.min(1.25, marketEpaGap / 4.5));
     }
 
@@ -388,7 +390,7 @@ function calcSacredGeometryRise(gameData, vegasHomeSpread = 0, rawHomeSpread = 0
         );
     }
 
-    // Passive Dog Filter: Suppress fake spoiler boosts for passive / traded-away-defense underdogs (e.g., BC, post-Bates ATL)
+    // Passive Dog Filter: Suppress fake spoiler boosts for passive / traded-away-defense underdogs
     const passiveDogDampener = (dogHavocRatio < 0.85 && normDivergence > 0) ? 0.35 : 1.0;
 
     // 3. Venue & Schedule Spot Scalar (I_venue/spot: 1.25x primetime/night, 1.382x lookahead/hangover)
@@ -403,7 +405,7 @@ function calcSacredGeometryRise(gameData, vegasHomeSpread = 0, rawHomeSpread = 0
 
     let deltaContext = Math.max(-1.618, Math.min(1.618, normDivergence * dogHavocRatio * passiveDogDampener * spotScalar));
 
-    // 4. Live Coach / QB Roster-Sync Lock (Strips stale coaching voodoo like Tomlin/McCarthy mismatch)
+    // 4. Live Coach / QB Roster-Sync Lock
     let coachSyncBlocked = false;
     if (dogTel.coach_roster_verified === false || dogTel.hc_changed === true || gameData.stale_coach_tag === true) {
         if (deltaContext > 0) {
@@ -412,8 +414,7 @@ function calcSacredGeometryRise(gameData, vegasHomeSpread = 0, rawHomeSpread = 0
         }
     }
 
-    // 5. Hierarchy Rule #1 (Physiology Beats Emotion — M11 > M13):
-    // Zeroes out positive Road Underdog M13 lift when ascending from lowlands into Zones 8–10 on equal/short rest
+    // 5. Hierarchy Rule #1 (Physiology Beats Emotion — M11 > M13)
     let m11OverrideApplied = false;
     if (!homeIsUnderdog && elevMatrix && elevMatrix.hypoxicOverrideM13 && deltaContext > 0) {
         deltaContext = 0.0;
@@ -421,20 +422,17 @@ function calcSacredGeometryRise(gameData, vegasHomeSpread = 0, rawHomeSpread = 0
     }
 
     // 6. Sacred Geometry Bidirectional Multiplier: M_rise = 1.0 +/- (phi/pi) * (Fn/76) * deltaContext
-    // Ranked/tight games (<= 7.5) use F9 = 34; wider spoiler spots use F8 = 21
     const Fn = Math.abs(vegasHomeSpread) <= 7.5 ? FIBONACCI_TIERS.TIER_1 : FIBONACCI_TIERS.TIER_2;
     const mRiseDelta = SACRED_PHI_OVER_PI * (Fn / FIBONACCI_TIERS.SUM_F) * deltaContext;
 
-    const mRiseDog = 1.0 + mRiseDelta; // Underdog Spoiler Lift (+M_rise,dog)
-    const mRiseFav = 1.0 - mRiseDelta; // Inverse Favorite Trap Suppression (-M_rise,fav)
+    const mRiseDog = 1.0 + mRiseDelta;
+    const mRiseFav = 1.0 - mRiseDelta;
 
-    // Bidirectional prop & TD compression for favorite / lift for dog
     const propMeanMultDog = Number((1.0 + (0.382 * mRiseDelta)).toFixed(4));
     const propMeanMultFav = Number((1.0 - (0.382 * mRiseDelta)).toFixed(4));
     const tdLambdaMultDog = Number(mRiseDog.toFixed(4));
     const tdLambdaMultFav = Number(mRiseFav.toFixed(4));
 
-    // Home spread adjustment: negative moves spread toward Home; positive moves spread toward Away
     const riseHomeSpreadAdj = (homeIsUnderdog ? -1 : 1) * (mRiseDelta * 4.2);
 
     return {
@@ -454,18 +452,21 @@ function calcSacredGeometryRise(gameData, vegasHomeSpread = 0, rawHomeSpread = 0
     };
 }
 
-// MODULE 9: FULL-GAME FAIR MARGIN + RED-ZONE FINISHING + 3RD-STRING QB TOP LOOP + DAVINCI FLOW
+// MODULE 9: SYMMETRIC FULL-GAME FAIR MARGIN (v311 — ZERO PULL-TO-ZERO, ZERO BLOAT)
 function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "tip", vegasHomeSpread = null, psiElev = 0, elevMatrix = null, intensitySlider = 0.0) {
     const hfaBase = gameData.hfa_base !== undefined ? gameData.hfa_base : PI_OVER_PHI_HFA;
     const home = (gameData.team_telemetry && gameData.team_telemetry.home) || {};
     const away = (gameData.team_telemetry && gameData.team_telemetry.away) || {};
     const league = gameData.league || "NFL";
 
-    const epaDiff = (away.net_epa_per_play || 0) - (home.net_epa_per_play || 0);
+    const homeEpa = Number(home.net_epa_per_play || 0);
+    const awayEpa = Number(away.net_epa_per_play || 0);
+    const hasEpaFeed = (homeEpa !== 0 || awayEpa !== 0);
+    const epaDiff = awayEpa - homeEpa;
     const deltaTOReg = (away.turnover_reg_delta || 0) - (home.turnover_reg_delta || 0);
 
-    // Upgraded Module 9 Red-Zone TD Finishing & Road Kicker Reliability Coefficient (Delta_RZ_fin)
-    let deltaRzFin = ((away.opp_rz_dvoa || 0) - (home.opp_rz_dvoa || 0)) * 4.0;
+    // Fixed Sign: negative opp_rz_dvoa = stronger defense (good home RZ defense moves spread negative)
+    let deltaRzFin = ((home.opp_rz_dvoa || 0) - (away.opp_rz_dvoa || 0)) * 4.0;
     if (away.rz_td_pct_off !== undefined && home.rz_td_pct_def !== undefined) {
         const nRzProj = Number(away.rz_trips_proj || 3.2);
         const fgAcc = (away.fg_pct_u45 !== undefined) ? Number(away.fg_pct_u45) : 0.84;
@@ -481,19 +482,20 @@ function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "
     const homeIsThirdString = Boolean((home.qb_depth && home.qb_depth >= 3) || home.is_third_string_qb);
     const awayIsThirdString = Boolean((away.qb_depth && away.qb_depth >= 3) || away.is_third_string_qb);
     const thirdStringQbAlert = Boolean(
-        (homeIsThirdString && (away.net_epa_per_play || 0) >= 0.0) ||
-        (awayIsThirdString && (home.net_epa_per_play || 0) >= 0.0)
+        (homeIsThirdString && awayEpa >= 0.0) ||
+        (awayIsThirdString && homeEpa >= 0.0)
     );
     const thirdStringTeam = homeIsThirdString ? (gameData.home_team || "HOME") : (awayIsThirdString ? (gameData.away_team || "AWAY") : null);
 
     // Strict Mode Firewall: "tip" uses Modules 1-9 ONLY
     const activePsi = (mode === "tip") ? 0 : psiCoupled11_12;
     const activeElev = (mode === "tip") ? 0 : psiElev;
-    const effectivePlays = GOLDEN_PLAY_SCALER;
 
-    const rawTelemetryHomeSpread = (
-        (effectivePlays * epaDiff) + deltaRzFin + deltaTOReg - hfaBase - phiCirc + activePsi + activeElev
-    );
+    // True full-game offensive volume (62.32 NFL plays = GOLDEN_PLAY_SCALER * PHI; 68.0 NCAA plays)
+    const trueGamePlays = (league === "NCAA") ? 68.0 : (GOLDEN_PLAY_SCALER * GOLDEN_RATIO_PHI);
+    const epaPoints = trueGamePlays * epaDiff;
+    const rawEpaSpread = epaPoints - hfaBase;
+    const rawTelemetryHomeSpread = rawEpaSpread + deltaRzFin + deltaTOReg - phiCirc + activePsi + activeElev;
 
     let calibratedHomeSpread = rawTelemetryHomeSpread;
     let m13 = {
@@ -509,23 +511,36 @@ function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "
     };
 
     if (vegasHomeSpread !== null && vegasHomeSpread !== undefined && !isNaN(vegasHomeSpread)) {
-        m13 = calcSacredGeometryRise(gameData, vegasHomeSpread, rawTelemetryHomeSpread, elevMatrix, league);
+        const telemetryWeight = FIBONACCI_TIERS.TIER_1 / FIBONACCI_TIERS.SUM_F; // 34 / 76 = 0.44737
+
+        // Symmetric EPA residual: zero-safe when feed missing, mismatch-tapered above 10-pt spreads
+        let epaResidual = 0.0;
+        let taperedEpaGap = 0.0;
+        if (hasEpaFeed) {
+            const rawEpaGap = rawEpaSpread - vegasHomeSpread;
+            const excessSpread = Math.max(0.0, Math.abs(vegasHomeSpread) - 10.0);
+            const mismatchTaper = 1.0 / (1.0 + Math.pow(excessSpread / 10.0, 2));
+            taperedEpaGap = rawEpaGap * mismatchTaper;
+            epaResidual = 3.5 * Math.tanh((rawEpaGap * telemetryWeight) / 3.5) * mismatchTaper;
+        }
+
+        m13 = calcSacredGeometryRise(gameData, vegasHomeSpread, taperedEpaGap, elevMatrix, league);
         const m13FlowScale = (mode === "davinci")
             ? Math.max(0.0, 1.0 + (intensitySlider * (FIBONACCI_TIERS.TIER_2 / FIBONACCI_TIERS.SUM_F)))
             : 1.0;
         const activeRiseAdj = (mode === "tip") ? 0.0 : (m13.riseHomeSpreadAdj * m13FlowScale);
-        const rawWithRise = rawTelemetryHomeSpread + activeRiseAdj;
-        const rawDivergence = rawWithRise - vegasHomeSpread;
 
-        const dampedDivergence = 6.5 * Math.tanh(rawDivergence / 6.5);
-        const telemetryWeight = FIBONACCI_TIERS.TIER_1 / FIBONACCI_TIERS.SUM_F; // 34 / 76 = 0.44737
+        // Pure situational residuals + symmetric EPA residual (zero pull-to-zero, symmetric soft-cap prevents bloat)
+        const situationalDelta = deltaRzFin + deltaTOReg - phiCirc + activePsi + activeElev + activeRiseAdj;
+        const maxShift = (mode === "tip") ? 4.5 : 5.5;
+        const finalDelta = maxShift * Math.tanh((epaResidual + situationalDelta) / maxShift);
 
-        calibratedHomeSpread = vegasHomeSpread + (dampedDivergence * telemetryWeight);
+        calibratedHomeSpread = vegasHomeSpread + finalDelta;
 
-        // DaVinci Continuous Flow Spread Escalator (active on ALL spreads, including sea-level/dome games)
+        // DaVinci Continuous Flow Spread Escalator
         if (mode === "davinci" && intensitySlider !== 0) {
             const edgeVsVegas = calibratedHomeSpread - vegasHomeSpread;
-            const flowDir = edgeVsVegas !== 0 ? Math.sign(edgeVsVegas) : (rawDivergence !== 0 ? Math.sign(rawDivergence) : -1);
+            const flowDir = edgeVsVegas !== 0 ? Math.sign(edgeVsVegas) : (finalDelta !== 0 ? Math.sign(finalDelta) : -1);
             const davinciSpreadFlow = flowDir * intensitySlider * (FIBONACCI_TIERS.TIER_2 / FIBONACCI_TIERS.SUM_F) * GOLDEN_RATIO_PHI * 1.85;
             calibratedHomeSpread += davinciSpreadFlow;
         }
@@ -534,7 +549,7 @@ function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "
     return {
         fairHomeSpread: Number(calibratedHomeSpread.toFixed(2)),
         rawTelemetrySpread: Number(rawTelemetryHomeSpread.toFixed(2)),
-        epaContribution: Number((effectivePlays * epaDiff).toFixed(2)),
+        epaContribution: Number(epaPoints.toFixed(2)),
         deltaRzFin: Number(deltaRzFin.toFixed(2)),
         activeCoupledOverlay: Number(activePsi.toFixed(3)),
         mRiseMultiplier: m13.mRiseMultiplier,
@@ -799,4 +814,4 @@ function calcMasterFibonacciAggregate(moduleScores, fibLookupFn = 13, intensityS
         liveAdjustedProb: Number((pAgg * 100).toFixed(2))
     };
 }
-// === END OF ONLINEMATH_ENGINE.JS (v310) ===
+// === END OF ONLINEMATH_ENGINE.JS (v311) ===
