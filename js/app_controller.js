@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v238)
- * Pure OG M1–M9 + Live 2026 Telemetry Edition — Synced 1:1 with onlinemath_engine.js (v313) & scraper.py (v210)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v239)
+ * Pure OG M1–M9 + Live 2026 Telemetry Edition — Synced 1:1 with onlinemath_engine.js (v313) & scraper.py (v212)
  *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
  *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
  *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
@@ -693,30 +693,40 @@ function recalculateAndRenderAll(opts = {}) {
         const psiBd = Number((m9Bd.fairHomeSpread - m9Base.fairHomeSpread).toFixed(2));
         const psi11_12 = (mode === "tip") ? 0 : Number((m9.fairHomeSpread - m9Base.fairHomeSpread).toFixed(2));
 
-        // Pure Vegas-Independent Total Projection (Live PPG For/Against when available + M7/M8 weather/delay drag)
+        // Pure Vegas-Independent Total Projection (Live nflverse Off/Def EPA for NFL; Live ESPN FPI Off/Def Eff for NCAA)
         const windMph = envPayload.is_dome ? 0 : (envPayload.wind_mph || 0);
         const windPenalty = Math.max(0, (windMph - 10.0) * 0.25);
         const totalIntercept = (gameLeague === "NCAA") ? 51.450 : MODEL_TOTAL_INTERCEPT;
 
         let baseTelemetryTotal;
-        const hasLivePpg = (
-            homeTel.ppg_for > 0 && homeTel.ppg_against > 0 &&
-            awayTel.ppg_for > 0 && awayTel.ppg_against > 0
+        const hasNflSplitEpa = (
+            gameLeague === "NFL" &&
+            homeTel.off_epa_per_play !== undefined && homeTel.def_epa_per_play !== undefined &&
+            awayTel.off_epa_per_play !== undefined && awayTel.def_epa_per_play !== undefined
         );
-        if (hasLivePpg) {
-            const rawPaceTotal = 0.5 * (
-                Number(homeTel.ppg_for) + Number(awayTel.ppg_against) +
-                Number(awayTel.ppg_for) + Number(homeTel.ppg_against)
+        const hasFpiOffDef = (
+            homeTel.off_eff !== undefined && homeTel.def_eff !== undefined &&
+            awayTel.off_eff !== undefined && awayTel.def_eff !== undefined
+        );
+
+        if (hasNflSplitEpa) {
+            const epaTotDelta = (playScaler * 0.5) * (
+                Number(homeTel.off_epa_per_play) + Number(homeTel.def_epa_per_play) +
+                Number(awayTel.off_epa_per_play) + Number(awayTel.def_epa_per_play)
             );
-            baseTelemetryTotal = Number(
-                ((0.80 * rawPaceTotal) + (0.20 * totalIntercept) - windPenalty + m8.delayTotalDragPts).toFixed(1)
+            baseTelemetryTotal = Number(Math.max(28.0, Math.min(65.0, totalIntercept + epaTotDelta - windPenalty + m8.delayTotalDragPts)).toFixed(1));
+        } else if (hasFpiOffDef) {
+            const effScaler = (gameLeague === "NCAA") ? 0.16 : 0.12;
+            const effDelta = effScaler * (
+                (Number(homeTel.off_eff) - 50.0) + (Number(awayTel.off_eff) - 50.0) -
+                (Number(homeTel.def_eff) - 50.0) - (Number(awayTel.def_eff) - 50.0)
             );
+            baseTelemetryTotal = Number(Math.max(28.0, Math.min(78.0, totalIntercept + effDelta - windPenalty + m8.delayTotalDragPts)).toFixed(1));
         } else {
-            let epaSum = (homeTel.net_epa_per_play || 0) + (awayTel.net_epa_per_play || 0);
-            if (gameLeague === "NCAA") epaSum = Math.max(-0.20, Math.min(0.20, epaSum));
+            const epaSum = Math.max(-0.20, Math.min(0.20, (homeTel.net_epa_per_play || 0) + (awayTel.net_epa_per_play || 0)));
             const epaTotalPts = epaSum * playScaler;
             const rzTotalPts = ((homeTel.opp_rz_dvoa || 0) + (awayTel.opp_rz_dvoa || 0)) * 10.0;
-            baseTelemetryTotal = Number((totalIntercept + epaTotalPts + rzTotalPts - windPenalty + m8.delayTotalDragPts).toFixed(1));
+            baseTelemetryTotal = Number(Math.max(28.0, Math.min(78.0, totalIntercept + epaTotalPts + rzTotalPts - windPenalty + m8.delayTotalDragPts)).toFixed(1));
         }
 
         const m13Details = (mode === "davinci" ? m9.m13Details : m9Bd.m13Details) || {
@@ -3010,4 +3020,4 @@ function renderLiveBottomTicker() {
         </div>
     `;
 }
-// === END OF APP_CONTROLLER.JS (v238) ===
+// === END OF APP_CONTROLLER.JS (v239) ===
