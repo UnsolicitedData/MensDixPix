@@ -285,10 +285,8 @@ function calcCircadianStrain(circPayload, kickoffLocalHour) {
     };
 }
 
-// ==========================================
 // MODULE 11.2: 10-ZONE 0.1*Fz FIBONACCI ELEVATION MATRIX (PSI_ELEV) + M11 > M13 OVERRIDE
-// ==========================================
-function calcTenZoneElevationMatrix(envPayload, circPayload = {}, mode = "tip") {
+function calcTenZoneElevationMatrix(envPayload, circPayload = {}, mode = "tip", intensitySlider = 0.0) {
     const hVenueM = envPayload.elevation_m || 0;
     const hAwayM = (circPayload && circPayload.away_elev_m !== undefined) ? circPayload.away_elev_m : 150;
     const awayElevFeet = hAwayM * 3.28084;
@@ -298,7 +296,6 @@ function calcTenZoneElevationMatrix(envPayload, circPayload = {}, mode = "tip") 
         ? Number(circPayload.rest_differential_days)
         : 0;
 
-    // Compendium 10-Zone Fibonacci Elevation Table (0.1 * Fz)
     const zones = [
         { maxFt: 100,   wz: 0.1, ascPt: -0.03, descPt: -0.01 },
         { maxFt: 200,   wz: 0.2, ascPt: -0.06, descPt: -0.02 },
@@ -322,26 +319,21 @@ function calcTenZoneElevationMatrix(envPayload, circPayload = {}, mode = "tip") 
         }
     }
 
-    // Asymmetric Golden Ratio Quarter-by-Quarter Progression:
-    // Ascent (Δh >= 0): Q1 0.382 -> Q2 0.618 -> Q3 1.618 -> Q4 1.618 (Locks Pat in 2H)
-    // Descent (Δh < 0): Q1 1.618 -> Q2 1.000 -> Q3 0.618 -> Q4 0.382 (Fades Out in 2H)
     const isAscent = deltaHFeet >= 0;
     const qCurve = isAscent ? [0.382, 0.618, 1.618, 1.618] : [1.618, 1.000, 0.618, 0.382];
     const baseNetPt = isAscent ? activeZone.ascPt : activeZone.descPt;
 
-    // Mode Firewall: Strictly 0.0 in "tip" (M1-M9 baseline), active in "balls_deep" & "davinci"
-    const modeScale = (mode === "tip") ? 0.0 : (mode === "balls_deep" ? 1.0 : 1.15);
+    // Mode Firewall: 0.0 in "tip", 1.0 in "balls_deep", continuous slider scaling in "davinci"
+    const modeScale = (mode === "tip")
+        ? 0.0
+        : (mode === "balls_deep"
+            ? 1.0
+            : Math.max(0.15, 1.0 + (intensitySlider * (FIBONACCI_TIERS.TIER_3 / FIBONACCI_TIERS.SUM_F))));
 
-    // Negative psiElevPts favors the acclimated Home Team (reduces home spread)
     const psiElevPts = Number((baseNetPt * modeScale).toFixed(3));
     const rawPsiElevPts = Number(baseNetPt.toFixed(3));
 
-    // Hierarchy Rule #1 (Physiology Beats Emotion — M11 > M13):
-    // Whenever a lowland team (< 1,000 ft) ascends into Zone 8, 9, or 10 (> 2,100 ft) on equal/shorter rest,
-    // Module 11 automatically overrides and zeroes out any positive Module 13 Road Challenger boost.
     const hypoxicOverrideM13 = Boolean(isAscent && awayElevFeet < 1000 && zoneIndex >= 8 && restDelta <= 0);
-
-    // Elevation Total Drag (Lowland visitors hitting Q3/Q4 hypoxic wall suppress visitor 2H scoring)
     const elevationTotalDragPts = hypoxicOverrideM13 ? Number((baseNetPt * 0.85).toFixed(2)) : 0.0;
 
     return {
@@ -357,7 +349,6 @@ function calcTenZoneElevationMatrix(envPayload, circPayload = {}, mode = "tip") 
         elevationTotalDragPts
     };
 }
-
 // ==========================================
 // MODULE 13: FIXED SACRED GEOMETRY "RISE TO THE OCCASION" & INVERSE FAVORITE TRAP (M_RISE)
 // Objective Poll/Market-to-EPA Divergence x Defensive Havoc + Coach/QB Lock + M11 > M13 Override
@@ -463,10 +454,8 @@ function calcSacredGeometryRise(gameData, vegasHomeSpread = 0, rawHomeSpread = 0
     };
 }
 
-// ==========================================
-// MODULE 9: FULL-GAME FAIR MARGIN + RED-ZONE FINISHING + 3RD-STRING QB TOP LOOP
-// ==========================================
-function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "tip", vegasHomeSpread = null, psiElev = 0, elevMatrix = null) {
+// MODULE 9: FULL-GAME FAIR MARGIN + RED-ZONE FINISHING + 3RD-STRING QB TOP LOOP + DAVINCI FLOW
+function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "tip", vegasHomeSpread = null, psiElev = 0, elevMatrix = null, intensitySlider = 0.0) {
     const hfaBase = gameData.hfa_base !== undefined ? gameData.hfa_base : PI_OVER_PHI_HFA;
     const home = (gameData.team_telemetry && gameData.team_telemetry.home) || {};
     const away = (gameData.team_telemetry && gameData.team_telemetry.away) || {};
@@ -497,17 +486,15 @@ function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "
     );
     const thirdStringTeam = homeIsThirdString ? (gameData.home_team || "HOME") : (awayIsThirdString ? (gameData.away_team || "AWAY") : null);
 
-    // Strict Mode Firewall: "tip" uses Modules 1-9 ONLY (activePsi = 0, activeElev = 0)
+    // Strict Mode Firewall: "tip" uses Modules 1-9 ONLY
     const activePsi = (mode === "tip") ? 0 : psiCoupled11_12;
     const activeElev = (mode === "tip") ? 0 : psiElev;
     const effectivePlays = GOLDEN_PLAY_SCALER;
 
-    // 1. Pure Telemetry Unanchored Spread
     const rawTelemetryHomeSpread = (
         (effectivePlays * epaDiff) + deltaRzFin + deltaTOReg - hfaBase - phiCirc + activePsi + activeElev
     );
 
-    // 2. Module 13 Sacred Geometry Overlay & Fibonacci Tier-1 Calibration (34/76)
     let calibratedHomeSpread = rawTelemetryHomeSpread;
     let m13 = {
         mRiseMultiplier: 1.0,
@@ -523,16 +510,25 @@ function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "
 
     if (vegasHomeSpread !== null && vegasHomeSpread !== undefined && !isNaN(vegasHomeSpread)) {
         m13 = calcSacredGeometryRise(gameData, vegasHomeSpread, rawTelemetryHomeSpread, elevMatrix, league);
-        // Strict Mode Firewall: M13 Sacred Geometry only applies in Balls Deep & DaVinci modes
-        const activeRiseAdj = (mode === "tip") ? 0.0 : m13.riseHomeSpreadAdj;
+        const m13FlowScale = (mode === "davinci")
+            ? Math.max(0.0, 1.0 + (intensitySlider * (FIBONACCI_TIERS.TIER_2 / FIBONACCI_TIERS.SUM_F)))
+            : 1.0;
+        const activeRiseAdj = (mode === "tip") ? 0.0 : (m13.riseHomeSpreadAdj * m13FlowScale);
         const rawWithRise = rawTelemetryHomeSpread + activeRiseAdj;
         const rawDivergence = rawWithRise - vegasHomeSpread;
 
-        // Soft hyperbolic tangent damper prevents stale injury/roster feeds from creating cartoon spreads
         const dampedDivergence = 6.5 * Math.tanh(rawDivergence / 6.5);
         const telemetryWeight = FIBONACCI_TIERS.TIER_1 / FIBONACCI_TIERS.SUM_F; // 34 / 76 = 0.44737
 
         calibratedHomeSpread = vegasHomeSpread + (dampedDivergence * telemetryWeight);
+
+        // DaVinci Continuous Flow Spread Escalator (active on ALL spreads, including sea-level/dome games)
+        if (mode === "davinci" && intensitySlider !== 0) {
+            const edgeVsVegas = calibratedHomeSpread - vegasHomeSpread;
+            const flowDir = edgeVsVegas !== 0 ? Math.sign(edgeVsVegas) : (rawDivergence !== 0 ? Math.sign(rawDivergence) : -1);
+            const davinciSpreadFlow = flowDir * intensitySlider * (FIBONACCI_TIERS.TIER_2 / FIBONACCI_TIERS.SUM_F) * GOLDEN_RATIO_PHI * 1.85;
+            calibratedHomeSpread += davinciSpreadFlow;
+        }
     }
 
     return {
