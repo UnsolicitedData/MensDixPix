@@ -1134,11 +1134,17 @@ function buildBallsDeepBoxHTML(engineProp, isSpread) {
         `
         : "";
 
+    const floorOdds = (engineProp.marketType === "spread" || engineProp.marketType === "total") ? -175 : -190;
+    const floorEv = calcExpectedValueAndKelly((engineProp.safeFloorWinPct || 0) / 100.0, floorOdds).evPercentage;
+    const safeSmashBadge = (!engineProp.gatekeeperBlocked && floorEv >= SMASH_EV_CUTOFF)
+        ? ` <span style="background:rgba(6,182,212,0.18); color:var(--accent-cyan); border:1px solid rgba(6,182,212,0.55); padding:1px 5px; border-radius:4px; font-size:9.5px; font-weight:800;">🛡️ SAFE SMASH (+${floorEv.toFixed(1)}% EV)</span>`
+        : "";
+
     return `
         <div class="bd-preview-unlocked" style="background: ${boxBg}; border: 1px solid ${boxBorder}; flex-direction: column; align-items: stretch; gap: 4px;">
             ${boltRowHTML}
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 10.5px;">
-                <span style="color: var(--accent-cyan); font-weight: 700;">🛡️ Safe Floor (-2&phi;): ${engineProp.safeFloorLabel} (${engineProp.safeFloorWinPct}% Win)</span>
+                <span style="color: var(--accent-cyan); font-weight: 700;">🛡️ Safe Floor (-2&phi;): ${engineProp.safeFloorLabel} (${engineProp.safeFloorWinPct}% Win)${safeSmashBadge}</span>
                 <span style="color: var(--accent-gold); font-weight: 700;">🎯 Ceiling (+&phi;): ${engineProp.bdAltLabel} (${altEvStr})</span>
             </div>
         </div>
