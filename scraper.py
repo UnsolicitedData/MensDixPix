@@ -1,15 +1,23 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA MASTER SCRAPER (v205)
-- Pulls live NFL (2 credits) & NCAA FBS (2 credits) spreads and totals from The Odds API (4 credits total/run).
-- 3-Strike, 10-Second Open-Meteo Synoptic Weather Retry Loop (Zero blind 58F assumptions).
-- Full NFL 32-Team + NCAA FBS Altitude & Telemetry Registry (Wyoming 2200m, Air Force 2026m, Colorado 1634m, BYU 1417m, Utah 1420m, etc.).
-- Dual-League Zero-Credit ESPN Scoreboard Auto-Grader (NFL + College Football).
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v210)
+Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
+  1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
+  2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
+     (true Offensive EPA/play - Defensive EPA/play allowed, turnover regression, red-zone defense proxy).
+  3. Live 2026 NCAA FBS & NFL FPI: Pulls ESPN Power Index (fitt/v3) + ESPN Standings (PPG For/Against,
+     active win streaks, closing win%) + True FCS Tiering (eliminates random MD5 hash EPA bugs).
+  4. Live 2026 AP/CFP Top-25 Rankings: Pulls real weekly poll_rank for M13 divergence & Ranked NCAA filter.
+  5. Live 2026 NFL Injury Reports: Pulls ESPN game summary injuries to populate qb_replacement_delta,
+     lt_or_rb_pass_pro_out, and injuries_summary automatically.
+  6. 3-Strike Open-Meteo Synoptic Weather + Zero-Credit ESPN Scoreboard Auto-Grader (NFL + NCAA).
 """
 
-import hashlib
+import csv
+import io
 import json
 import math
 import os
+import re
 import time
 import urllib.request
 import urllib.error
@@ -23,7 +31,7 @@ ODDS_API_KEY = os.environ.get("DIXPIX_ODDS_API_KEY", "44660163df1724ea28bfc8022e
 API_KEY = ODDS_API_KEY
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) DixPixQuantEngine/3.5",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) DixPixQuantEngine/4.0",
     "Accept": "application/json"
 }
 
@@ -37,7 +45,8 @@ LOGISTIC_K_TIGHT = GOLDEN_RATIO_PHI / (4.0 * math.pi)  # ~0.12875903
 SMASH_EV_THRESHOLD = 10.0  # +10.0% EV cutoff (~57.62% Win Prob at -110)
 
 # ==============================================================================
-# 1. MASTER 32-TEAM NFL TELEMETRY & STADIUM REGISTRY
+# 1. MASTER 32-TEAM NFL STADIUM & BASELINE FALLBACK REGISTRY
+#    (Live nflverse 2026 EPA/Turnovers + ESPN Standings/FPI override baseline stats)
 # ==============================================================================
 NFL_TEAM_REGISTRY = {
     "Arizona Cardinals":     {"code": "ARI", "lat": 33.5276, "lon": -112.2626, "elev_m": 328,  "is_dome": True,  "tz": -7, "epa": -0.015, "to_reg": 0.1,  "close_pct": 0.480, "streak": 1, "rz_dvoa": 0.02},
@@ -75,7 +84,8 @@ NFL_TEAM_REGISTRY = {
 }
 
 # ==============================================================================
-# 2. NCAA FBS MARQUEE & HIGH-ALTITUDE STADIUM REGISTRY (+ DYNAMIC FALLBACK)
+# 2. NCAA STADIUM COORDINATES, ALTITUDE & TIMEZONE REGISTRY
+#    (Live ESPN FPI + ESPN Standings override performance metrics; zero MD5 hashes!)
 # ==============================================================================
 NCAA_TEAM_REGISTRY = {
     # High-Altitude Mountain West / Big 12 Venues (Zones 7-10)
@@ -83,16 +93,19 @@ NCAA_TEAM_REGISTRY = {
     "Air Force Falcons":          {"code": "AFA",  "lat": 38.9969, "lon": -104.8436, "elev_m": 2026, "is_dome": False, "tz": -7, "epa": 0.015,  "to_reg": -0.2, "close_pct": 0.580, "streak": 2, "rz_dvoa": -0.06},
     "Colorado Buffaloes":         {"code": "COLO", "lat": 40.0094, "lon": -105.2669, "elev_m": 1634, "is_dome": False, "tz": -7, "epa": 0.095,  "to_reg": -0.4, "close_pct": 0.790, "streak": 3, "rz_dvoa": -0.14},
     "New Mexico Lobos":           {"code": "UNM",  "lat": 35.0672, "lon": -106.6283, "elev_m": 1554, "is_dome": False, "tz": -7, "epa": -0.010, "to_reg": 0.3,  "close_pct": 0.490, "streak": 1, "rz_dvoa": 0.05},
+    "Colorado State Rams":        {"code": "CSU",  "lat": 40.5700, "lon": -105.0886, "elev_m": 1525, "is_dome": False, "tz": -7, "epa": 0.032,  "to_reg": -0.1, "close_pct": 0.620, "streak": 2, "rz_dvoa": -0.05},
     "Utah State Aggies":          {"code": "USU",  "lat": 41.7516, "lon": -111.8116, "elev_m": 1435, "is_dome": False, "tz": -7, "epa": -0.040, "to_reg": 0.3,  "close_pct": 0.390, "streak": 0, "rz_dvoa": 0.08},
     "Utah Utes":                  {"code": "UTAH", "lat": 40.7600, "lon": -111.8489, "elev_m": 1420, "is_dome": False, "tz": -7, "epa": 0.045,  "to_reg": -0.2, "close_pct": 0.680, "streak": 1, "rz_dvoa": -0.11},
     "BYU Cougars":                {"code": "BYU",  "lat": 40.2575, "lon": -111.6545, "elev_m": 1417, "is_dome": False, "tz": -7, "epa": 0.110,  "to_reg": -0.4, "close_pct": 0.840, "streak": 3, "rz_dvoa": -0.15},
     "Nevada Wolf Pack":           {"code": "NEV",  "lat": 39.5469, "lon": -119.8175, "elev_m": 1405, "is_dome": False, "tz": -8, "epa": -0.055, "to_reg": 0.2,  "close_pct": 0.360, "streak": 0, "rz_dvoa": 0.07},
+    "New Mexico State Aggies":    {"code": "NMSU", "lat": 32.2797, "lon": -106.7411, "elev_m": 1190, "is_dome": False, "tz": -7, "epa": -0.120, "to_reg": 0.2,  "close_pct": 0.350, "streak": 0, "rz_dvoa": 0.08},
     "UTEP Miners":                {"code": "UTEP", "lat": 31.7733, "lon": -106.5078, "elev_m": 1189, "is_dome": False, "tz": -7, "epa": -0.075, "to_reg": 0.4,  "close_pct": 0.310, "streak": 0, "rz_dvoa": 0.10},
-    "Colorado State Rams":        {"code": "CSU",  "lat": 40.5700, "lon": -105.0886, "elev_m": 1525, "is_dome": False, "tz": -7, "epa": 0.032,  "to_reg": -0.1, "close_pct": 0.620, "streak": 2, "rz_dvoa": -0.05},
     "Appalachian State Mountaineers": {"code": "APP", "lat": 36.2114, "lon": -81.6856, "elev_m": 1016, "is_dome": False, "tz": -5, "epa": 0.025, "to_reg": 0.0, "close_pct": 0.590, "streak": 1, "rz_dvoa": -0.03},
     "Texas Tech Red Raiders":     {"code": "TTU",  "lat": 33.5911, "lon": -101.8728, "elev_m": 976,  "is_dome": False, "tz": -6, "epa": 0.048,  "to_reg": -0.1, "close_pct": 0.650, "streak": 1, "rz_dvoa": -0.04},
     "Boise State Broncos":        {"code": "BSU",  "lat": 43.6028, "lon": -116.1958, "elev_m": 823,  "is_dome": False, "tz": -7, "epa": 0.142,  "to_reg": -0.4, "close_pct": 0.885, "streak": 5, "rz_dvoa": -0.18},
-    # Top-25 & Power-4 Marquee Programs
+    "Arizona Wildcats":           {"code": "ARIZ", "lat": 32.2289, "lon": -110.9489, "elev_m": 738,  "is_dome": False, "tz": -7, "epa": 0.060,  "to_reg": 0.0,  "close_pct": 0.600, "streak": 1, "rz_dvoa": -0.05},
+    "Arizona State Sun Devils":   {"code": "ASU",  "lat": 33.4264, "lon": -111.9325, "elev_m": 355,  "is_dome": False, "tz": -7, "epa": 0.050,  "to_reg": 0.0,  "close_pct": 0.620, "streak": 1, "rz_dvoa": -0.05},
+    # Power-4 & Major FBS Programs
     "Ohio State Buckeyes":        {"code": "OSU",  "lat": 40.0017, "lon": -83.0197,  "elev_m": 217,  "is_dome": False, "tz": -5, "epa": 0.185,  "to_reg": -0.4, "close_pct": 0.945, "streak": 4, "rz_dvoa": -0.22},
     "Oregon Ducks":               {"code": "ORE",  "lat": 44.0583, "lon": -123.0686, "elev_m": 130,  "is_dome": False, "tz": -8, "epa": 0.178,  "to_reg": -0.4, "close_pct": 0.935, "streak": 6, "rz_dvoa": -0.20},
     "Texas Longhorns":            {"code": "TEX",  "lat": 30.2836, "lon": -97.7325,  "elev_m": 165,  "is_dome": False, "tz": -6, "epa": 0.168,  "to_reg": -0.3, "close_pct": 0.915, "streak": 3, "rz_dvoa": -0.19},
@@ -115,54 +128,632 @@ NCAA_TEAM_REGISTRY = {
     "Pittsburgh Panthers":        {"code": "PITT", "lat": 40.4468, "lon": -80.0158,  "elev_m": 223,  "is_dome": False, "tz": -5, "epa": 0.042,  "to_reg": 0.1,  "close_pct": 0.640, "streak": 0, "rz_dvoa": -0.05},
     "West Virginia Mountaineers": {"code": "WVU",  "lat": 39.6503, "lon": -79.9547,  "elev_m": 325,  "is_dome": False, "tz": -5, "epa": 0.028,  "to_reg": 0.1,  "close_pct": 0.595, "streak": 1, "rz_dvoa": -0.03},
     "Michigan Wolverines":        {"code": "MICH", "lat": 42.2658, "lon": -83.7486,  "elev_m": 268,  "is_dome": False, "tz": -5, "epa": 0.018,  "to_reg": 0.1,  "close_pct": 0.610, "streak": 1, "rz_dvoa": -0.06},
+    "Michigan State Spartans":    {"code": "MSU",  "lat": 42.7281, "lon": -84.4847,  "elev_m": 258,  "is_dome": False, "tz": -5, "epa": 0.005,  "to_reg": 0.0,  "close_pct": 0.500, "streak": 0, "rz_dvoa": 0.00},
     "USC Trojans":                {"code": "USC",  "lat": 34.0142, "lon": -118.2878, "elev_m": 52,   "is_dome": False, "tz": -8, "epa": 0.065,  "to_reg": 0.1,  "close_pct": 0.680, "streak": 1, "rz_dvoa": -0.07},
+    "UCLA Bruins":                {"code": "UCLA", "lat": 34.1613, "lon": -118.1676, "elev_m": 251,  "is_dome": False, "tz": -8, "epa": -0.010, "to_reg": 0.0,  "close_pct": 0.480, "streak": 0, "rz_dvoa": 0.02},
     "Washington Huskies":         {"code": "WASH", "lat": 47.6503, "lon": -122.3017, "elev_m": 12,   "is_dome": False, "tz": -8, "epa": 0.040,  "to_reg": 0.0,  "close_pct": 0.630, "streak": 1, "rz_dvoa": -0.05},
+    "Nebraska Cornhuskers":       {"code": "NEB",  "lat": 40.8206, "lon": -96.7056,  "elev_m": 358,  "is_dome": False, "tz": -6, "epa": 0.045,  "to_reg": 0.0,  "close_pct": 0.580, "streak": 1, "rz_dvoa": -0.04},
+    "Iowa Hawkeyes":              {"code": "IOWA", "lat": 41.6586, "lon": -91.5511,  "elev_m": 204,  "is_dome": False, "tz": -6, "epa": 0.060,  "to_reg": -0.1, "close_pct": 0.680, "streak": 1, "rz_dvoa": -0.10},
+    "Illinois Fighting Illini":   {"code": "ILL",  "lat": 40.0992, "lon": -88.2359,  "elev_m": 225,  "is_dome": False, "tz": -6, "epa": 0.055,  "to_reg": 0.0,  "close_pct": 0.650, "streak": 1, "rz_dvoa": -0.05},
+    "Wisconsin Badgers":          {"code": "WIS",  "lat": 43.0700, "lon": -89.4128,  "elev_m": 265,  "is_dome": False, "tz": -6, "epa": 0.030,  "to_reg": 0.0,  "close_pct": 0.550, "streak": 0, "rz_dvoa": -0.03},
+    "Minnesota Golden Gophers":   {"code": "MINN", "lat": 44.9765, "lon": -93.2246,  "elev_m": 255,  "is_dome": False, "tz": -6, "epa": 0.035,  "to_reg": 0.0,  "close_pct": 0.560, "streak": 0, "rz_dvoa": -0.04},
+    "Purdue Boilermakers":        {"code": "PUR",  "lat": 40.4344, "lon": -86.9184,  "elev_m": 195,  "is_dome": False, "tz": -5, "epa": -0.080, "to_reg": 0.2,  "close_pct": 0.350, "streak": 0, "rz_dvoa": 0.08},
+    "Maryland Terrapins":         {"code": "MD",   "lat": 38.9903, "lon": -76.9475,  "elev_m": 41,   "is_dome": False, "tz": -5, "epa": -0.015, "to_reg": 0.1,  "close_pct": 0.480, "streak": 0, "rz_dvoa": 0.02},
+    "Rutgers Scarlet Knights":    {"code": "RUTG", "lat": 40.5138, "lon": -74.4649,  "elev_m": 26,   "is_dome": False, "tz": -5, "epa": 0.010,  "to_reg": 0.0,  "close_pct": 0.520, "streak": 0, "rz_dvoa": 0.00},
+    "Northwestern Wildcats":      {"code": "NW",   "lat": 42.0653, "lon": -87.6924,  "elev_m": 182,  "is_dome": False, "tz": -6, "epa": -0.025, "to_reg": 0.1,  "close_pct": 0.450, "streak": 0, "rz_dvoa": 0.03},
+    "Oklahoma Sooners":           {"code": "OU",   "lat": 35.2059, "lon": -97.4424,  "elev_m": 357,  "is_dome": False, "tz": -6, "epa": 0.065,  "to_reg": 0.0,  "close_pct": 0.660, "streak": 1, "rz_dvoa": -0.07},
+    "Missouri Tigers":            {"code": "MIZZ", "lat": 38.9358, "lon": -92.3332,  "elev_m": 225,  "is_dome": False, "tz": -6, "epa": 0.075,  "to_reg": -0.1, "close_pct": 0.700, "streak": 1, "rz_dvoa": -0.08},
+    "Florida Gators":             {"code": "FLA",  "lat": 29.6500, "lon": -82.3486,  "elev_m": 48,   "is_dome": False, "tz": -5, "epa": 0.045,  "to_reg": 0.0,  "close_pct": 0.580, "streak": 1, "rz_dvoa": -0.04},
+    "Auburn Tigers":              {"code": "AUB",  "lat": 32.6023, "lon": -85.4892,  "elev_m": 216,  "is_dome": False, "tz": -6, "epa": 0.040,  "to_reg": 0.0,  "close_pct": 0.560, "streak": 0, "rz_dvoa": -0.04},
+    "Arkansas Razorbacks":        {"code": "ARK",  "lat": 36.0681, "lon": -94.1789,  "elev_m": 408,  "is_dome": False, "tz": -6, "epa": 0.025,  "to_reg": 0.0,  "close_pct": 0.530, "streak": 0, "rz_dvoa": -0.02},
+    "Kentucky Wildcats":          {"code": "UK",   "lat": 38.0227, "lon": -84.5053,  "elev_m": 298,  "is_dome": False, "tz": -5, "epa": 0.015,  "to_reg": 0.0,  "close_pct": 0.520, "streak": 0, "rz_dvoa": -0.02},
+    "Vanderbilt Commodores":      {"code": "VAN",  "lat": 36.1440, "lon": -86.8087,  "elev_m": 173,  "is_dome": False, "tz": -6, "epa": 0.020,  "to_reg": 0.0,  "close_pct": 0.540, "streak": 0, "rz_dvoa": -0.02},
+    "Mississippi State Bulldogs": {"code": "MSST", "lat": 33.4563, "lon": -88.7934,  "elev_m": 115,  "is_dome": False, "tz": -6, "epa": -0.030, "to_reg": 0.1,  "close_pct": 0.420, "streak": 0, "rz_dvoa": 0.04},
+    "Kansas Jayhawks":            {"code": "KAN",  "lat": 38.9628, "lon": -95.2464,  "elev_m": 265,  "is_dome": False, "tz": -6, "epa": 0.040,  "to_reg": 0.0,  "close_pct": 0.550, "streak": 0, "rz_dvoa": -0.03},
+    "TCU Horned Frogs":           {"code": "TCU",  "lat": 32.7097, "lon": -97.3681,  "elev_m": 185,  "is_dome": False, "tz": -6, "epa": 0.035,  "to_reg": 0.0,  "close_pct": 0.560, "streak": 0, "rz_dvoa": -0.03},
+    "Baylor Bears":               {"code": "BAY",  "lat": 31.5582, "lon": -97.1157,  "elev_m": 122,  "is_dome": False, "tz": -6, "epa": 0.025,  "to_reg": 0.0,  "close_pct": 0.540, "streak": 0, "rz_dvoa": -0.02},
+    "Houston Cougars":            {"code": "HOU",  "lat": 29.7219, "lon": -95.3491,  "elev_m": 15,   "is_dome": False, "tz": -6, "epa": 0.030,  "to_reg": 0.0,  "close_pct": 0.550, "streak": 0, "rz_dvoa": -0.02},
+    "Oklahoma State Cowboys":     {"code": "OKST", "lat": 36.1257, "lon": -97.0665,  "elev_m": 295,  "is_dome": False, "tz": -6, "epa": 0.015,  "to_reg": 0.0,  "close_pct": 0.500, "streak": 0, "rz_dvoa": 0.00},
+    "UCF Knights":                {"code": "UCF",  "lat": 28.6080, "lon": -81.1924,  "elev_m": 20,   "is_dome": False, "tz": -5, "epa": 0.020,  "to_reg": 0.0,  "close_pct": 0.520, "streak": 0, "rz_dvoa": -0.01},
+    "Cincinnati Bearcats":        {"code": "CIN",  "lat": 39.1312, "lon": -84.5162,  "elev_m": 250,  "is_dome": False, "tz": -5, "epa": 0.030,  "to_reg": 0.0,  "close_pct": 0.540, "streak": 0, "rz_dvoa": -0.02},
+    "Georgia Tech Yellow Jackets":{"code": "GT",   "lat": 33.7724, "lon": -84.3928,  "elev_m": 286,  "is_dome": False, "tz": -5, "epa": 0.040,  "to_reg": 0.0,  "close_pct": 0.580, "streak": 1, "rz_dvoa": -0.03},
+    "Wake Forest Demon Deacons":  {"code": "WAKE", "lat": 36.1306, "lon": -80.2553,  "elev_m": 272,  "is_dome": False, "tz": -5, "epa": 0.000,  "to_reg": 0.0,  "close_pct": 0.480, "streak": 0, "rz_dvoa": 0.01},
+    "Duke Blue Devils":           {"code": "DUKE", "lat": 35.9953, "lon": -78.9417,  "elev_m": 115,  "is_dome": False, "tz": -5, "epa": 0.045,  "to_reg": -0.1, "close_pct": 0.620, "streak": 1, "rz_dvoa": -0.05},
+    "North Carolina Tar Heels":   {"code": "UNC",  "lat": 35.9069, "lon": -79.0479,  "elev_m": 146,  "is_dome": False, "tz": -5, "epa": 0.020,  "to_reg": 0.0,  "close_pct": 0.530, "streak": 0, "rz_dvoa": -0.01},
+    "NC State Wolfpack":          {"code": "NCST", "lat": 35.8008, "lon": -78.7195,  "elev_m": 122,  "is_dome": False, "tz": -5, "epa": 0.020,  "to_reg": 0.0,  "close_pct": 0.530, "streak": 0, "rz_dvoa": -0.01},
+    "Virginia Tech Hokies":       {"code": "VT",   "lat": 37.2200, "lon": -80.4180,  "elev_m": 627,  "is_dome": False, "tz": -5, "epa": 0.035,  "to_reg": 0.0,  "close_pct": 0.560, "streak": 0, "rz_dvoa": -0.03},
+    "Virginia Cavaliers":         {"code": "UVA",  "lat": 38.0311, "lon": -78.5137,  "elev_m": 168,  "is_dome": False, "tz": -5, "epa": 0.005,  "to_reg": 0.0,  "close_pct": 0.500, "streak": 0, "rz_dvoa": 0.00},
+    "Boston College Eagles":      {"code": "BC",   "lat": 42.3351, "lon": -71.1664,  "elev_m": 56,   "is_dome": False, "tz": -5, "epa": 0.010,  "to_reg": 0.0,  "close_pct": 0.520, "streak": 0, "rz_dvoa": 0.00},
+    "Florida State Seminoles":    {"code": "FSU",  "lat": 30.4381, "lon": -84.3044,  "elev_m": 32,   "is_dome": False, "tz": -5, "epa": 0.020,  "to_reg": 0.0,  "close_pct": 0.520, "streak": 0, "rz_dvoa": -0.01},
+    "California Golden Bears":    {"code": "CAL",  "lat": 37.8710, "lon": -122.2508, "elev_m": 135,  "is_dome": False, "tz": -8, "epa": 0.025,  "to_reg": 0.0,  "close_pct": 0.540, "streak": 0, "rz_dvoa": -0.02},
+    "Stanford Cardinal":          {"code": "STAN", "lat": 37.4345, "lon": -122.1611, "elev_m": 25,   "is_dome": False, "tz": -8, "epa": -0.045, "to_reg": 0.1,  "close_pct": 0.400, "streak": 0, "rz_dvoa": 0.04},
     "Tulane Green Wave":          {"code": "TULN", "lat": 29.9447, "lon": -90.1167,  "elev_m": 2,    "is_dome": False, "tz": -6, "epa": 0.118,  "to_reg": -0.4, "close_pct": 0.835, "streak": 4, "rz_dvoa": -0.14},
     "Army Black Knights":         {"code": "ARMY", "lat": 41.3875, "lon": -73.9642,  "elev_m": 102,  "is_dome": False, "tz": -5, "epa": 0.115,  "to_reg": -0.5, "close_pct": 0.840, "streak": 4, "rz_dvoa": -0.15},
+    "Navy Midshipmen":            {"code": "NAVY", "lat": 38.9847, "lon": -76.5072,  "elev_m": 12,   "is_dome": False, "tz": -5, "epa": 0.060,  "to_reg": -0.2, "close_pct": 0.700, "streak": 2, "rz_dvoa": -0.06},
     "UNLV Rebels":                {"code": "UNLV", "lat": 36.0909, "lon": -115.1833, "elev_m": 610,  "is_dome": True,  "tz": -8, "epa": 0.098,  "to_reg": -0.3, "close_pct": 0.805, "streak": 2, "rz_dvoa": -0.12},
-    "Syracuse Orange":            {"code": "SYR",  "lat": 43.0361, "lon": -76.1364,  "elev_m": 165,  "is_dome": True,  "tz": -5, "epa": 0.038,  "to_reg": 0.1,  "close_pct": 0.625, "streak": 1, "rz_dvoa": -0.04}
+    "Syracuse Orange":            {"code": "SYR",  "lat": 43.0361, "lon": -76.1364,  "elev_m": 165,  "is_dome": True,  "tz": -5, "epa": 0.038,  "to_reg": 0.1,  "close_pct": 0.625, "streak": 1, "rz_dvoa": -0.04},
+    "San Diego State Aztecs":     {"code": "SDSU", "lat": 32.7844, "lon": -117.1228, "elev_m": 14,   "is_dome": False, "tz": -8, "epa": -0.025, "to_reg": 0.1,  "close_pct": 0.450, "streak": 0, "rz_dvoa": 0.02},
+    "Fresno State Bulldogs":      {"code": "FRES", "lat": 36.8143, "lon": -119.7580, "elev_m": 99,   "is_dome": False, "tz": -8, "epa": 0.030,  "to_reg": 0.0,  "close_pct": 0.560, "streak": 0, "rz_dvoa": -0.02},
+    "San Jose State Spartans":    {"code": "SJSU", "lat": 37.3197, "lon": -121.8683, "elev_m": 29,   "is_dome": False, "tz": -8, "epa": 0.010,  "to_reg": 0.0,  "close_pct": 0.520, "streak": 0, "rz_dvoa": 0.00},
+    "Hawaii Rainbow Warriors":    {"code": "HAW",  "lat": 21.2943, "lon": -157.8160, "elev_m": 12,   "is_dome": False, "tz": -10,"epa": -0.050, "to_reg": 0.1,  "close_pct": 0.400, "streak": 0, "rz_dvoa": 0.05},
+    "Oregon State Beavers":       {"code": "ORST", "lat": 44.5594, "lon": -123.2814, "elev_m": 72,   "is_dome": False, "tz": -8, "epa": 0.010,  "to_reg": 0.0,  "close_pct": 0.500, "streak": 0, "rz_dvoa": 0.00},
+    "Washington State Cougars":   {"code": "WSU",  "lat": 46.7319, "lon": -117.1604, "elev_m": 775,  "is_dome": False, "tz": -8, "epa": 0.045,  "to_reg": -0.1, "close_pct": 0.620, "streak": 1, "rz_dvoa": -0.04},
+    "Memphis Tigers":             {"code": "MEM",  "lat": 35.1209, "lon": -89.9771,  "elev_m": 85,   "is_dome": False, "tz": -6, "epa": 0.070,  "to_reg": -0.1, "close_pct": 0.720, "streak": 1, "rz_dvoa": -0.06},
+    "South Florida Bulls":        {"code": "USF",  "lat": 27.9759, "lon": -82.5033,  "elev_m": 12,   "is_dome": False, "tz": -5, "epa": 0.015,  "to_reg": 0.0,  "close_pct": 0.520, "streak": 0, "rz_dvoa": -0.01},
+    "East Carolina Pirates":      {"code": "ECU",  "lat": 35.5964, "lon": -77.3652,  "elev_m": 17,   "is_dome": False, "tz": -5, "epa": 0.005,  "to_reg": 0.0,  "close_pct": 0.500, "streak": 0, "rz_dvoa": 0.00},
+    "UTSA Roadrunners":           {"code": "UTSA", "lat": 29.4169, "lon": -98.4789,  "elev_m": 198,  "is_dome": True,  "tz": -6, "epa": 0.025,  "to_reg": 0.0,  "close_pct": 0.550, "streak": 0, "rz_dvoa": -0.02},
+    "UConn Huskies":              {"code": "CONN", "lat": 41.7596, "lon": -72.6188,  "elev_m": 17,   "is_dome": False, "tz": -5, "epa": 0.010,  "to_reg": 0.0,  "close_pct": 0.520, "streak": 0, "rz_dvoa": 0.00},
+    "UMass Minutemen":            {"code": "MASS", "lat": 42.3774, "lon": -72.5361,  "elev_m": 58,   "is_dome": False, "tz": -5, "epa": -0.180, "to_reg": 0.2,  "close_pct": 0.250, "streak": 0, "rz_dvoa": 0.14},
+    "Liberty Flames":             {"code": "LIB",  "lat": 37.3544, "lon": -79.1753,  "elev_m": 286,  "is_dome": False, "tz": -5, "epa": 0.055,  "to_reg": -0.1, "close_pct": 0.680, "streak": 1, "rz_dvoa": -0.05},
+    "James Madison Dukes":        {"code": "JMU",  "lat": 38.4354, "lon": -78.8732,  "elev_m": 412,  "is_dome": False, "tz": -5, "epa": 0.075,  "to_reg": -0.2, "close_pct": 0.740, "streak": 2, "rz_dvoa": -0.08},
+    "North Dakota State Bison":   {"code": "NDSU", "lat": 46.9033, "lon": -96.8017,  "elev_m": 275,  "is_dome": True,  "tz": -6, "epa": -0.220, "to_reg": 0.0,  "close_pct": 0.750, "streak": 3, "rz_dvoa": -0.04},
+    "Wofford Terriers":           {"code": "WOF",  "lat": 34.9616, "lon": -81.9333,  "elev_m": 245,  "is_dome": False, "tz": -5, "epa": -0.600, "to_reg": 0.2,  "close_pct": 0.300, "streak": 0, "rz_dvoa": 0.15},
+    "Chattanooga Mocs":           {"code": "UTC",  "lat": 35.0365, "lon": -85.3156,  "elev_m": 206,  "is_dome": False, "tz": -5, "epa": -0.580, "to_reg": 0.2,  "close_pct": 0.350, "streak": 0, "rz_dvoa": 0.14},
+    "Samford Bulldogs":           {"code": "SAM",  "lat": 33.4658, "lon": -86.7950,  "elev_m": 215,  "is_dome": False, "tz": -6, "epa": -0.600, "to_reg": 0.2,  "close_pct": 0.300, "streak": 0, "rz_dvoa": 0.15},
+    "Tennessee Tech Golden Eagles":{"code": "TNTC","lat": 36.1783, "lon": -85.5078,  "elev_m": 340,  "is_dome": False, "tz": -6, "epa": -0.580, "to_reg": 0.2,  "close_pct": 0.320, "streak": 0, "rz_dvoa": 0.14}
 }
 
-ESPN_CODE_MAP = {"WSH": "WAS", "JAC": "JAX"}
+# Known elite FCS programs (when playing FBS opponents, closer to -12 FPI than generic -23 FPI)
+ELITE_FCS_KEYWORDS = {
+    "north dakota state", "south dakota state", "montana state", "montana grizzlies",
+    "south dakota coyotes", "villanova", "idaho vandals", "uc davis", "tarleton", "mercer"
+}
+
+ESPN_CODE_MAP = {"WSH": "WAS", "JAC": "JAX", "LA": "LAR"}
 WEATHER_CACHE = {}
 
-def get_team_meta(full_name, league="NFL"):
+# Name aliases for matching Odds API team names to ESPN FPI / Standings names
+TEAM_NAME_ALIASES = {
+    "ole miss": "ole miss rebels",
+    "mississippi": "ole miss rebels",
+    "uconn": "uconn huskies",
+    "connecticut": "uconn huskies",
+    "umass": "umass minutemen",
+    "massachusetts": "umass minutemen",
+    "pitt": "pittsburgh panthers",
+    "nc state": "nc state wolfpack",
+    "north carolina state": "nc state wolfpack",
+    "app state": "appalachian state mountaineers",
+    "appalachian state": "appalachian state mountaineers",
+    "ul monroe": "louisiana monroe warhawks",
+    "louisiana monroe": "louisiana monroe warhawks",
+    "ulm": "louisiana monroe warhawks",
+    "louisiana": "louisiana ragin cajuns",
+    "fiu": "florida international panthers",
+    "fau": "florida atlantic owls",
+    "usf": "south florida bulls",
+    "ucf": "ucf knights",
+    "uab": "uab blazers",
+    "utsa": "utsa roadrunners",
+    "utep": "utep miners",
+    "unlv": "unlv rebels",
+    "smu": "smu mustangs",
+    "tcu": "tcu horned frogs",
+    "byu": "byu cougars",
+    "lsu": "lsu tigers",
+    "usc": "usc trojans",
+    "ucla": "ucla bruins",
+    "miami": "miami hurricanes",
+    "miami oh": "miami oh redhawks",
+    "miami (oh)": "miami oh redhawks",
+    "hawai'i": "hawaii rainbow warriors",
+    "hawaii": "hawaii rainbow warriors",
+    "san jose state": "san jose state spartans",
+    "san josé state": "san jose state spartans",
+    "sam houston": "sam houston state bearkats",
+    "sam houston state": "sam houston state bearkats",
+    "southern miss": "southern mississippi golden eagles",
+    "southern mississippi": "southern mississippi golden eagles",
+    "wvu": "west virginia mountaineers"
+}
+
+def normalize_team_key(name):
+    if not name:
+        return ""
+    cleaned = name.lower().replace("é", "e").replace("'", "").replace("’", "").replace(".", "").replace("-", " ")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if cleaned in TEAM_NAME_ALIASES:
+        cleaned = TEAM_NAME_ALIASES[cleaned]
+    return cleaned
+
+def lookup_by_name(lookup_dict, full_name, code=""):
+    if not lookup_dict:
+        return None
+    norm = normalize_team_key(full_name)
+    if norm in lookup_dict:
+        return lookup_dict[norm]
+    # Try code match
+    if code and f"code:{code.upper()}" in lookup_dict:
+        return lookup_dict[f"code:{code.upper()}"]
+    # Try prefix match on school name (first 2 words or first word for unique schools)
+    tokens = norm.split()
+    if len(tokens) >= 2:
+        two_word = " ".join(tokens[:2])
+        for k, v in lookup_dict.items():
+            if not k.startswith("code:") and (k.startswith(two_word) or two_word.startswith(k)):
+                return v
+    if len(tokens) >= 1 and len(tokens[0]) >= 5:
+        first_word = tokens[0]
+        matches = [v for k, v in lookup_dict.items() if not k.startswith("code:") and k.split()[0] == first_word]
+        if len(matches) == 1:
+            return matches[0]
+    return None
+
+# ==============================================================================
+# 3. LIVE 2026 DATA FEEDS (NFLVERSE + ESPN FPI + ESPN STANDINGS + RANKINGS + INJURIES)
+# ==============================================================================
+def fetch_nflverse_live_team_epa(season_year=2026):
+    """
+    Pulls real 2026 NFL weekly team stats directly from nflverse-data releases (zero API key).
+    Computes true Net EPA/play = (Off EPA/play - Def EPA/play allowed), turnover regression,
+    red-zone defense proxy, and league EPA rank (1..32).
+    """
+    url = f"https://github.com/nflverse/nflverse-data/releases/download/stats_team/stats_team_week_{season_year}.csv"
+    team_stats = {}
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=18)
+        if resp.status_code != 200:
+            print(f"[nflverse Notice] HTTP {resp.status_code} for {season_year} weekly team stats.")
+            return {}
+
+        reader = csv.DictReader(io.StringIO(resp.text))
+        agg = {}
+
+        def ensure(t):
+            if t not in agg:
+                agg[t] = {
+                    "games": 0, "off_plays": 0.0, "off_epa": 0.0,
+                    "def_plays": 0.0, "def_epa_allowed": 0.0,
+                    "giveaways": 0.0, "takeaways": 0.0
+                }
+            return agg[t]
+
+        def fval(row, *keys):
+            for k in keys:
+                v = row.get(k)
+                if v not in (None, "", "NA", "NaN"):
+                    try:
+                        return float(v)
+                    except ValueError:
+                        pass
+            return 0.0
+
+        for row in reader:
+            stype = (row.get("season_type") or "REG").upper()
+            if stype not in ("REG", "POST"):
+                continue
+            raw_t = (row.get("team") or "").strip().upper()
+            raw_opp = (row.get("opponent_team") or "").strip().upper()
+            if not raw_t:
+                continue
+            t = ESPN_CODE_MAP.get(raw_t, raw_t)
+            opp = ESPN_CODE_MAP.get(raw_opp, raw_opp)
+
+            att = fval(row, "attempts")
+            car = fval(row, "carries")
+            sacks = fval(row, "sacks_suffered", "sacks")
+            plays = att + car + sacks
+            pass_epa = fval(row, "passing_epa")
+            rush_epa = fval(row, "rushing_epa")
+            tot_epa = pass_epa + rush_epa
+
+            giveaways = (
+                fval(row, "passing_interceptions", "interceptions")
+                + fval(row, "rushing_fumbles_lost")
+                + fval(row, "receiving_fumbles_lost")
+                + fval(row, "sack_fumbles_lost")
+            )
+
+            rec = ensure(t)
+            rec["games"] += 1
+            rec["off_plays"] += plays
+            rec["off_epa"] += tot_epa
+            rec["giveaways"] += giveaways
+
+            if opp:
+                opp_rec = ensure(opp)
+                opp_rec["def_plays"] += plays
+                opp_rec["def_epa_allowed"] += tot_epa
+                opp_rec["takeaways"] += giveaways
+
+        ranked_list = []
+        for t, d in agg.items():
+            if d["games"] == 0 or d["off_plays"] <= 0 or d["def_plays"] <= 0:
+                continue
+            off_epa_pp = d["off_epa"] / d["off_plays"]
+            def_epa_pp = d["def_epa_allowed"] / d["def_plays"]
+            net_epa_pp = off_epa_pp - def_epa_pp
+            to_margin_pg = (d["takeaways"] - d["giveaways"]) / d["games"]
+            # Positive turnover margin implies slight mean-reversion penalty (negative to_reg)
+            to_reg = max(-0.85, min(0.85, -0.35 * to_margin_pg))
+            # Negative opp_rz_dvoa = stronger defense (lower defensive EPA allowed)
+            rz_dvoa = max(-0.25, min(0.25, def_epa_pp * 1.45))
+
+            team_stats[f"code:{t}"] = {
+                "net_epa_per_play": round(net_epa_pp, 4),
+                "off_epa_per_play": round(off_epa_pp, 4),
+                "def_epa_per_play": round(def_epa_pp, 4),
+                "to_reg": round(to_reg, 2),
+                "rz_dvoa": round(rz_dvoa, 3),
+                "games_played": d["games"]
+            }
+            ranked_list.append((net_epa_pp, f"code:{t}"))
+
+        ranked_list.sort(reverse=True)
+        for rank_idx, (_, key) in enumerate(ranked_list, start=1):
+            team_stats[key]["epa_rank"] = rank_idx
+
+        print(f"[nflverse Live {season_year}] Loaded real Net EPA/play & turnovers for {len(ranked_list)} NFL teams.")
+    except Exception as e:
+        print(f"[nflverse Notice] Live fetch skipped ({e}); falling back to ESPN FPI/registry.")
+    return team_stats
+
+def fetch_espn_fpi(league="NCAA"):
+    """
+    Pulls live ESPN Football Power Index (fitt/v3) for NCAA FBS (~134 teams) or NFL (32 teams).
+    Returns dict keyed by normalized displayName AND 'code:ABBR'.
+    FPI is predictive neutral-field points above league average.
+    """
+    sport_path = "college-football" if league == "NCAA" else "nfl"
+    limit = 160 if league == "NCAA" else 40
+    url = f"https://site.web.api.espn.com/apis/fitt/v3/sports/football/{sport_path}/powerindex?limit={limit}"
+    fpi_map = {}
+
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=14)
+        if resp.status_code != 200:
+            print(f"[ESPN FPI {league} Notice] HTTP {resp.status_code}")
+            return {}
+        payload = resp.json()
+
+        # Build category name -> stat index map from top-level categories metadata
+        cat_stat_names = {}
+        for cat in payload.get("categories", []):
+            cname = cat.get("name", "")
+            cat_stat_names[cname] = cat.get("names", [])
+
+        teams_arr = payload.get("teams", [])
+        ranked_entries = []
+
+        for item in teams_arr:
+            team_obj = item.get("team", {})
+            dname = team_obj.get("displayName") or team_obj.get("name") or ""
+            abbr = ESPN_CODE_MAP.get((team_obj.get("abbreviation") or "").upper(), (team_obj.get("abbreviation") or "").upper())
+            if not dname:
+                continue
+
+            stats_dict = {}
+            for cat in item.get("categories", []):
+                cname = cat.get("name", "")
+                names = cat.get("names") or cat_stat_names.get(cname, [])
+                vals = cat.get("totals") or cat.get("values") or []
+                for idx, val in enumerate(vals):
+                    stat_key = names[idx].lower() if idx < len(names) else f"{cname}_{idx}"
+                    try:
+                        stats_dict[stat_key] = float(val)
+                    except (ValueError, TypeError):
+                        pass
+
+            fpi_val = None
+            for k in ("fpi", "overall", "powerindex"):
+                if k in stats_dict:
+                    fpi_val = stats_dict[k]
+                    break
+            if fpi_val is None:
+                continue
+
+            fpi_rk = None
+            for k in ("fpirank", "rank", "fpi_rk"):
+                if k in stats_dict:
+                    fpi_rk = int(round(stats_dict[k]))
+                    break
+
+            off_eff = stats_dict.get("offefficiency", stats_dict.get("off", 50.0))
+            def_eff = stats_dict.get("defefficiency", stats_dict.get("def", 50.0))
+
+            # Convert FPI (predictive neutral-field points vs avg) cleanly into GOLDEN_PLAY_SCALER EPA units
+            epa_equiv = round(fpi_val / GOLDEN_PLAY_SCALER, 4)
+            # Defensive efficiency (0..100, higher=better) -> opp_rz_dvoa (-0.22..+0.22, negative=better)
+            rz_proxy = round(max(-0.22, min(0.22, -(def_eff - 50.0) / 220.0)), 3)
+
+            entry = {
+                "fpi": round(fpi_val, 2),
+                "epa_equiv": epa_equiv,
+                "epa_rank": fpi_rk,
+                "off_eff": round(off_eff, 1),
+                "def_eff": round(def_eff, 1),
+                "rz_dvoa": rz_proxy,
+                "is_fbs": True,
+                "espn_abbr": abbr
+            }
+            ranked_entries.append((fpi_val, entry))
+            fpi_map[normalize_team_key(dname)] = entry
+            if team_obj.get("location"):
+                loc_key = normalize_team_key(team_obj["location"])
+                if loc_key not in fpi_map:
+                    fpi_map[loc_key] = entry
+            if abbr:
+                fpi_map[f"code:{abbr}"] = entry
+
+        # Fill epa_rank cleanly if not explicitly present
+        ranked_entries.sort(key=lambda x: x[0], reverse=True)
+        for idx, (_, ent) in enumerate(ranked_entries, start=1):
+            if not ent.get("epa_rank"):
+                ent["epa_rank"] = idx
+
+        print(f"[ESPN FPI {league}] Loaded live FPI ratings for {len(ranked_entries)} teams.")
+    except Exception as e:
+        print(f"[ESPN FPI {league} Notice] {e}")
+
+    return fpi_map
+
+def fetch_espn_standings(league="NFL"):
+    """
+    Pulls live 2026 ESPN Standings (pointsFor, pointsAgainst, gamesPlayed, winPercent, streak)
+    for independent scoring pace (Totals), win streak, and FBS verification.
+    """
     if league == "NFL":
-        if full_name in NFL_TEAM_REGISTRY:
-            return NFL_TEAM_REGISTRY[full_name]
+        url = "https://site.api.espn.com/apis/v2/sports/football/nfl/standings"
     else:
-        if full_name in NCAA_TEAM_REGISTRY:
-            return NCAA_TEAM_REGISTRY[full_name]
+        url = "https://site.api.espn.com/apis/v2/sports/football/college-football/standings?group=80"
 
-    # Deterministic telemetry fallback for any unmapped NCAA FBS team
-    words = [w for w in full_name.replace("&", "").split() if w]
-    if len(words) >= 2:
-        code = (words[0][:2] + words[1][:2]).upper()
-    else:
-        code = full_name[:4].upper()
+    standings_map = {}
 
-    digest = int(hashlib.md5(full_name.encode("utf-8")).hexdigest()[:8], 16)
-    epa_val = round(((digest % 240) - 110) / 1000.0, 3)         # -0.110 to +0.130
-    to_val = round((((digest >> 4) % 9) - 4) / 10.0, 1)         # -0.4 to +0.4
-    close_val = round(0.320 + ((digest % 580) / 1000.0), 3)     # 0.320 to 0.900
-    rz_val = round(-epa_val * 0.85, 2)
-    lat_val = round(30.0 + ((digest % 150) / 10.0), 4)
-    lon_val = round(-76.0 - (((digest >> 8) % 420) / 10.0), 4)
-    elev_val = 120 + ((digest >> 12) % 320)
+    def walk_node(node):
+        if not isinstance(node, dict):
+            return
+        st = node.get("standings", {})
+        for ent in st.get("entries", []):
+            team = ent.get("team", {})
+            dname = team.get("displayName") or team.get("name") or ""
+            abbr = ESPN_CODE_MAP.get((team.get("abbreviation") or "").upper(), (team.get("abbreviation") or "").upper())
+            if not dname:
+                continue
 
-    return {
-        "code": code,
-        "lat": lat_val,
-        "lon": lon_val,
-        "elev_m": elev_val,
-        "is_dome": False,
-        "tz": -5 if lon_val > -85 else (-6 if lon_val > -102 else (-7 if lon_val > -114 else -8)),
-        "epa": epa_val,
-        "to_reg": to_val,
-        "close_pct": close_val,
-        "streak": digest % 4,
-        "rz_dvoa": rz_val
+            smap = {}
+            for s in ent.get("stats", []):
+                sname = s.get("name", "")
+                if sname and s.get("value") is not None:
+                    try:
+                        smap[sname] = float(s["value"])
+                    except (ValueError, TypeError):
+                        pass
+
+            wins = smap.get("wins", 0.0)
+            losses = smap.get("losses", 0.0)
+            ties = smap.get("ties", 0.0)
+            gp = max(1.0, smap.get("gamesPlayed", wins + losses + ties))
+            pf = smap.get("pointsFor", 0.0)
+            pa = smap.get("pointsAgainst", 0.0)
+            win_pct = smap.get("winPercent", wins / gp)
+            streak_val = smap.get("streak", 0.0)
+            active_win_streak = int(streak_val) if streak_val > 0 else 0
+
+            ppg_for = round(pf / gp, 2) if pf > 0 else None
+            ppg_against = round(pa / gp, 2) if pa > 0 else None
+
+            rec = {
+                "games_played": int(gp),
+                "win_pct": round(max(0.05, min(0.95, win_pct)), 3),
+                "active_win_streak": active_win_streak,
+                "ppg_for": ppg_for,
+                "ppg_against": ppg_against,
+                "point_diff_pg": round((pf - pa) / gp, 2) if (pf > 0 or pa > 0) else 0.0,
+                "is_fbs": True
+            }
+            standings_map[normalize_team_key(dname)] = rec
+            if abbr:
+                standings_map[f"code:{abbr}"] = rec
+
+        for child in node.get("children", []):
+            walk_node(child)
+
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=14)
+        if resp.status_code == 200:
+            walk_node(resp.json())
+            print(f"[ESPN Standings {league}] Loaded live PPG & records for {sum(1 for k in standings_map if not k.startswith('code:'))} teams.")
+    except Exception as e:
+        print(f"[ESPN Standings {league} Notice] {e}")
+
+    return standings_map
+
+def fetch_espn_ncaa_rankings():
+    """Pulls live weekly CFP / AP Top-25 poll_rank for NCAA M13 divergence & Ranked board filter."""
+    url = "https://site.api.espn.com/apis/site/v2/sports/football/college-football/rankings"
+    poll_map = {}
+    ranked_names = []
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=12)
+        if resp.status_code != 200:
+            return poll_map, ranked_names
+        rankings = resp.json().get("rankings", [])
+        if not rankings:
+            return poll_map, ranked_names
+
+        # Prefer CFP Poll if active in November, else AP Top 25
+        chosen = next((r for r in rankings if "playoff" in (r.get("name", "").lower())), None) or \
+                 next((r for r in rankings if "ap" in (r.get("name", "").lower())), rankings[0])
+
+        for item in chosen.get("ranks", []):
+            rk = int(item.get("current", 0) or 0)
+            team = item.get("team", {})
+            loc = team.get("location", "")
+            nick = team.get("name", "")
+            full_nm = f"{loc} {nick}".strip() if loc and nick else (team.get("displayName") or loc or nick)
+            abbr = (team.get("abbreviation") or "").upper()
+            if rk > 0 and full_nm:
+                ranked_names.append(full_nm)
+                poll_map[normalize_team_key(full_nm)] = rk
+                if loc:
+                    poll_map[normalize_team_key(loc)] = rk
+                if abbr:
+                    poll_map[f"code:{abbr}"] = rk
+        print(f"[ESPN Rankings NCAA] Loaded {len(ranked_names)} live Top-25 teams ({chosen.get('name', 'Poll')}).")
+    except Exception as e:
+        print(f"[ESPN Rankings Notice] {e}")
+    return poll_map, ranked_names
+
+def fetch_espn_game_injuries(event_id, league="NFL"):
+    """
+    Pulls live ESPN game summary injury report for an upcoming game.
+    Computes realistic qb_replacement_delta (negative pts = missing starters),
+    lt_or_rb_pass_pro_out flag (for M5 Sack-Trauma), and human-readable injuries_summary.
+    """
+    sport_path = "nfl" if league == "NFL" else "college-football"
+    url = f"https://site.api.espn.com/apis/site/v2/sports/football/{sport_path}/summary?event={event_id}"
+    out_by_abbr = {}
+
+    POS_WEIGHTS = {
+        "QB": 3.50,
+        "OT": 0.90, "LT": 1.00, "RT": 0.85, "T": 0.85,
+        "OG": 0.45, "G": 0.45, "C": 0.55, "OL": 0.50,
+        "CB": 0.70, "DB": 0.45, "S": 0.45, "FS": 0.45, "SS": 0.45,
+        "DE": 0.65, "EDGE": 0.75, "OLB": 0.55, "LB": 0.45, "ILB": 0.45, "DT": 0.45, "DL": 0.45,
+        "WR": 0.60, "TE": 0.45, "RB": 0.50
     }
+
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=8)
+        if resp.status_code != 200:
+            return out_by_abbr
+        data = resp.json()
+        for team_block in data.get("injuries", []):
+            t_info = team_block.get("team", {})
+            abbr = ESPN_CODE_MAP.get((t_info.get("abbreviation") or "").upper(), (t_info.get("abbreviation") or "").upper())
+            if not abbr:
+                continue
+
+            total_impact = 0.0
+            pass_pro_compromised = False
+            qb_out_count = 0
+            key_outs = []
+
+            for inj in team_block.get("injuries", []):
+                status = (inj.get("status") or "").strip().lower()
+                if status not in ("out", "doubtful", "injured reserve", "ir", "suspended"):
+                    continue
+                status_mult = 0.75 if status == "doubtful" else 1.0
+                athlete = inj.get("athlete", {})
+                pname = athlete.get("displayName") or athlete.get("shortName") or ""
+                pos_obj = athlete.get("position") or {}
+                pos = (pos_obj.get("abbreviation") or "").upper()
+
+                weight = POS_WEIGHTS.get(pos, 0.25) * status_mult
+                # Only count meaningful active-roster outs (skip deep practice-squad/unknown)
+                if pos in ("OT", "LT", "RT", "T"):
+                    pass_pro_compromised = True
+                if pos == "QB":
+                    qb_out_count += 1
+                total_impact += weight
+                if pos in ("QB", "OT", "LT", "RT", "T", "CB", "WR", "RB", "DE", "EDGE", "LB") and len(key_outs) < 5:
+                    key_outs.append(f"{pname} ({pos}, {status.upper()})")
+
+            # Cap total team injury impact cleanly at -5.5 pts so deep IR lists never blow up spreads
+            capped_delta = round(-min(5.5, total_impact), 2)
+            out_by_abbr[abbr] = {
+                "qb_replacement_delta": capped_delta,
+                "lt_or_rb_pass_pro_out": pass_pro_compromised,
+                "is_third_string_qb": (qb_out_count >= 2),
+                "injuries_summary": key_outs
+            }
+    except Exception:
+        pass
+    return out_by_abbr
+
+def get_team_meta(full_name, league="NFL", nflverse_map=None, fpi_map=None, standings_map=None, poll_map=None):
+    # 1. Start from Stadium/Geography Registry (or clean regional neutral fallback — ZERO MD5 HASHES!)
+    if league == "NFL" and full_name in NFL_TEAM_REGISTRY:
+        meta = dict(NFL_TEAM_REGISTRY[full_name])
+    elif league == "NCAA" and full_name in NCAA_TEAM_REGISTRY:
+        meta = dict(NCAA_TEAM_REGISTRY[full_name])
+    else:
+        words = [w for w in full_name.replace("&", "").replace("(", "").replace(")", "").split() if w]
+        code = (words[0][:2] + words[1][:2]).upper() if len(words) >= 2 else full_name[:4].upper()
+        meta = {
+            "code": code,
+            "lat": 37.5,
+            "lon": -88.0,
+            "elev_m": 220,
+            "is_dome": False,
+            "tz": -6,
+            "epa": 0.0,
+            "to_reg": 0.0,
+            "close_pct": 0.500,
+            "streak": 0,
+            "rz_dvoa": 0.0
+        }
+
+    code = meta["code"]
+    meta["epa_rank"] = None
+    meta["poll_rank"] = None
+    meta["ppg_for"] = None
+    meta["ppg_against"] = None
+    meta["is_fcs"] = False
+    meta["telemetry_source"] = "registry_fallback"
+
+    # 2. Overlay Live Standings (PPG For/Against, Win%, Streak)
+    st_hit = lookup_by_name(standings_map, full_name, code) if standings_map else None
+    if st_hit:
+        meta["close_pct"] = st_hit["win_pct"]
+        meta["streak"] = st_hit["active_win_streak"]
+        meta["ppg_for"] = st_hit["ppg_for"]
+        meta["ppg_against"] = st_hit["ppg_against"]
+
+    # 3. Overlay Live Performance Efficiency (ZERO MD5 HASHES)
+    if league == "NFL":
+        nv_hit = nflverse_map.get(f"code:{code}") if nflverse_map else None
+        fpi_hit = lookup_by_name(fpi_map, full_name, code) if fpi_map else None
+
+        if nv_hit:
+            # Real 2026 nflverse Net EPA/play blended lightly (80/20) with FPI if FPI available for stability
+            if fpi_hit:
+                meta["epa"] = round((0.80 * nv_hit["net_epa_per_play"]) + (0.20 * fpi_hit["epa_equiv"]), 4)
+            else:
+                meta["epa"] = nv_hit["net_epa_per_play"]
+            meta["to_reg"] = nv_hit["to_reg"]
+            meta["rz_dvoa"] = nv_hit["rz_dvoa"]
+            meta["epa_rank"] = nv_hit.get("epa_rank")
+            meta["telemetry_source"] = "nflverse_2026_live"
+        elif fpi_hit:
+            meta["epa"] = fpi_hit["epa_equiv"]
+            meta["rz_dvoa"] = fpi_hit["rz_dvoa"]
+            meta["epa_rank"] = fpi_hit.get("epa_rank")
+            meta["telemetry_source"] = "espn_fpi_2026_live"
+        elif st_hit and st_hit.get("games_played", 0) >= 3:
+            meta["epa"] = round((st_hit["point_diff_pg"] * 0.65) / GOLDEN_PLAY_SCALER, 4)
+            meta["telemetry_source"] = "espn_standings_2026"
+    else:
+        fpi_hit = lookup_by_name(fpi_map, full_name, code) if fpi_map else None
+        if fpi_hit:
+            meta["epa"] = fpi_hit["epa_equiv"]
+            meta["rz_dvoa"] = fpi_hit["rz_dvoa"]
+            meta["epa_rank"] = fpi_hit.get("epa_rank")
+            meta["telemetry_source"] = "espn_fpi_2026_live"
+        elif st_hit and st_hit.get("games_played", 0) >= 3:
+            meta["epa"] = round((st_hit["point_diff_pg"] * 0.55) / GOLDEN_PLAY_SCALER, 4)
+            meta["rz_dvoa"] = round(max(-0.22, min(0.22, -meta["epa"] * 0.45)), 3)
+            meta["telemetry_source"] = "espn_standings_2026"
+        else:
+            # If ESPN FPI (all ~134 FBS teams) loaded successfully and this team isn't in FPI or FBS Standings,
+            # it is an FCS opponent! Apply true FCS neutral-field baseline instead of a fake hash.
+            if fpi_map and len(fpi_map) >= 80:
+                meta["is_fcs"] = True
+                norm_nm = normalize_team_key(full_name)
+                is_elite_fcs = any(kw in norm_nm for kw in ELITE_FCS_KEYWORDS)
+                fcs_fpi = -12.5 if is_elite_fcs else -23.5
+                meta["epa"] = round(fcs_fpi / GOLDEN_PLAY_SCALER, 4)
+                meta["rz_dvoa"] = 0.06 if is_elite_fcs else 0.15
+                meta["close_pct"] = 0.650 if is_elite_fcs else 0.320
+                meta["telemetry_source"] = "fcs_calibrated_tier"
+
+        # Overlay live Top-25 poll rank
+        if poll_map:
+            prk = lookup_by_name(poll_map, full_name, code)
+            if prk:
+                meta["poll_rank"] = prk
+
+    return meta
 
 def calc_haversine_miles(lat1, lon1, lat2, lon2):
     r_miles = 3958.8
@@ -224,16 +815,17 @@ def fetch_espn_scores():
     end_str = (now_utc + timedelta(days=7)).strftime("%Y%m%d")
 
     endpoints = [
-        f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=100&dates={start_str}-{end_str}",
-        f"https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?limit=200&dates={start_str}-{end_str}"
+        ("NFL", f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=100&dates={start_str}-{end_str}"),
+        ("NCAA", f"https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?limit=200&dates={start_str}-{end_str}")
     ]
 
-    for url in endpoints:
+    for lg, url in endpoints:
         try:
             resp = requests.get(url, headers=HEADERS, timeout=8)
             if resp.status_code == 200:
                 events = resp.json().get("events", [])
                 for ev in events:
+                    event_id = ev.get("id")
                     comps = ev.get("competitions", [])
                     if not comps:
                         continue
@@ -254,6 +846,8 @@ def fetch_espn_scores():
                     a_score = int(float(away_c.get("score", 0) or 0))
 
                     score_lookup[f"{a_abbr}_{h_abbr}"] = {
+                        "event_id": event_id,
+                        "league": lg,
                         "state": state,
                         "completed": completed,
                         "home_score": h_score,
@@ -303,7 +897,32 @@ def calc_coupled_balls_deep_psi(home_meta, away_meta, env_weather):
 
     sum_val = phi_bio + net_tov
     sign = 1.0 if sum_val > 0 else (-1.0 if sum_val < 0 else 0.0)
-    return round(sign * math.sqrt(abs(phi_bio * net_tov)), 4)
+    # Negative favors Home Team in spread notation (matches app_controller.js)
+    return round(max(-2.85, min(2.85, -(sign * math.sqrt(abs(phi_bio * net_tov))))), 4)
+
+def calc_independent_total_tip(home_meta, away_meta, game_league, wind_mph):
+    """100% Vegas-independent Total projection using real live PPG For/Against when available."""
+    wind_penalty = max(0.0, (wind_mph - 10.0) * 0.25)
+    total_intercept = NCAA_TOTAL_INTERCEPT if game_league == "NCAA" else MODEL_TOTAL_INTERCEPT
+
+    h_pf = home_meta.get("ppg_for")
+    h_pa = home_meta.get("ppg_against")
+    a_pf = away_meta.get("ppg_for")
+    a_pa = away_meta.get("ppg_against")
+
+    if all(v is not None and v > 0 for v in (h_pf, h_pa, a_pf, a_pa)):
+        raw_pace_total = 0.5 * (h_pf + a_pa + a_pf + h_pa)
+        # Regress 20% toward league scoring average for out-of-sample stability (ZERO Vegas input!)
+        regressed_total = (0.80 * raw_pace_total) + (0.20 * total_intercept) - wind_penalty
+        return round(regressed_total, 1)
+
+    # Pure OG fallback if live PPG unavailable (cap EPA sum on high-FPI NCAA teams)
+    epa_sum = home_meta["epa"] + away_meta["epa"]
+    if game_league == "NCAA":
+        epa_sum = max(-0.20, min(0.20, epa_sum))
+    epa_total_pts = epa_sum * GOLDEN_PLAY_SCALER
+    rz_total_pts = (home_meta["rz_dvoa"] + away_meta["rz_dvoa"]) * 10.0
+    return round(total_intercept + epa_total_pts + rz_total_pts - wind_penalty, 1)
 
 def calc_ev_pct(win_prob, american_odds=-110):
     dec = (american_odds / 100.0) + 1.0 if american_odds > 0 else (100.0 / abs(american_odds)) + 1.0
@@ -519,8 +1138,18 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc):
 def build_master_payload():
     now_utc = datetime.now(timezone.utc)
     now_iso = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+    season_year = now_utc.year if now_utc.month >= 8 else (now_utc.year - 1)
 
+    # Pull all live 2026 telemetry feeds (0 Odds API credits)
+    nflverse_epa = fetch_nflverse_live_team_epa(season_year)
+    nfl_fpi = fetch_espn_fpi("NFL")
+    ncaa_fpi = fetch_espn_fpi("NCAA")
+    nfl_standings = fetch_espn_standings("NFL")
+    ncaa_standings = fetch_espn_standings("NCAA")
+    ncaa_poll_map, live_ranked_ncaa = fetch_espn_ncaa_rankings()
     espn_scores = fetch_espn_scores()
+
+    # Pull live Odds API lines (4 credits total: 2 NFL + 2 NCAA)
     nfl_odds = fetch_live_odds_for_sport("americanfootball_nfl", "NFL")
     ncaa_odds = fetch_live_odds_for_sport("americanfootball_ncaaf", "NCAA")
 
@@ -535,28 +1164,47 @@ def build_master_payload():
         home_full = game.get("home_team", "Unknown Home")
         away_full = game.get("away_team", "Unknown Away")
 
-        home_meta = get_team_meta(home_full, game_league)
-        away_meta = get_team_meta(away_full, game_league)
+        if game_league == "NFL":
+            home_meta = get_team_meta(home_full, "NFL", nflverse_epa, nfl_fpi, nfl_standings, None)
+            away_meta = get_team_meta(away_full, "NFL", nflverse_epa, nfl_fpi, nfl_standings, None)
+        else:
+            home_meta = get_team_meta(home_full, "NCAA", None, ncaa_fpi, ncaa_standings, ncaa_poll_map)
+            away_meta = get_team_meta(away_full, "NCAA", None, ncaa_fpi, ncaa_standings, ncaa_poll_map)
+
         home_code, away_code = home_meta["code"], away_meta["code"]
 
         matchup_pair = (game_league, tuple(sorted([home_code, away_code])))
         if matchup_pair in seen_matchups:
             continue
         seen_matchups.add(matchup_pair)
-        game_id = f"{game_league}_{away_code}_{home_code}_2026"
+        game_id = f"{game_league}_{away_code}_{home_code}_{season_year}"
 
         travel_miles = calc_haversine_miles(away_meta["lat"], away_meta["lon"], home_meta["lat"], home_meta["lon"])
         tz_shift = home_meta["tz"] - away_meta["tz"]
 
         commence_str = game.get("commence_time", "")
         kickoff_local_hour = 13
+        is_upcoming_soon = False
         if commence_str:
             try:
                 dt_utc = datetime.strptime(commence_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
                 dt_local = dt_utc + timedelta(hours=home_meta["tz"])
                 kickoff_local_hour = dt_local.hour
+                is_upcoming_soon = (-timedelta(hours=4) <= (dt_utc - now_utc) <= timedelta(days=8))
             except Exception:
                 pass
+
+        # Pull live NFL injury reports for upcoming week's games via ESPN event summary
+        home_inj = {"qb_replacement_delta": 0.0, "lt_or_rb_pass_pro_out": False, "is_third_string_qb": False, "injuries_summary": []}
+        away_inj = {"qb_replacement_delta": 0.0, "lt_or_rb_pass_pro_out": False, "is_third_string_qb": False, "injuries_summary": []}
+        if game_league == "NFL" and is_upcoming_soon:
+            espn_ev = espn_scores.get(f"{away_code}_{home_code}")
+            if espn_ev and espn_ev.get("event_id"):
+                inj_map = fetch_espn_game_injuries(espn_ev["event_id"], "NFL")
+                if home_code in inj_map:
+                    home_inj = inj_map[home_code]
+                if away_code in inj_map:
+                    away_inj = inj_map[away_code]
 
         env_weather = fetch_live_stadium_weather(home_meta)
         wind_mph = 0.0 if env_weather.get("is_dome") else float(env_weather.get("wind_mph", 0.0))
@@ -568,13 +1216,15 @@ def build_master_payload():
         phi_circ = round(0.45 * (abs_tz * omega_dir * math.exp(-0.35 * 1.0)) + (0.30 * trough_pen), 3)
 
         hfa_base = NCAA_HFA_BASE if game_league == "NCAA" else PI_OVER_PHI_HFA
-        total_intercept = NCAA_TOTAL_INTERCEPT if game_league == "NCAA" else MODEL_TOTAL_INTERCEPT
 
+        # PURE OG M1–M9 FAIR SPREAD (100% INDEPENDENT OF VEGAS — SYNCED 1:1 WITH onlinemath_engine.js v313)
         epa_diff = away_meta["epa"] - home_meta["epa"]
+        delta_rz = (home_meta["rz_dvoa"] - away_meta["rz_dvoa"]) * 4.0
         delta_to = away_meta["to_reg"] - home_meta["to_reg"]
+        injury_diff = away_inj["qb_replacement_delta"] - home_inj["qb_replacement_delta"]
         psi_11_12 = calc_coupled_balls_deep_psi(home_meta, away_meta, env_weather)
 
-        fair_home_tip = round((GOLDEN_PLAY_SCALER * epa_diff) + delta_to - hfa_base - phi_circ, 2)
+        fair_home_tip = round((GOLDEN_PLAY_SCALER * epa_diff) + delta_rz + delta_to + injury_diff - hfa_base - phi_circ, 2)
         fair_home_bd = round(fair_home_tip + psi_11_12, 2)
 
         props_board = []
@@ -605,7 +1255,7 @@ def build_master_payload():
 
                     ev_tip = calc_ev_pct(win_prob_tip, price)
                     ev_bd = calc_ev_pct(win_prob_bd, price)
-                    badge = "SMASH" if ev_tip >= SMASH_EV_THRESHOLD else "PASS"
+                    badge = "SMASH" if ev_tip >= SMASH_EV_THRESHOLD else ("PASS" if ev_tip <= -19.0 else "TOO_CLOSE")
 
                     props_board.append({
                         "player": f"{t_code} Spread ({'+' if point > 0 else ''}{point}) ({t_code} {prefix} {opp_code})",
@@ -635,12 +1285,8 @@ def build_master_payload():
                     o_price = int(over_out.get("price", -110))
                     u_price = int(under_out.get("price", -110))
 
-                    epa_total_pts = (home_meta["epa"] + away_meta["epa"]) * GOLDEN_PLAY_SCALER
-                    rz_total_pts = (home_meta["rz_dvoa"] + away_meta["rz_dvoa"]) * 10.0
-                    wind_penalty = max(0.0, (wind_mph - 10.0) * 0.25)
-
-                    proj_total_tip = round(total_intercept + epa_total_pts + rz_total_pts - wind_penalty, 1)
-                    proj_total_bd = round(proj_total_tip + (psi_11_12 * 0.45), 1)
+                    proj_total_tip = calc_independent_total_tip(home_meta, away_meta, game_league, wind_mph)
+                    proj_total_bd = round(proj_total_tip + (psi_11_12 * 0.35), 1)
 
                     is_under = proj_total_tip < t_point
                     active_price = u_price if is_under else o_price
@@ -653,7 +1299,7 @@ def build_master_payload():
 
                     ev_tip = calc_ev_pct(calc_prob_tip, active_price)
                     ev_bd = calc_ev_pct(calc_prob_bd, active_price)
-                    badge = "SMASH" if ev_tip >= SMASH_EV_THRESHOLD else "PASS"
+                    badge = "SMASH" if ev_tip >= SMASH_EV_THRESHOLD else ("PASS" if ev_tip <= -19.0 else "TOO_CLOSE")
 
                     props_board.append({
                         "player": f"{away_code}@{home_code} Total ({'U' if is_under else 'O'} {t_point}) ({away_code} @ {home_code})",
@@ -677,6 +1323,43 @@ def build_master_payload():
         if not props_board:
             continue
 
+        home_tel_obj = {
+            "net_epa_per_play": home_meta["epa"],
+            "qb_replacement_delta": home_inj["qb_replacement_delta"],
+            "turnover_reg_delta": home_meta["to_reg"],
+            "closing_rank_pct": home_meta["close_pct"],
+            "active_win_streak": home_meta["streak"],
+            "opp_rz_dvoa": home_meta["rz_dvoa"],
+            "lt_or_rb_pass_pro_out": home_inj["lt_or_rb_pass_pro_out"],
+            "is_third_string_qb": home_inj["is_third_string_qb"],
+            "injuries_summary": home_inj["injuries_summary"],
+            "telemetry_source": home_meta["telemetry_source"]
+        }
+        away_tel_obj = {
+            "net_epa_per_play": away_meta["epa"],
+            "qb_replacement_delta": away_inj["qb_replacement_delta"],
+            "turnover_reg_delta": away_meta["to_reg"],
+            "closing_rank_pct": away_meta["close_pct"],
+            "active_win_streak": away_meta["streak"],
+            "opp_rz_dvoa": away_meta["rz_dvoa"],
+            "lt_or_rb_pass_pro_out": away_inj["lt_or_rb_pass_pro_out"],
+            "is_third_string_qb": away_inj["is_third_string_qb"],
+            "injuries_summary": away_inj["injuries_summary"],
+            "telemetry_source": away_meta["telemetry_source"]
+        }
+
+        for tel_obj, meta_obj in ((home_tel_obj, home_meta), (away_tel_obj, away_meta)):
+            if meta_obj.get("epa_rank") is not None:
+                tel_obj["epa_rank"] = meta_obj["epa_rank"]
+            if meta_obj.get("poll_rank") is not None:
+                tel_obj["poll_rank"] = meta_obj["poll_rank"]
+            if meta_obj.get("ppg_for") is not None:
+                tel_obj["ppg_for"] = meta_obj["ppg_for"]
+            if meta_obj.get("ppg_against") is not None:
+                tel_obj["ppg_against"] = meta_obj["ppg_against"]
+            if meta_obj.get("is_fcs"):
+                tel_obj["is_fcs"] = True
+
         games_slate.append({
             "game_id": game_id,
             "league": game_league,
@@ -692,43 +1375,62 @@ def build_master_payload():
             "circadian_payload": {
                 "away_travel_miles": travel_miles,
                 "away_tz_shift": tz_shift,
+                "away_elev_m": away_meta.get("elev_m", 150),
                 "rest_differential_days": 0,
                 "short_week_flag": 0
             },
             "team_telemetry": {
-                "home": {"net_epa_per_play": home_meta["epa"], "qb_replacement_delta": 0.0, "turnover_reg_delta": home_meta["to_reg"], "closing_rank_pct": home_meta["close_pct"], "active_win_streak": home_meta["streak"], "opp_rz_dvoa": home_meta["rz_dvoa"]},
-                "away": {"net_epa_per_play": away_meta["epa"], "qb_replacement_delta": 0.0, "turnover_reg_delta": away_meta["to_reg"], "closing_rank_pct": away_meta["close_pct"], "active_win_streak": away_meta["streak"], "opp_rz_dvoa": away_meta["rz_dvoa"]}
+                "home": home_tel_obj,
+                "away": away_tel_obj
             },
             "props_board": props_board
         })
 
-    all_spreads = []
-    all_props = []
+    # Blended Top-5 Flagship Selection (Strict 1-pick-per-game, max 3 per market)
+    best_per_game = []
     for g in games_slate:
-        game_spreads = [p for p in g["props_board"] if p["market_type"] == "spread"]
-        if game_spreads:
-            best_s = max(game_spreads, key=lambda x: x["ev_pct"])
-            all_spreads.append(best_s)
-            all_props.append(best_s)
-        for p in g["props_board"]:
-            if p["market_type"] != "spread":
-                all_props.append(p)
+        cands = []
+        g_spreads = [p for p in g["props_board"] if p["market_type"] == "spread" and abs(p["base_line"]) <= 28.5]
+        g_totals = [p for p in g["props_board"] if p["market_type"] == "total"]
+        if g_spreads:
+            cands.append(max(g_spreads, key=lambda x: x["ev_pct"]))
+        if g_totals:
+            cands.append(max(g_totals, key=lambda x: x["ev_pct"]))
+        if cands:
+            best_per_game.append((g["game_id"], max(cands, key=lambda x: x["ev_pct"])))
 
-    all_spreads.sort(key=lambda x: x["ev_pct"], reverse=True)
-    menage_picks = all_spreads[:3]
-    for idx, p in enumerate(menage_picks, start=1):
+    best_per_game.sort(key=lambda x: x[1]["ev_pct"], reverse=True)
+    selected_five = []
+    sp_cnt = tot_cnt = 0
+    for gid, p in best_per_game:
+        if len(selected_five) >= 5:
+            break
+        if p["market_type"] == "spread" and sp_cnt >= 3:
+            continue
+        if p["market_type"] == "total" and tot_cnt >= 3:
+            continue
+        selected_five.append(p)
+        if p["market_type"] == "spread":
+            sp_cnt += 1
+        else:
+            tot_cnt += 1
+
+    for idx, p in enumerate(selected_five[:3], start=1):
         p["flagship_slot"] = f"MÉNAGE À TROIS #{idx}"
-
-    remaining_pool = [p for p in all_props if not p.get("flagship_slot")]
-    remaining_pool.sort(key=lambda x: x["ev_pct"], reverse=True)
-    for idx, p in enumerate(remaining_pool[:2], start=4):
+    for idx, p in enumerate(selected_five[3:5], start=4):
         p["flagship_slot"] = f"5-PACK FLEX #{idx}"
 
     existing_ledger = load_existing_ledger()
     updated_ledger = update_and_grade_ledger(existing_ledger, games_slate, espn_scores, now_utc)
 
     return {
-        "slate_info": {"league": "NFL_NCAA", "week": 12, "last_updated": now_iso},
+        "slate_info": {
+            "league": "NFL_NCAA",
+            "week": 12,
+            "last_updated": now_iso,
+            "telemetry_version": "v210_live_feeds",
+            "ranked_ncaa_teams": live_ranked_ncaa
+        },
         "games": games_slate,
         "historical_ledger": updated_ledger
     }
@@ -741,9 +1443,9 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE DAEMON MODE")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v210)")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
-    print("==========================================================")
+    print("=========================================================")
 
     while True:
         try:
