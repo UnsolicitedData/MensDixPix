@@ -1618,6 +1618,29 @@ function renderCombinatoricsDeck() {
         return true;
     });
 
+    const activeSlipStripHTML = selectedProps.length > 0 ? `
+        <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-subtle); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 11px;">
+            <span style="color: var(--accent-cyan); font-weight: 800; margin-right: 4px;">ACTIVE SLIP (${selectedProps.length}):</span>
+            ${selectedProps.map(p => {
+                const isFloor = AppState.safeFloorParlayLegs.has(p.propKey);
+                const pillLabel = isFloor
+                    ? `🛡️ ${p.isHomeSpread ? p.homeTeam : p.awayTeam} ${p.safeFloorLabel}`
+                    : (p.activePlayerLabel || p.player);
+                const pillOdds = isFloor ? "-175" : (p.baseOdds > 0 ? `+${p.baseOdds}` : `${p.baseOdds}`);
+                const pillWin = isFloor ? p.safeFloorWinPct : p.activeModelPct;
+                const pillBorder = isFloor ? "rgba(6, 182, 212, 0.55)" : getTierColor(p.tierBadge, true);
+
+                return `
+                    <span onclick="window.toggleParlayLeg('${p.propKey}')" title="Click to remove from slip" style="cursor: pointer; display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 5px; background: var(--bg-base); border: 1px solid ${pillBorder}; color: var(--text-primary); transition: all 0.15s ease;">
+                        <strong>${pillLabel}</strong>
+                        <span style="color: var(--text-secondary);">(${pillOdds} • ${pillWin}%)</span>
+                        <span style="color: #f87171; font-weight: 800; margin-left: 2px;">✕</span>
+                    </span>
+                `;
+            }).join("")}
+        </div>
+    ` : "";
+
     container.innerHTML = `
         <div class="combinatorics-embedded-calc">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 10px;">
@@ -1669,6 +1692,8 @@ function renderCombinatoricsDeck() {
                     </div>
                 </div>
             </div>
+
+            ${activeSlipStripHTML}
 
             ${rrTiers.length > 0 ? `
                 <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-subtle); display: flex; gap: 16px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 11px;">
