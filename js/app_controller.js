@@ -1,11 +1,14 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v235)
- * Smooth Momentum Arc & Zero-Lag Slider Edition — Synced 1:1 with onlinemath_engine.js (v310)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v237)
+ * Smooth Momentum Arc & Zero-Lag Slider Edition — Synced 1:1 with onlinemath_engine.js (v312)
+ *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
+ *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
+ *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
  *  - Zero-Lag DaVinci Slider: 50ms rAF drag fast-path (visible-tab-only repaint) + full sync on release
  *  - Organic Continuous Momentum Arc (calcMomentumArc): flows Spreads, Totals, Safe Floors & Ceilings
  *    smoothly across [-2φ, +2φ] without artificial .5 or 5-yard snapping
  *  - Strict M1–M9 Mode Firewall: Zero M11/M13 alerts or badges in Just the Tip mode
- *  - Single-source-of-truth integration with v310 Guardrails (4.0% Quarter-Kelly Cap, M4/M5 Prop Gatekeepers,
+ *  - Single-source-of-truth integration with v312 Guardrails (4.0% Quarter-Kelly Cap, M4/M5 Prop Gatekeepers,
  *    M8 Totals-Weighted FAA Delay, M9 Red-Zone Finishing & 3rd-String QB TOP Redirect, M11>M13 Elevation Override)
  *  - Preserves all 6 Clickable Ledger Vault Cards, Flagship 5-Pack Week Dropdown, Porky's Safe Floor Fades,
  *    ESPN Live Scoreboard Sync, Auto-Sweep of FINAL games, and 300s Live Wire Ticker
@@ -33,7 +36,7 @@ const AppState = {
 const openCardMemory = new Set();
 const MODEL_TOTAL_INTERCEPT = 42.986;
 const SMASH_EV_CUTOFF = 10.0;          // >= +10.0% EV threshold for SMASH
-const PASS_EV_CUTOFF = -10.0;          // <= -10.0% EV threshold for definitive PASS
+const PASS_EV_CUTOFF = -19.0;          // <= -19.0% EV threshold for definitive PASS (exact -110 mirror of +10.0% SMASH)
 const PHI = (typeof GOLDEN_RATIO_PHI !== "undefined") ? GOLDEN_RATIO_PHI : 1.6180339887;
 let sliderDragTimer = null;
 
@@ -49,7 +52,7 @@ const RANKED_NCAA_FULL_NAMES = [
 ];
 
 const RANKED_NCAA_CODES = new Set([
-    "UGA", "UTAH", "ND", "NODA", "UCLA", "UCBR", "MIA", "IND", "ALA", "TEX",
+    "UGA", "UTAH", "ND", "UCLA", "UCBR", "MIA", "IND", "ALA", "TEX",
     "TENN", "WAKE", "WAFO", "BYU", "TTU", "UK", "KEWI", "HOU", "HOCO", "IOWA",
     "IOHA", "USC", "ORE", "MISS", "OSU", "LSU", "BSU", "SCAR", "ARI", "ARWI",
     "UNM", "SMU", "OKST"
@@ -113,7 +116,7 @@ const CLEAN_CODE_OVERRIDES = {
     "VACO": "VAN",
 
     // ACC & Independents
-    "NODA": "ND",
+    "NODA": "NDSU",
     "MIHU": "MIA",
     "CLTI": "CLEM",
     "SMMU": "SMU",
@@ -190,7 +193,7 @@ function getTierFromEv(evPct) {
     const ev = Number(evPct);
     if (ev >= SMASH_EV_CUTOFF) return "SMASH";
     if (ev <= PASS_EV_CUTOFF) return "PASS";
-    return "TOO_CLOSE"; // -9.99% to +9.99% EV
+    return "TOO_CLOSE"; // -18.99% to +9.99% EV
 }
 
 function getTierColor(tierBadge, useHex = false) {
@@ -536,17 +539,24 @@ function bindUIControls() {
 }
 
 async function pollDataFeed() {
+    let textData = "";
     try {
         const response = await fetch(`./data.json?t=${Date.now()}`, { cache: "no-store" });
         if (!response.ok) return;
-        const textData = await response.text();
-        if (textData !== AppState.lastDataHash) {
-            AppState.lastDataHash = textData;
-            AppState.rawPayload = JSON.parse(textData);
-            recalculateAndRenderAll();
-        }
+        textData = await response.text();
     } catch (err) {
         console.warn("DixPix Polling Notice: Waiting for data.json feed...", err.message);
+        return;
+    }
+    if (textData !== AppState.lastDataHash) {
+        try {
+            AppState.rawPayload = JSON.parse(textData);
+            AppState.lastDataHash = textData;
+        } catch (parseErr) {
+            console.error("DixPix data.json Parse Error:", parseErr);
+            return;
+        }
+        recalculateAndRenderAll();
     }
 }
 
@@ -570,7 +580,7 @@ function renderLockCellHTML() {
 }
 
 // ==========================================
-// MASTER CALCULATION PIPELINE — SINGLE SOURCE OF TRUTH (ONLINEMATH_ENGINE v310)
+// MASTER CALCULATION PIPELINE — SINGLE SOURCE OF TRUTH (ONLINEMATH_ENGINE v312)
 // ==========================================
 function recalculateAndRenderAll(opts = {}) {
     const isSliderDrag = Boolean(opts && opts.isSliderDrag);
@@ -650,7 +660,7 @@ function recalculateAndRenderAll(opts = {}) {
 
         const gameWithLeague = Object.assign({}, game, { league: gameLeague });
 
-        // SINGLE-SOURCE-OF-TRUTH M9 + M11 + M13 FAIR MARGIN SYNTHESIS (v310)
+        // SINGLE-SOURCE-OF-TRUTH M9 + M11 + M13 FAIR MARGIN SYNTHESIS (v312)
         // Mode 1 ("tip") strictly enforces M1–M9 firewall (activePsi = 0, activeElev = 0, M13 = 0)
         const m9Base = calcFullGameFairMargin(
             gameWithLeague, m8.phiCircadianPenalty, 0, "tip", vegasHomeSpread, 0, elevTip, 0.0
@@ -683,6 +693,10 @@ function recalculateAndRenderAll(opts = {}) {
             const envTotalShift = -windPenalty + (m7.passGameModifierYards * 0.25) + m8.delayTotalDragPts;
             const boundedTotalDelta = Math.max(-4.2, Math.min(4.2, ((rawTelemetryTotal - vegasTotalLine) * 0.22) + envTotalShift));
             baseTelemetryTotal = Number((vegasTotalLine + boundedTotalDelta).toFixed(1));
+        } else {
+            const nflTotalGap = rawTelemetryTotal - vegasTotalLine;
+            const boundedNflDelta = 5.0 * Math.tanh((nflTotalGap * 0.55) / 5.0);
+            baseTelemetryTotal = Number((vegasTotalLine + boundedNflDelta).toFixed(1));
         }
 
         const m13Details = (mode === "davinci" ? m9.m13Details : m9Bd.m13Details) || {
@@ -711,7 +725,7 @@ function recalculateAndRenderAll(opts = {}) {
             awayTeam: cleanAway,
             commenceTime: game.commence_time,
             elevationM: envPayload.elevation_m || 0,
-            tempK: envPayload.temp_kelvin || 288.15,
+            tempK: envPayload.temp_kelvin || (envPayload.temperature_f !== undefined ? Number((((envPayload.temperature_f - 32) * 5 / 9) + 273.15).toFixed(2)) : 288.15),
             windMph,
             vegasHomeSpread,
             vegasTotalLine,
@@ -804,7 +818,7 @@ function recalculateAndRenderAll(opts = {}) {
                         : baseSafeSpread;
                     safeFloorHookNum = safeSpreadVal;
                     const safeCoverGap = safeSpreadVal - finalCalculatedLine;
-                    const safeProbRaw = Math.min(0.96, Math.max(0.68, calcPointGapWinProb(safeCoverGap)));
+                    const safeProbRaw = Math.min(0.96, Math.max(0.05, calcPointGapWinProb(safeCoverGap)));
                     safeFloorWinPct = Number((safeProbRaw * 100).toFixed(1));
                     const safeFmt = isActiveMomentumArc ? safeSpreadVal.toFixed(2) : safeSpreadVal.toFixed(1);
                     safeFloorLabel = `Alt ${safeSpreadVal > 0 ? '+' + safeFmt : safeFmt} (-175)`;
@@ -856,7 +870,7 @@ function recalculateAndRenderAll(opts = {}) {
                     const safeTotalEdge = isUnderTip
                         ? (safeTotalVal - finalCalculatedLine)
                         : (finalCalculatedLine - safeTotalVal);
-                    const safeTotalProb = Math.min(0.96, Math.max(0.70, calcPointGapWinProb(safeTotalEdge)));
+                    const safeTotalProb = Math.min(0.96, Math.max(0.05, calcPointGapWinProb(safeTotalEdge)));
                     safeFloorWinPct = Number((safeTotalProb * 100).toFixed(1));
                     safeFloorLabel = `Alt ${isUnderTip ? 'U' : 'O'} ${safeTotalVal.toFixed(1)} (-175)`;
 
@@ -907,7 +921,7 @@ function recalculateAndRenderAll(opts = {}) {
                         : baseFloorMilestone;
                     safeFloorHookNum = safeFloorMilestone;
                     const gammaFloorRes = calcGammaSurvivalProb(finalCalculatedLine, varianceSigma2, safeFloorMilestone);
-                    safeFloorWinPct = Number((Math.min(0.97, Math.max(0.75, gammaFloorRes.trueOverProb)) * 100).toFixed(1));
+                    safeFloorWinPct = Number((Math.min(0.97, Math.max(0.05, gammaFloorRes.trueOverProb)) * 100).toFixed(1));
                     safeFloorLabel = `${safeFloorMilestone}+ Safe Floor (-190)`;
 
                     const baseCeilMilestone = Math.max(10, Math.round((baseProjectedLine * 1.25) / 5) * 5);
@@ -997,8 +1011,7 @@ function recalculateAndRenderAll(opts = {}) {
         p.flagshipSlot = "";
         p.porkysSlot = "";
     });
-    const bestSpreadPerGame = [];
-    const remainingPool = [];
+    const bestPlayPerGame = [];
     const trapPairsPool = [];
 
     const currentWeekGames = AppState.processedGames.filter(g => g.isCurrentWeek);
@@ -1008,12 +1021,17 @@ function recalculateAndRenderAll(opts = {}) {
         const gameSpreads = AppState.processedProps.filter(
             p => p.gameId === g.gameId && p.marketType === "spread" && Math.abs(p.baseLine) <= 28.5
         );
+        const gameTotals = AppState.processedProps.filter(
+            p => p.gameId === g.gameId && p.marketType === "total" && !p.gatekeeperBlocked
+        );
+
+        const gameCandidates = [];
         if (gameSpreads.length > 0) {
             gameSpreads.sort((a, b) => b.tipEvPct - a.tipEvPct);
             const bestSide = gameSpreads[0];
             const worstSide = gameSpreads[gameSpreads.length - 1];
             if (!bestSide.gatekeeperBlocked) {
-                bestSpreadPerGame.push(bestSide);
+                gameCandidates.push(bestSide);
             }
 
             if (gameSpreads.length > 1 && worstSide.tipEvPct <= PASS_EV_CUTOFF) {
@@ -1023,19 +1041,48 @@ function recalculateAndRenderAll(opts = {}) {
                 });
             }
         }
-        const gameTotals = AppState.processedProps.filter(
-            p => p.gameId === g.gameId && p.marketType !== "spread" && !p.gatekeeperBlocked
-        );
-        remainingPool.push(...gameTotals);
+        if (gameTotals.length > 0) {
+            gameTotals.sort((a, b) => b.tipEvPct - a.tipEvPct);
+            gameCandidates.push(gameTotals[0]);
+        }
+
+        // Strict 1-pick-per-game rule: highest-EV Spread OR O/U Total per stadium for clean x2/x3 Round Robins
+        if (gameCandidates.length > 0) {
+            gameCandidates.sort((a, b) => b.tipEvPct - a.tipEvPct);
+            bestPlayPerGame.push(gameCandidates[0]);
+        }
     });
 
-    bestSpreadPerGame.sort((a, b) => b.tipEvPct - a.tipEvPct);
-    const menageTop3 = bestSpreadPerGame.slice(0, 3);
+    bestPlayPerGame.sort((a, b) => b.tipEvPct - a.tipEvPct);
+    // Balanced Blended 5-Pack: strict 1-pick-per-game + max 3 of any single market (guarantees Spread + O/U blend)
+    const selectedFive = [];
+    const usedGameIds = new Set();
+    let spreadCount = 0;
+    let totalCount = 0;
+    for (const p of bestPlayPerGame) {
+        if (selectedFive.length >= 5) break;
+        if (usedGameIds.has(p.gameId)) continue;
+        if (p.marketType === "spread" && spreadCount >= 3) continue;
+        if (p.marketType === "total" && totalCount >= 3) continue;
+        selectedFive.push(p);
+        usedGameIds.add(p.gameId);
+        if (p.marketType === "spread") spreadCount++;
+        else if (p.marketType === "total") totalCount++;
+    }
+    // Fallback fill if slate has <5 games with balanced markets
+    if (selectedFive.length < 5) {
+        for (const p of bestPlayPerGame) {
+            if (selectedFive.length >= 5) break;
+            if (usedGameIds.has(p.gameId)) continue;
+            selectedFive.push(p);
+            usedGameIds.add(p.gameId);
+        }
+    }
+    selectedFive.sort((a, b) => b.tipEvPct - a.tipEvPct);
+    const menageTop3 = selectedFive.slice(0, 3);
     menageTop3.forEach((p, idx) => { p.flagshipSlot = `MÉNAGE À TROIS #${idx + 1}`; });
 
-    const leftoverSpreads = bestSpreadPerGame.slice(3);
-    const flexCandidates = [...leftoverSpreads, ...remainingPool].sort((a, b) => b.tipEvPct - a.tipEvPct);
-    const flexTop2 = flexCandidates.slice(0, 2);
+    const flexTop2 = selectedFive.slice(3, 5);
     flexTop2.forEach((p, idx) => { p.flagshipSlot = `5-PACK FLEX #${idx + 4}`; });
 
     AppState.flagshipFivePack = [...menageTop3, ...flexTop2];
@@ -1160,7 +1207,7 @@ function buildMasterBoardLegendHTML() {
         <div style="margin-bottom: 14px; border: 1px solid rgba(6, 182, 212, 0.45); border-radius: 8px; background: #0f172a; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); overflow: hidden;">
             <div onclick="window.toggleLegendDrawer('${legendKey}', 'fivePack', event)" style="cursor: pointer; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(90deg, rgba(6, 182, 212, 0.14), rgba(15, 23, 42, 0.9)); user-select: none;">
                 <span style="font-family: var(--font-mono); font-size: 12px; font-weight: 800; color: var(--accent-cyan); letter-spacing: 0.03em;">
-                    👙 NEW TO THE CLUB? THE DIXPIX HOUSE RULES &amp; 15-SECOND BETTING GUIDE (v310 GUARDRAILS ACTIVE)
+                    👙 NEW TO THE CLUB? THE DIXPIX HOUSE RULES &amp; 15-SECOND BETTING GUIDE (v312 GUARDRAILS ACTIVE)
                 </span>
                 <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); text-decoration: underline;">
                     ${isLegendOpen ? 'Hide House Rules ▲' : 'Click to Expand ▼'}
@@ -1176,10 +1223,10 @@ function buildMasterBoardLegendHTML() {
                     </div>
 
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
-                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">2. THE VIP FLOOR CODE (3-TIER EV)</div>
+                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">2. THE VIP FLOOR CODE (SYMMETRIC 3-TIER EV)</div>
                         <div>• <span class="badge-smash" style="font-size:10px;">SMASH</span> <strong style="color:var(--accent-emerald);">(&ge;+10.0% EV):</strong> <em>Green-Light Money Shot.</em> Full-contact value (57.6%+ win rate). Pull your stack out and make it rain.</div>
-                        <div style="margin-top: 4px;">• <strong style="color:#94a3b8;">Neutral Slate / No Badge (&plusmn;10% EV):</strong> <em>All Tease, No Squeeze.</em> Priced too tight to drop cash on. Keep your wallet holstered.</div>
-                        <div style="margin-top: 4px;">• <span class="badge-pass" style="background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);font-size:10px;font-weight:800;">PASS</span> <strong style="color:var(--accent-danger);">(&le;-10.0% EV or Gated):</strong> <em>Grenades Dodged.</em> Public trap or v310 guardrail stop (M4 TOP, M5 Sack-Trauma, M9 3rd-String QB).</div>
+                        <div style="margin-top: 4px;">• <strong style="color:#94a3b8;">Neutral Slate / No Badge (-18.9% to +9.9% EV):</strong> <em>All Tease, No Squeeze.</em> Priced too tight to drop cash on. Keep your wallet holstered.</div>
+                        <div style="margin-top: 4px;">• <span class="badge-pass" style="background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);font-size:10px;font-weight:800;">PASS</span> <strong style="color:var(--accent-danger);">(&le;-19.0% EV or Gated):</strong> <em>Grenades Dodged.</em> Public trap or v312 guardrail stop (M4 TOP, M5 Sack-Trauma, M9 3rd-String QB).</div>
                     </div>
 
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
@@ -1217,7 +1264,7 @@ function renderFlagshipFivePack() {
 
     const modeTitle = AppState.activeMode === "tip"
         ? "Just the Tip Baseline (M1–M9)"
-        : (AppState.activeMode === "balls_deep" ? "Balls Deep v310 Guardrails & Floor/Ceiling (M1–M13)" : "DaVinci Organic Momentum Flow Mode");
+        : (AppState.activeMode === "balls_deep" ? "Balls Deep v312 Guardrails & Floor/Ceiling (M1–M13)" : "DaVinci Organic Momentum Flow Mode");
 
     const singleLockedStatusHTML = AppState.activeMode === "tip"
         ? `
@@ -1227,7 +1274,7 @@ function renderFlagshipFivePack() {
         `
         : `
             <div style="margin: 10px auto 4px auto; max-width: 540px; padding: 6px 14px; border-radius: 6px; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.4); font-family: var(--font-mono); font-size: 11px; color: var(--accent-emerald); font-weight: 700; text-align: center;">
-                🔓 BALLS DEEP FLOOR (-2&phi;) &amp; CEILING (+&phi;) BRACKET UNLOCKED (v310 Ψ_11,12 + M13 ACTIVE)
+                🔓 BALLS DEEP FLOOR (-2&phi;) &amp; CEILING (+&phi;) BRACKET UNLOCKED (v312 Ψ_11,12 + M13 ACTIVE)
             </div>
         `;
 
@@ -1275,7 +1322,9 @@ function renderFlagshipFivePack() {
         `;
     }).join("");
 
-    const porkysRowsHTML = AppState.porkysFivePack.map((item, idx) => {
+    const porkysRowsHTML = AppState.porkysFivePack.length === 0
+        ? `<div style="padding: 16px; text-align: center; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary);">No true &le;-19.0% EV public grenades flagged on this week's board yet.</div>`
+        : AppState.porkysFivePack.map((item, idx) => {
         const trap = item.trapProp;
         const fade = item.fadeProp;
         const fmtTrapProj = Number(trap.tipProjectedMean) > 0 ? `+${trap.tipProjectedMean}` : `${trap.tipProjectedMean}`;
@@ -1383,7 +1432,7 @@ function renderFlagshipFivePack() {
 }
 
 // ==========================================
-// INDEPENDENT MASONRY FLEX COLUMNS WITH AUTO-SWEEP & v310 GUARDRAIL CHIPS
+// INDEPENDENT MASONRY FLEX COLUMNS WITH AUTO-SWEEP & v312 GUARDRAIL CHIPS
 // ==========================================
 function buildMasonryGridForGames(gamesSlice, numCols, cardSubtitle) {
     const rowWrapper = document.createElement("div");
@@ -1487,7 +1536,7 @@ function buildMasonryGridForGames(gamesSlice, numCols, cardSubtitle) {
                 const tipEvStr = `${engineData.tipEvPct > 0 ? '+' : ''}${engineData.tipEvPct}% EV`;
                 const slotBadge = (AppState.activeMode !== "tip" && engineData.flagshipSlot)
                     ? `<span class="${engineData.flagshipSlot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}" style="margin-right:6px;">${engineData.flagshipSlot}</span>`
-                    : (engineData.flagshipSlot && engineData.baseLine <= 0 ? `<span class="${engineData.flagshipSlot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}" style="margin-right:6px;">${engineData.flagshipSlot}</span>` : "");
+                    : (engineData.flagshipSlot && (engineData.marketType !== "spread" || engineData.baseLine <= 0) ? `<span class="${engineData.flagshipSlot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}" style="margin-right:6px;">${engineData.flagshipSlot}</span>` : "");
 
                 const propBlock = document.createElement("div");
                 propBlock.style.padding = "8px 0";
@@ -1598,7 +1647,7 @@ function renderCombinatoricsDeck() {
         ? "🐷 PORKY'S SAFE FLOOR (-2φ) FADE SLIP ACTIVE (-175 ALT LINES)"
         : (AppState.activeMode === "tip"
             ? "JUST THE TIP BASELINE (M1–M9)"
-            : (AppState.activeMode === "balls_deep" ? "BALLS DEEP v310 GUARDRAILS ACTIVE" : "DAVINCI MOMENTUM ARC ACTIVE"));
+            : (AppState.activeMode === "balls_deep" ? "BALLS DEEP v312 GUARDRAILS ACTIVE" : "DAVINCI MOMENTUM ARC ACTIVE"));
 
     const selectedProps = AppState.processedProps.filter(p => AppState.selectedParlayLegs.has(p.propKey));
     const legsPayload = selectedProps.map(p => {
@@ -1780,7 +1829,7 @@ function renderCombinatoricsDeck() {
 }
 
 // ==========================================
-// 13-MODULE COMPENDIUM BOARD (WIRED TO calcMasterFibonacciAggregate v310)
+// 13-MODULE COMPENDIUM BOARD (WIRED TO calcMasterFibonacciAggregate v312)
 // ==========================================
 function renderCompendiumBoard() {
     const tbody = document.getElementById("compendium-board-body");
@@ -1883,7 +1932,7 @@ function renderTelemetryInspector() {
     const showCoupledPsi = (AppState.activeMode === "balls_deep" || AppState.activeMode === "davinci");
     const modeDisplay = AppState.activeMode === "tip"
         ? "JUST THE TIP (M1–M9)"
-        : (AppState.activeMode === "balls_deep" ? "BALLS DEEP (v310 M1–M13)" : "DAVINCI");
+        : (AppState.activeMode === "balls_deep" ? "BALLS DEEP (v312 M1–M13)" : "DAVINCI");
 
     container.className = "table-responsive";
     container.innerHTML = `
@@ -2174,12 +2223,12 @@ function buildLedgerLegendHTML() {
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
                         <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">MAIN STAGE vs. LAP-DANCE COIN FLIPS</div>
                         <div>• <strong style="color:var(--accent-emerald);">🔥 Official SMASH (&ge;+10.0% EV):</strong> Our headline earners that clear the +10% EV velvet rope, tracked alongside the <strong>Flagship 5-Pack</strong> and <strong>Ménage à Trois</strong>.</div>
-                        <div style="margin-top: 4px;">• <strong style="color:#60a5fa;">🔵 All Tease, No Squeeze (&plusmn;10% EV):</strong> Tight toss-ups inside the -9.9% to +9.9% EV buffer—quarantined in their own booth so 50/50 bar-bet variance never waters down our Official SMASH record.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:#60a5fa;">🔵 All Tease, No Squeeze (-18.9% to +9.9% EV):</strong> Tight toss-ups inside the -18.9% to +9.9% EV buffer—quarantined in their own booth so 50/50 bar-bet variance never waters down our Official SMASH record.</div>
                     </div>
 
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
-                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-danger); margin-bottom: 4px;">💣 GRENADES DODGED (&le;-10% EV)</div>
-                        <div>• <strong>Wingman Intervention:</strong> <em>You were a little too drunk to make that call last night.</em> Tracks the 1:45 AM beer-goggle public favorites we stamped with a red <strong>PASS (&le;-10.0% EV)</strong>—the ones that look like a 10 on TV after six drinks, right before they wreck your life.</div>
+                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-danger); margin-bottom: 4px;">💣 GRENADES DODGED (&le;-19.0% EV)</div>
+                        <div>• <strong>Wingman Intervention:</strong> <em>You were a little too drunk to make that call last night.</em> Tracks the 1:45 AM beer-goggle public favorites we stamped with a red <strong>PASS (&le;-19.0% EV)</strong>—the ones that look like a 10 on TV after six drinks, right before they wreck your life.</div>
                         <div style="margin-top: 4px;">• Every time a casual-bait favorite blows up and fails to cover, <strong>Grenades Dodged</strong> ticks up—counting how many times your wingman jumped on the grenade so you didn't wake up chewing your own arm off on Monday morning.</div>
                     </div>
                 </div>
@@ -2350,7 +2399,7 @@ function renderHistoricalLedger() {
             const trapLabel = cleanLabelCodes(entry.trap_pick_label || `${cleanMatchup} Public Favorite Trap`);
             const trapLine = entry.trap_vegas_line !== undefined ? entry.trap_vegas_line : "--";
             const trapProj = entry.trap_tip_proj !== undefined ? entry.trap_tip_proj : "--";
-            const trapEv = entry.trap_tip_ev_pct !== undefined ? `${entry.trap_tip_ev_pct}% EV` : "&le;-10% EV";
+            const trapEv = entry.trap_tip_ev_pct !== undefined ? `${entry.trap_tip_ev_pct}% EV` : "&le;-19.0% EV";
             const fadeSideLabel = (entry.spread_record && entry.spread_record.pick_label) ? cleanLabelCodes(entry.spread_record.pick_label) : "Counter-Strike Dog";
 
             vaultRows.grenades_dodged.push(`
@@ -2374,7 +2423,7 @@ function renderHistoricalLedger() {
         archivedRecords.forEach(({ type, rec }) => {
             const isSpread = type === "SPREAD";
             const pickLabel = cleanLabelCodes(rec.pick_label || rec.player || cleanMatchup);
-            const vegasLine = rec.vegas_line !== undefined ? Number(rec.vegas_line) : (rec.line !== undefined ? Number(rec.line) : Number(rec.baseLine || 0));
+            const vegasLine = rec.vegas_line !== undefined ? Number(rec.vegas_line) : (rec.vegas_closing_line !== undefined ? Number(rec.vegas_closing_line) : (rec.line !== undefined ? Number(rec.line) : Number(rec.baseLine || 0)));
             const baseOdds = rec.odds !== undefined ? rec.odds : (rec.baseOdds || -110);
             const tipProj = rec.tip_proj !== undefined ? Number(rec.tip_proj) : Number(rec.tipProjectedMean || vegasLine);
             const tipWinPct = rec.tip_win_pct !== undefined ? rec.tip_win_pct : (rec.tipModelPct || 50);
@@ -2382,9 +2431,9 @@ function renderHistoricalLedger() {
             const ledgerTier = getTierFromEv(tipEvPct);
             const tipColor = getTierColor(ledgerTier);
 
-            const bdProj = rec.bd_proj !== undefined ? Number(rec.bd_proj) : Number(rec.bdProjectedMean || tipProj);
-            const bdWinPct = rec.bd_win_pct !== undefined ? rec.bd_win_pct : (rec.bdModelPct || tipWinPct);
-            const bdEvPct = rec.bd_ev_pct !== undefined ? rec.bd_ev_pct : (rec.bdEvPct || tipEvPct);
+            const bdProj = rec.bd_proj !== undefined ? Number(rec.bd_proj) : (rec.balls_deep_proj !== undefined ? Number(rec.balls_deep_proj) : Number(rec.bdProjectedMean || tipProj));
+            const bdWinPct = rec.bd_win_pct !== undefined ? rec.bd_win_pct : (rec.balls_deep_win_pct !== undefined ? rec.balls_deep_win_pct : (rec.bdModelPct || tipWinPct));
+            const bdEvPct = rec.bd_ev_pct !== undefined ? rec.bd_ev_pct : (rec.balls_deep_ev_pct !== undefined ? rec.balls_deep_ev_pct : (rec.bdEvPct || tipEvPct));
             const bdTier = getTierFromEv(bdEvPct);
             const bdColor = getTierColor(bdTier);
 
@@ -2402,7 +2451,7 @@ function renderHistoricalLedger() {
             const slot = rec.flagship_slot || rec.flagshipSlot || "";
 
             let gradedTip = rec.result_tip || rec.result || "PENDING";
-            let gradedBd = rec.result_bd || gradedTip;
+            let gradedBd = rec.result_bd || rec.result_balls_deep || gradedTip;
             const missByPts = Number(rec.miss_by_pts || 0);
 
             let gradedFloor = rec.result_floor || "";
@@ -2691,11 +2740,11 @@ function renderHistoricalLedger() {
             vaultAccentColor = "var(--accent-emerald)";
             selectedRowsHTML = vaultRows.overall_smash.join("");
         } else if (AppState.activeLedgerVault === "all_tease") {
-            vaultTitle = `🔵 ALL TEASE, NO SQUEEZE VAULT (&plusmn;10% EV COMPLETED RECEIPTS) // ${fmtBucket("all_tease")}`;
+            vaultTitle = `🔵 ALL TEASE, NO SQUEEZE VAULT (-18.9% to +9.9% EV COMPLETED RECEIPTS) // ${fmtBucket("all_tease")}`;
             vaultAccentColor = "#60a5fa";
             selectedRowsHTML = vaultRows.all_tease.join("");
         } else if (AppState.activeLedgerVault === "grenades_dodged") {
-            vaultTitle = `💣 GRENADES DODGED VAULT (&le;-10% EV PUBLIC TRAPS AVOIDED) // ${fmtTraps()}`;
+            vaultTitle = `💣 GRENADES DODGED VAULT (&le;-19.0% EV PUBLIC TRAPS AVOIDED) // ${fmtTraps()}`;
             vaultAccentColor = "var(--accent-danger)";
             selectedRowsHTML = vaultRows.grenades_dodged.join("");
         } else if (isFloorsCeilingsVault) {
@@ -2782,13 +2831,13 @@ function renderHistoricalLedger() {
             </div>
 
             <div onclick="window.toggleLedgerVault('all_tease', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('all_tease', 'rgba(59, 130, 246, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
-                <div style="font-size: 11px; color: #60a5fa; font-weight: 800;">🔵 ALL TEASE, NO SQUEEZE (&plusmn;10% EV)</div>
+                <div style="font-size: 11px; color: #60a5fa; font-weight: 800;">🔵 ALL TEASE, NO SQUEEZE (-18.9% to +9.9% EV)</div>
                 <div style="font-size: 14.5px; font-weight: 800; margin: 6px 0; color: var(--text-primary);">${fmtBucket("all_tease")}</div>
                 <div style="font-size: 11px; color: var(--text-muted);">Coin-flip zone | BB = Missed line by &le;3 pts</div>
             </div>
 
             <div onclick="window.toggleLedgerVault('grenades_dodged', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('grenades_dodged', 'rgba(239, 68, 68, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
-                <div style="font-size: 11px; color: var(--accent-danger); font-weight: 800;">💣 GRENADES DODGED (&le;-10% EV)</div>
+                <div style="font-size: 11px; color: var(--accent-danger); font-weight: 800;">💣 GRENADES DODGED (&le;-19.0% EV)</div>
                 <div style="font-size: 15.5px; font-weight: 800; margin: 6px 0; color: var(--accent-emerald);">${fmtTraps()}</div>
                 <div style="font-size: 11px; color: var(--text-muted);">You were a little too drunk to make that call last night</div>
             </div>
@@ -2941,4 +2990,4 @@ function renderLiveBottomTicker() {
         </div>
     `;
 }
-// === END OF APP_CONTROLLER.JS (v235) ===
+// === END OF APP_CONTROLLER.JS (v237) ===
