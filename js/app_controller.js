@@ -224,12 +224,17 @@ function renderGatekeeperPillsHTML(flags, action = "ALLOW") {
 
 function renderGameGuardrailChipsHTML(gameRecord) {
     const chips = [];
-    if (gameRecord.elevMatrix && gameRecord.elevMatrix.hypoxicOverrideM13) {
+    const isUnlocked = (AppState.activeMode !== "tip");
+
+    // Balls Deep / DaVinci Modules ONLY (M11 & M13) — strictly hidden in Just the Tip (M1–M9)
+    if (isUnlocked && gameRecord.elevMatrix && gameRecord.elevMatrix.hypoxicOverrideM13) {
         chips.push(`<span style="background:rgba(245,158,11,0.16); color:var(--accent-gold); border:1px solid rgba(245,158,11,0.5); padding:2px 6px; border-radius:4px; font-size:10px; font-family:var(--font-mono); font-weight:800;">🏔️ M11&gt;M13 ZONE ${gameRecord.elevMatrix.zoneNumber} HYPOXIA</span>`);
     }
-    if (gameRecord.m13Details && gameRecord.m13Details.coachSyncBlocked) {
+    if (isUnlocked && gameRecord.m13Details && gameRecord.m13Details.coachSyncBlocked) {
         chips.push(`<span style="background:rgba(239,68,68,0.16); color:#f87171; border:1px solid rgba(239,68,68,0.5); padding:2px 6px; border-radius:4px; font-size:10px; font-family:var(--font-mono); font-weight:800;">🔒 M13 COACH/QB LOCK</span>`);
     }
+
+    // Modules 8 & 9 Core Guardrails (Allowed in all modes)
     if (gameRecord.thirdStringQbAlert) {
         chips.push(`<span style="background:rgba(6,182,212,0.16); color:var(--accent-cyan); border:1px solid rgba(6,182,212,0.5); padding:2px 6px; border-radius:4px; font-size:10px; font-family:var(--font-mono); font-weight:800;">🔄 3RD-STRING QB → ${gameRecord.thirdStringTeam} TT UNDER</span>`);
     }
@@ -532,9 +537,6 @@ function renderLockCellHTML() {
     return `<span onclick="window.unlockBallsDeepMode(event)" title="Click to unlock Balls Deep Telemetry" style="cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-size:15px; user-select:none;">🔒</span>`;
 }
 
-// ==========================================
-// MASTER CALCULATION PIPELINE — SINGLE SOURCE OF TRUTH (ONLINEMATH_ENGINE v310)
-// ==========================================
 function recalculateAndRenderAll() {
     if (!AppState.rawPayload || !AppState.rawPayload.games) return;
 
@@ -590,9 +592,9 @@ function recalculateAndRenderAll() {
         }
 
         // Module 11.1 (Biophysical Mass), Module 11.2 (10-Zone Elevation Matrix) & Module 12 (Turnover EPA)
-        const elevTip = calcTenZoneElevationMatrix(envPayload, circPayload, "tip");
-        const elevBd = calcTenZoneElevationMatrix(envPayload, circPayload, "balls_deep");
-        const elevActive = calcTenZoneElevationMatrix(envPayload, circPayload, mode);
+        const elevTip = calcTenZoneElevationMatrix(envPayload, circPayload, "tip", 0.0);
+        const elevBd = calcTenZoneElevationMatrix(envPayload, circPayload, "balls_deep", 0.0);
+        const elevActive = calcTenZoneElevationMatrix(envPayload, circPayload, mode, sliderVal);
 
         const m11Bd = calcBiophysicalMassLoad(envPayload, homeTel, 95.0, 0.62, "balls_deep", 0.0);
         const m12Bd = calcTurnoverEPAMatrix({ home: homeTel, away: awayTel }, gameLeague, "balls_deep", 0.0);
@@ -609,32 +611,29 @@ function recalculateAndRenderAll() {
             : -calcCoupledInteractionPsi(m11.phiBioScore, m12.netTurnoverEPA, sliderVal);
         const psiCoupledActive = Number(Math.max(-3.65, Math.min(3.65, rawCoupledActive)).toFixed(3));
 
-        // Ensure league is attached for M9 / M13 inside onlinemath_engine.js
         const gameWithLeague = Object.assign({}, game, { league: gameLeague });
 
-        // =========================================================================
         // SINGLE-SOURCE-OF-TRUTH M9 + M11 + M13 FAIR MARGIN SYNTHESIS (v310)
         // Mode 1 ("tip") strictly enforces M1–M9 firewall (activePsi = 0, activeElev = 0, M13 = 0)
-        // =========================================================================
         const m9Base = calcFullGameFairMargin(
-            gameWithLeague, m8.phiCircadianPenalty, 0, "tip", vegasHomeSpread, 0, elevTip
+            gameWithLeague, m8.phiCircadianPenalty, 0, "tip", vegasHomeSpread, 0, elevTip, 0.0
         );
         const m9Bd = calcFullGameFairMargin(
-            gameWithLeague, m8.phiCircadianPenalty, psiCoupledBd, "balls_deep", vegasHomeSpread, elevBd.psiElevPts, elevBd
+            gameWithLeague, m8.phiCircadianPenalty, psiCoupledBd, "balls_deep", vegasHomeSpread, elevBd.psiElevPts, elevBd, 0.0
         );
         const m9 = (mode === "tip")
             ? m9Base
             : ((mode === "balls_deep")
                 ? m9Bd
                 : calcFullGameFairMargin(
-                    gameWithLeague, m8.phiCircadianPenalty, psiCoupledActive, "davinci", vegasHomeSpread, elevActive.psiElevPts, elevActive
+                    gameWithLeague, m8.phiCircadianPenalty, psiCoupledActive, "davinci", vegasHomeSpread, elevActive.psiElevPts, elevActive, sliderVal
                 ));
 
         // Exact spread delta contributed by M11–M13 coupled overlay (guarantees Tip + Psi = Active)
         const psiBd = Number((m9Bd.fairHomeSpread - m9Base.fairHomeSpread).toFixed(2));
         const psi11_12 = (mode === "tip") ? 0 : Number((m9.fairHomeSpread - m9Base.fairHomeSpread).toFixed(2));
 
-        // Total Projection with Fix #2 (Totals-Weighted FAA Delay Drag) & Fix #1 (Zone 8–10 Hypoxic 2H Drag)
+        // Total Projection with Fix #2 (Totals-Weighted FAA Delay Drag)
         const windMph = envPayload.is_dome ? 0 : (envPayload.wind_mph || 0);
         const windPenalty = Math.max(0, (windMph - 10.0) * 0.25);
         const totalIntercept = (gameLeague === "NCAA") ? 51.450 : MODEL_TOTAL_INTERCEPT;
@@ -649,7 +648,7 @@ function recalculateAndRenderAll() {
             baseTelemetryTotal = Number((vegasTotalLine + boundedTotalDelta).toFixed(1));
         }
 
-        const m13Details = m9Bd.m13Details || {
+        const m13Details = (mode === "davinci" ? m9.m13Details : m9Bd.m13Details) || {
             mRiseMultiplier: 1.0,
             mRiseDog: 1.0,
             mRiseFav: 1.0,
@@ -682,7 +681,7 @@ function recalculateAndRenderAll() {
             m7, m8, m9Base, m9Bd, m9, m11, m12,
             elevMatrix: elevBd,
             elevActive,
-            psiElev: elevBd.psiElevPts,
+            psiElev: elevActive.psiElevPts,
             m11CombinedDisplay: Number((m11.phiBioScore + Math.abs(elevActive.psiElevPts)).toFixed(4)),
             m13Details,
             m13Rise: m13Details.mRiseSignedHomeDelta,
@@ -703,7 +702,6 @@ function recalculateAndRenderAll() {
                 const vegasLine = (prop.base_line !== undefined && prop.base_line !== null) ? Number(prop.base_line) : 0;
                 const isHomeSpread = prop.market_type === "spread" && prop.player.startsWith(`${game.home_team} `);
 
-                // Identify player team context for M4/M5/M11/M13 gatekeepers
                 const isAwayPlayer = Boolean(
                     prop.is_away_player ||
                     (prop.team && cleanTeamCode(prop.team) === cleanAway) ||
@@ -712,10 +710,11 @@ function recalculateAndRenderAll() {
                 const playerTeamSpread = isAwayPlayer ? -vegasHomeSpread : vegasHomeSpread;
                 const isUnderdogPlayer = playerTeamSpread > 0;
 
+                // Strict M1-M9 firewall: pass null for elevMatrix in Just the Tip so M11 never leaks into Tip mode
                 const gatekeeper = evaluatePropGatekeepers(prop, {
                     playerTeamSpread,
                     isRoadPlayer: isAwayPlayer,
-                    elevMatrix: elevBd,
+                    elevMatrix: (mode === "tip") ? null : elevActive,
                     teamTelemetry: isAwayPlayer ? awayTel : homeTel,
                     oppTelemetry: isAwayPlayer ? homeTel : awayTel,
                     thirdStringQbAlert: m9Base.thirdStringQbAlert,
@@ -786,7 +785,7 @@ function recalculateAndRenderAll() {
                         finalCalculatedLine = bdProjectedLine;
                         activeModelProb = bdModelProb;
                     } else if (mode === "davinci") {
-                        const dvTotal = bdProjectedLine + (sliderVal * PHI * 1.25);
+                        const dvTotal = bdProjectedLine + (dirSign * sliderVal * PHI * 0.85);
                         finalCalculatedLine = Number(dvTotal.toFixed(1));
                         activeModelProb = calcPointGapWinProb(Math.abs(finalCalculatedLine - vegasLine));
                     } else {
@@ -819,7 +818,6 @@ function recalculateAndRenderAll() {
                     bdReachProb = calcPointGapWinProb(altTotalEdge);
 
                 } else {
-                    // Player Prop Pipeline: Apply M4/M5/M11 Gatekeeper adjustedMu & Bidirectional M13 Prop Compression
                     const gatedMu = gatekeeper.adjustedMu > 0 ? gatekeeper.adjustedMu : (prop.projected_mean_mu || vegasLine || 50);
                     baseProjectedLine = Number(gatedMu.toFixed(1));
                     const varianceSigma2 = prop.projected_variance_sigma2 || 225;
@@ -876,8 +874,6 @@ function recalculateAndRenderAll() {
                 const activeWinPct = Number((activeModelProb * 100).toFixed(2));
                 const activeEvPct = Number(m2Active.evPercentage.toFixed(2));
 
-                // Gatekeeper Hard Override: Blocked plays (M4 TOP Starvation, M5 Sack-Trauma, M9 3rd-String QB Full-Game Under)
-                // are forced to PASS so they never render as green SMASH or sneak into the Flagship 5-Pack.
                 const tipBadge = gatekeeper.blocked ? "PASS" : getTierFromEv(tipEvPct);
                 const activeBadge = gatekeeper.blocked ? "PASS" : getTierFromEv(activeEvPct);
 
