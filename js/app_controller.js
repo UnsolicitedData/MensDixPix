@@ -1,11 +1,12 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v230)
- * Synced 1:1 with onlinemath_engine.js (v310 — 13-Module Compendium + 4 Guardrails + Fixed M13):
- *  - Single-source-of-truth calls to calcTenZoneElevationMatrix, calcFullGameFairMargin,
- *    calcSacredGeometryRise, evaluatePropGatekeepers, and calcMasterFibonacciAggregate
- *  - Strict Mode Firewall: "Just the Tip" (M1–M9 only) vs. "Balls Deep" / "DaVinci" (M1–M13 + Guardrails)
- *  - Displays M11>M13 Elevation Overrides, M13 Coach/QB Locks, M8 FAA Total Drag, M9 3rd-String QB Redirects,
- *    M4/M5 Prop Gatekeepers, and Hard 4.0% Quarter-Kelly Sizing Caps
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v235)
+ * Smooth Momentum Arc & Zero-Lag Slider Edition — Synced 1:1 with onlinemath_engine.js (v310)
+ *  - Zero-Lag DaVinci Slider: 50ms rAF drag fast-path (visible-tab-only repaint) + full sync on release
+ *  - Organic Continuous Momentum Arc (calcMomentumArc): flows Spreads, Totals, Safe Floors & Ceilings
+ *    smoothly across [-2φ, +2φ] without artificial .5 or 5-yard snapping
+ *  - Strict M1–M9 Mode Firewall: Zero M11/M13 alerts or badges in Just the Tip mode
+ *  - Single-source-of-truth integration with v310 Guardrails (4.0% Quarter-Kelly Cap, M4/M5 Prop Gatekeepers,
+ *    M8 Totals-Weighted FAA Delay, M9 Red-Zone Finishing & 3rd-String QB TOP Redirect, M11>M13 Elevation Override)
  *  - Preserves all 6 Clickable Ledger Vault Cards, Flagship 5-Pack Week Dropdown, Porky's Safe Floor Fades,
  *    ESPN Live Scoreboard Sync, Auto-Sweep of FINAL games, and 300s Live Wire Ticker
  */
@@ -34,6 +35,7 @@ const MODEL_TOTAL_INTERCEPT = 42.986;
 const SMASH_EV_CUTOFF = 10.0;          // >= +10.0% EV threshold for SMASH
 const PASS_EV_CUTOFF = -10.0;          // <= -10.0% EV threshold for definitive PASS
 const PHI = (typeof GOLDEN_RATIO_PHI !== "undefined") ? GOLDEN_RATIO_PHI : 1.6180339887;
+let sliderDragTimer = null;
 
 // Official AP / CFP Top-25 Ranked NCAA Programs (Full-Name & Code Matchers)
 const RANKED_NCAA_FULL_NAMES = [
@@ -226,7 +228,7 @@ function renderGameGuardrailChipsHTML(gameRecord) {
     const chips = [];
     const isUnlocked = (AppState.activeMode !== "tip");
 
-    // Balls Deep / DaVinci Modules ONLY (M11 & M13) — strictly hidden in Just the Tip (M1–M9)
+    // Balls Deep / DaVinci Modules ONLY (M11 & M13) — strictly sealed out of Just the Tip (M1–M9)
     if (isUnlocked && gameRecord.elevMatrix && gameRecord.elevMatrix.hypoxicOverrideM13) {
         chips.push(`<span style="background:rgba(245,158,11,0.16); color:var(--accent-gold); border:1px solid rgba(245,158,11,0.5); padding:2px 6px; border-radius:4px; font-size:10px; font-family:var(--font-mono); font-weight:800;">🏔️ M11&gt;M13 ZONE ${gameRecord.elevMatrix.zoneNumber} HYPOXIA</span>`);
     }
@@ -234,7 +236,7 @@ function renderGameGuardrailChipsHTML(gameRecord) {
         chips.push(`<span style="background:rgba(239,68,68,0.16); color:#f87171; border:1px solid rgba(239,68,68,0.5); padding:2px 6px; border-radius:4px; font-size:10px; font-family:var(--font-mono); font-weight:800;">🔒 M13 COACH/QB LOCK</span>`);
     }
 
-    // Modules 8 & 9 Core Guardrails (Allowed in all modes)
+    // Modules 8 & 9 Core Guardrails (Active in all modes)
     if (gameRecord.thirdStringQbAlert) {
         chips.push(`<span style="background:rgba(6,182,212,0.16); color:var(--accent-cyan); border:1px solid rgba(6,182,212,0.5); padding:2px 6px; border-radius:4px; font-size:10px; font-family:var(--font-mono); font-weight:800;">🔄 3RD-STRING QB → ${gameRecord.thirdStringTeam} TT UNDER</span>`);
     }
@@ -461,8 +463,6 @@ window.setComboFilter = function(filterType, value) {
     window.scrollTo(window.scrollX, savedY);
 };
 
-let sliderDragTimer = null;
-
 function bindUIControls() {
     const modeRadios = {
         "mode-tip": "tip",
@@ -480,13 +480,13 @@ function bindUIControls() {
             el.addEventListener("change", (e) => {
                 if (e.target.checked) {
                     AppState.activeMode = modeRadios[id];
-                    recalculateAndRenderAll();
+                    recalculateAndRenderAll({ isSliderDrag: false });
                 }
             });
         }
     });
 
-    // Fast-path while actively dragging the DaVinci slider
+    // Fast-path while actively dragging the DaVinci slider (zero hidden-tab thrashing)
     document.addEventListener("input", (e) => {
         if (e.target && e.target.id === "davinci-intensity-slider") {
             const readout = document.getElementById("davinci-readout");
@@ -499,11 +499,11 @@ function bindUIControls() {
             sliderDragTimer = setTimeout(() => {
                 sliderDragTimer = null;
                 requestAnimationFrame(() => recalculateAndRenderAll({ isSliderDrag: true }));
-            }, 60);
+            }, 50);
         }
     });
 
-    // Full sync of all tabs the moment you release the slider
+    // Full sync across all tabs the instant you release the slider
     document.addEventListener("change", (e) => {
         if (e.target && e.target.id === "davinci-intensity-slider") {
             if (sliderDragTimer) {
@@ -534,6 +534,7 @@ function bindUIControls() {
         });
     }
 }
+
 async function pollDataFeed() {
     try {
         const response = await fetch(`./data.json?t=${Date.now()}`, { cache: "no-store" });
@@ -554,11 +555,23 @@ function snapToHalfPointHook(lineVal, deltaPts) {
     return Math.floor(rawTarget) + 0.5;
 }
 
+// Organic Continuous Golden Ratio Momentum Arc (zero robotic snapping while dragging DaVinci slider)
+function calcMomentumArc(sliderVal, scale = 1.0) {
+    if (!sliderVal) return 0.0;
+    const norm = Math.max(-1.0, Math.min(1.0, sliderVal / (2.0 * PHI))); // -1.0 to +1.0
+    const exponent = 2.0 / PHI; // ~1.236068 natural swell curve
+    const arc = Math.sign(norm) * Math.pow(Math.abs(norm), exponent) * (PHI * PHI) * scale;
+    return Number(arc.toFixed(3));
+}
+
 // Clean bare lock icon (no border or background)
 function renderLockCellHTML() {
     return `<span onclick="window.unlockBallsDeepMode(event)" title="Click to unlock Balls Deep Telemetry" style="cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-size:15px; user-select:none;">🔒</span>`;
 }
 
+// ==========================================
+// MASTER CALCULATION PIPELINE — SINGLE SOURCE OF TRUTH (ONLINEMATH_ENGINE v310)
+// ==========================================
 function recalculateAndRenderAll(opts = {}) {
     const isSliderDrag = Boolean(opts && opts.isSliderDrag);
     if (!AppState.rawPayload || !AppState.rawPayload.games) return;
@@ -569,6 +582,7 @@ function recalculateAndRenderAll(opts = {}) {
     const defaultLeague = (AppState.rawPayload.slate_info && AppState.rawPayload.slate_info.league) || "NFL";
     const mode = AppState.activeMode;
     const sliderVal = (mode === "davinci") ? AppState.intensitySlider : 0.0;
+    const isActiveMomentumArc = (mode === "davinci" && sliderVal !== 0);
     const playScaler = (typeof GOLDEN_PLAY_SCALER !== "undefined") ? GOLDEN_PLAY_SCALER : 38.5145;
 
     const eligibleGamesForCutoff = AppState.rawPayload.games.filter(g => shouldIncludeGame(g, defaultLeague));
@@ -780,18 +794,29 @@ function recalculateAndRenderAll(opts = {}) {
                         activeModelProb = tipModelProb;
                     }
 
-                    const safeSpreadHook = snapToHalfPointHook(vegasLine, +3.5);
-                    safeFloorHookNum = safeSpreadHook;
-                    const safeCoverGap = safeSpreadHook - finalCalculatedLine;
+                    // Organic Continuous Momentum Arc on Safe Floor & Ceiling (no snapping while sliding DaVinci)
+                    const baseSafeSpread = snapToHalfPointHook(vegasLine, +3.5);
+                    const baseAltSpread = snapToHalfPointHook(vegasLine, -3.0);
+                    const spreadArc = isActiveMomentumArc ? calcMomentumArc(sliderVal, 1.0) : 0.0;
+
+                    const safeSpreadVal = isActiveMomentumArc
+                        ? Number((baseSafeSpread - spreadArc).toFixed(2))
+                        : baseSafeSpread;
+                    safeFloorHookNum = safeSpreadVal;
+                    const safeCoverGap = safeSpreadVal - finalCalculatedLine;
                     const safeProbRaw = Math.min(0.96, Math.max(0.68, calcPointGapWinProb(safeCoverGap)));
                     safeFloorWinPct = Number((safeProbRaw * 100).toFixed(1));
-                    safeFloorLabel = `Alt ${safeSpreadHook > 0 ? '+' + safeSpreadHook.toFixed(1) : safeSpreadHook.toFixed(1)} (-175)`;
+                    const safeFmt = isActiveMomentumArc ? safeSpreadVal.toFixed(2) : safeSpreadVal.toFixed(1);
+                    safeFloorLabel = `Alt ${safeSpreadVal > 0 ? '+' + safeFmt : safeFmt} (-175)`;
 
-                    const altSpreadHook = snapToHalfPointHook(vegasLine, -3.0);
-                    ceilingHookNum = altSpreadHook;
-                    bdAltLineLabel = `Alt ${altSpreadHook > 0 ? '+' + altSpreadHook.toFixed(1) : altSpreadHook.toFixed(1)} (+145)`;
+                    const altSpreadVal = isActiveMomentumArc
+                        ? Number((baseAltSpread - spreadArc).toFixed(2))
+                        : baseAltSpread;
+                    ceilingHookNum = altSpreadVal;
+                    const altFmt = isActiveMomentumArc ? altSpreadVal.toFixed(2) : altSpreadVal.toFixed(1);
+                    bdAltLineLabel = `Alt ${altSpreadVal > 0 ? '+' + altFmt : altFmt} (+145)`;
                     bdLongerOdds = 145;
-                    const altCoverGap = altSpreadHook - finalCalculatedLine;
+                    const altCoverGap = altSpreadVal - finalCalculatedLine;
                     bdReachProb = calcPointGapWinProb(altCoverGap);
 
                 } else if (prop.market_type === "total") {
@@ -804,11 +829,13 @@ function recalculateAndRenderAll(opts = {}) {
                     bdProjectedLine = Number((baseProjectedLine + bdTotalShift).toFixed(1));
                     bdModelProb = calcPointGapWinProb(Math.abs(bdProjectedLine - vegasLine));
 
+                    const totalArc = isActiveMomentumArc ? calcMomentumArc(sliderVal, 1.15) : 0.0;
+
                     if (mode === "balls_deep") {
                         finalCalculatedLine = bdProjectedLine;
                         activeModelProb = bdModelProb;
                     } else if (mode === "davinci") {
-                        const dvTotal = bdProjectedLine + (dirSign * sliderVal * PHI * 0.85);
+                        const dvTotal = bdProjectedLine + (dirSign * totalArc);
                         finalCalculatedLine = Number(dvTotal.toFixed(1));
                         activeModelProb = calcPointGapWinProb(Math.abs(finalCalculatedLine - vegasLine));
                     } else {
@@ -818,26 +845,33 @@ function recalculateAndRenderAll(opts = {}) {
 
                     const isUnderTip = baseProjectedLine < vegasLine;
 
-                    const safeTotalHook = isUnderTip
+                    // Organic Continuous Momentum Arc on Total Floor & Ceiling (zero .5 snapping while sliding)
+                    const baseSafeTotal = isUnderTip
                         ? (Math.floor(vegasLine + 3.5) + 0.5)
                         : (Math.floor(vegasLine - 3.5) + 0.5);
-                    safeFloorHookNum = safeTotalHook;
+                    const safeTotalVal = isActiveMomentumArc
+                        ? Number((isUnderTip ? (baseSafeTotal - totalArc) : (baseSafeTotal + totalArc)).toFixed(1))
+                        : baseSafeTotal;
+                    safeFloorHookNum = safeTotalVal;
                     const safeTotalEdge = isUnderTip
-                        ? (safeTotalHook - finalCalculatedLine)
-                        : (finalCalculatedLine - safeTotalHook);
+                        ? (safeTotalVal - finalCalculatedLine)
+                        : (finalCalculatedLine - safeTotalVal);
                     const safeTotalProb = Math.min(0.96, Math.max(0.70, calcPointGapWinProb(safeTotalEdge)));
                     safeFloorWinPct = Number((safeTotalProb * 100).toFixed(1));
-                    safeFloorLabel = `Alt ${isUnderTip ? 'U' : 'O'} ${safeTotalHook.toFixed(1)} (-175)`;
+                    safeFloorLabel = `Alt ${isUnderTip ? 'U' : 'O'} ${safeTotalVal.toFixed(1)} (-175)`;
 
-                    const altTotalHook = isUnderTip
+                    const baseAltTotal = isUnderTip
                         ? (Math.floor(vegasLine - 3.0) + 0.5)
                         : (Math.floor(vegasLine + 3.0) + 0.5);
-                    ceilingHookNum = altTotalHook;
-                    bdAltLineLabel = `Alt ${isUnderTip ? 'U' : 'O'} ${altTotalHook.toFixed(1)} (+155)`;
+                    const altTotalVal = isActiveMomentumArc
+                        ? Number((isUnderTip ? (baseAltTotal - totalArc) : (baseAltTotal + totalArc)).toFixed(1))
+                        : baseAltTotal;
+                    ceilingHookNum = altTotalVal;
+                    bdAltLineLabel = `Alt ${isUnderTip ? 'U' : 'O'} ${altTotalVal.toFixed(1)} (+155)`;
                     bdLongerOdds = 155;
                     const altTotalEdge = isUnderTip
-                        ? (altTotalHook - finalCalculatedLine)
-                        : (finalCalculatedLine - altTotalHook);
+                        ? (altTotalVal - finalCalculatedLine)
+                        : (finalCalculatedLine - altTotalVal);
                     bdReachProb = calcPointGapWinProb(altTotalEdge);
 
                 } else {
@@ -852,6 +886,8 @@ function recalculateAndRenderAll(opts = {}) {
                     const gammaBdRes = calcGammaSurvivalProb(bdProjectedLine, varianceSigma2, vegasLine || 45.5);
                     bdModelProb = Math.max(0.01, Math.min(0.99, gammaBdRes.trueOverProb));
 
+                    const propArcPct = isActiveMomentumArc ? (calcMomentumArc(sliderVal, 0.085)) : 0.0;
+
                     if (mode === "tip") {
                         finalCalculatedLine = baseProjectedLine;
                         activeModelProb = tipModelProb;
@@ -859,18 +895,25 @@ function recalculateAndRenderAll(opts = {}) {
                         finalCalculatedLine = bdProjectedLine;
                         activeModelProb = bdModelProb;
                     } else {
-                        const dvMu = Math.max(1, Number((bdProjectedLine * (1.0 + (sliderVal * 0.06))).toFixed(1)));
+                        const dvMu = Math.max(1, Number((bdProjectedLine * (1.0 + propArcPct)).toFixed(1)));
                         finalCalculatedLine = dvMu;
                         activeModelProb = calcGammaSurvivalProb(dvMu, varianceSigma2, vegasLine || 45.5).trueOverProb;
                     }
 
-                    const safeFloorMilestone = Math.max(5, Math.round((baseProjectedLine * 0.70) / 5) * 5);
+                    // Organic continuous prop floor & ceiling flow in DaVinci (no 5-yard snapping during drag)
+                    const baseFloorMilestone = Math.max(5, Math.round((baseProjectedLine * 0.70) / 5) * 5);
+                    const safeFloorMilestone = isActiveMomentumArc
+                        ? Math.max(1, Number((finalCalculatedLine * 0.70).toFixed(1)))
+                        : baseFloorMilestone;
                     safeFloorHookNum = safeFloorMilestone;
                     const gammaFloorRes = calcGammaSurvivalProb(finalCalculatedLine, varianceSigma2, safeFloorMilestone);
                     safeFloorWinPct = Number((Math.min(0.97, Math.max(0.75, gammaFloorRes.trueOverProb)) * 100).toFixed(1));
                     safeFloorLabel = `${safeFloorMilestone}+ Safe Floor (-190)`;
 
-                    const ceilingMilestone = Math.max(10, Math.round((baseProjectedLine * 1.25) / 5) * 5);
+                    const baseCeilMilestone = Math.max(10, Math.round((baseProjectedLine * 1.25) / 5) * 5);
+                    const ceilingMilestone = isActiveMomentumArc
+                        ? Math.max(5, Number((finalCalculatedLine * 1.25).toFixed(1)))
+                        : baseCeilMilestone;
                     ceilingHookNum = ceilingMilestone;
                     bdAltLineLabel = `${ceilingMilestone}+ Escalator (+160)`;
                     bdLongerOdds = 160;
@@ -1018,6 +1061,7 @@ function recalculateAndRenderAll(opts = {}) {
     };
 
     if (isSliderDrag) {
+        // Fast-path during active DaVinci slider drag: repaint ONLY visible panels; skip closed cards, Ledger & Live Ticker
         if (isVisible("flagship-five-pack-container")) renderFlagshipFivePack();
 
         const hasOpenGameCards = Array.from(openCardMemory).some(
@@ -1135,7 +1179,7 @@ function buildMasterBoardLegendHTML() {
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
                         <div style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-gold); margin-bottom: 4px;">3. FLOOR-TO-CEILING VIP PASS &amp; OVERRIDES</div>
                         <div>• <strong style="color:var(--accent-cyan);">Just the Tip:</strong> Pure M1–M9 baseline efficiency, weather ballistics, and circadian travel drag.</div>
-                        <div style="margin-top: 4px;">• <strong style="color:var(--accent-emerald);">Balls Deep:</strong> Unleashes M11–M13 (&Psi;_11,12 + 10-Zone Elevation <strong>M11&gt;M13</strong> + Fixed Objective <strong>M_rise</strong>), plus our <strong>🛡️ Safe Floor (-2&phi;)</strong> &amp; <strong>🎯 Ceiling (+&phi;)</strong> bracket.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:var(--accent-emerald);">Balls Deep &amp; DaVinci:</strong> Unleashes M11–M13 (&Psi;_11,12 + 10-Zone Elevation <strong>M11&gt;M13</strong> + Fixed Objective <strong>M_rise</strong>) with an organic continuous momentum arc across our <strong>🛡️ Safe Floor (-2&phi;)</strong> &amp; <strong>🎯 Ceiling (+&phi;)</strong> bracket.</div>
                     </div>
                 </div>
             </div>
@@ -1167,7 +1211,7 @@ function renderFlagshipFivePack() {
 
     const modeTitle = AppState.activeMode === "tip"
         ? "Just the Tip Baseline (M1–M9)"
-        : (AppState.activeMode === "balls_deep" ? "Balls Deep v310 Guardrails & Floor/Ceiling (M1–M13)" : "DaVinci Continuous Flow Mode");
+        : (AppState.activeMode === "balls_deep" ? "Balls Deep v310 Guardrails & Floor/Ceiling (M1–M13)" : "DaVinci Organic Momentum Flow Mode");
 
     const singleLockedStatusHTML = AppState.activeMode === "tip"
         ? `
@@ -1548,7 +1592,7 @@ function renderCombinatoricsDeck() {
         ? "🐷 PORKY'S SAFE FLOOR (-2φ) FADE SLIP ACTIVE (-175 ALT LINES)"
         : (AppState.activeMode === "tip"
             ? "JUST THE TIP BASELINE (M1–M9)"
-            : (AppState.activeMode === "balls_deep" ? "BALLS DEEP v310 GUARDRAILS ACTIVE" : "DAVINCI OVERRIDE ACTIVE"));
+            : (AppState.activeMode === "balls_deep" ? "BALLS DEEP v310 GUARDRAILS ACTIVE" : "DAVINCI MOMENTUM ARC ACTIVE"));
 
     const selectedProps = AppState.processedProps.filter(p => AppState.selectedParlayLegs.has(p.propKey));
     const legsPayload = selectedProps.map(p => {
@@ -1750,11 +1794,10 @@ function renderCompendiumBoard() {
             `;
         }
 
-        const em = g.elevMatrix || { zoneNumber: 1, direction: "ASCENT", psiElevPts: 0, hypoxicOverrideM13: false };
+        const em = g.elevActive || g.elevMatrix || { zoneNumber: 1, direction: "ASCENT", psiElevPts: 0, hypoxicOverrideM13: false };
         const m13 = g.m13Details || { mRiseMultiplier: 1.0, mRiseSignedHomeDelta: 0, m11OverrideApplied: false, coachSyncBlocked: false };
         const tovVal = g.m12.netTurnoverEPA || 0;
 
-        // Feed normalized module scores directly into v310 Master Fibonacci Aggregate
         const fibRes = calcMasterFibonacciAggregate({
             m1: (g.vegasHomeSpread - g.m9Base.fairHomeSpread) * 0.08,
             m5: -(g.m9Base.epaContribution || 0) * 0.05,
@@ -1893,7 +1936,7 @@ function renderBioWeatherLab() {
             </thead>
             <tbody>
                 ${AppState.processedGames.map(g => {
-                    const em = g.elevMatrix || { zoneNumber: 1, wzWeight: 0.1, deltaFeet: 0, direction: "ASCENT", qCurve: [0.382, 0.618, 1.618, 1.618], psiElevPts: 0, hypoxicOverrideM13: false };
+                    const em = g.elevActive || g.elevMatrix || { zoneNumber: 1, wzWeight: 0.1, deltaFeet: 0, direction: "ASCENT", qCurve: [0.382, 0.618, 1.618, 1.618], psiElevPts: 0, hypoxicOverrideM13: false };
                     const scaledBio = Number((g.m11CombinedDisplay * modeScale).toFixed(4));
                     const bioColor = em.hypoxicOverrideM13 ? "var(--accent-gold)" : (scaledBio >= 0.025 ? "var(--accent-emerald)" : "var(--accent-cyan)");
                     const zoneStr = `Zone ${em.zoneNumber} (0.1×F=${em.wzWeight}) ${em.direction}<br><small style="color:var(--text-secondary);">${em.deltaFeet > 0 ? '+' : ''}${em.deltaFeet} ft | Q1–Q4: ${em.qCurve.join("→")}</small>`;
@@ -2867,4 +2910,4 @@ function renderLiveBottomTicker() {
         </div>
     `;
 }
-// === END OF APP_CONTROLLER.JS (v230) ===
+// === END OF APP_CONTROLLER.JS (v235) ===
