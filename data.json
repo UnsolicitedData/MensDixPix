@@ -2,8 +2,8 @@
   "slate_info": {
     "league": "NFL_NCAA",
     "week": 12,
-    "last_updated": "2026-11-19T23:04:49Z",
-    "telemetry_version": "v212_live_feeds",
+    "last_updated": "2026-11-19T23:16:43Z",
+    "telemetry_version": "v213_live_feeds",
     "ranked_ncaa_teams": [
       "Georgia Bulldogs",
       "Utah Utes",
@@ -45,9 +45,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 62.5,
-        "wind_mph": 5.1,
-        "pressure_hpa": 1009.2,
+        "temperature_f": 61.4,
+        "wind_mph": 4.8,
+        "pressure_hpa": 1009.0,
         "is_dome": false,
         "elevation_m": 220
       },
@@ -277,9 +277,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 70.3,
-        "wind_mph": 11.7,
-        "pressure_hpa": 1015.4,
+        "temperature_f": 70.4,
+        "wind_mph": 8.9,
+        "pressure_hpa": 1014.4,
         "is_dome": false,
         "elevation_m": 20
       },
@@ -318,7 +318,6 @@
           "injuries_summary": [],
           "telemetry_source": "espn_fpi_2026_live",
           "epa_rank": 48,
-          "poll_rank": 15,
           "off_eff": 66.2,
           "def_eff": 52.9
         }
@@ -363,12 +362,12 @@
         {
           "player": "ISU@UCF Total (O 48.5) (ISU @ UCF)",
           "market_type": "total",
-          "model_win_prob": 0.6047,
-          "projected_mean_mu": 51.8,
-          "balls_deep_proj": 51.8,
-          "balls_deep_win_prob": 0.6047,
-          "ev_pct": 18.61,
-          "balls_deep_ev_pct": 18.61,
+          "model_win_prob": 0.6169,
+          "projected_mean_mu": 52.2,
+          "balls_deep_proj": 52.2,
+          "balls_deep_win_prob": 0.6169,
+          "ev_pct": 21.01,
+          "balls_deep_ev_pct": 21.01,
           "tier_badge": "SMASH",
           "flagship_slot": "",
           "projected_variance_sigma2": 0,
@@ -392,9 +391,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 62.5,
-        "wind_mph": 5.1,
-        "pressure_hpa": 1009.2,
+        "temperature_f": 61.4,
+        "wind_mph": 4.8,
+        "pressure_hpa": 1009.0,
         "is_dome": false,
         "elevation_m": 220
       },
@@ -506,9 +505,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 55.1,
+        "temperature_f": 54.5,
         "wind_mph": 2.1,
-        "pressure_hpa": 1013.4,
+        "pressure_hpa": 1013.1,
         "is_dome": false,
         "elevation_m": 115
       },
@@ -620,9 +619,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 50.1,
-        "wind_mph": 7.6,
-        "pressure_hpa": 794.1,
+        "temperature_f": 48.3,
+        "wind_mph": 7.0,
+        "pressure_hpa": 794.2,
         "is_dome": false,
         "elevation_m": 2026
       },
@@ -734,9 +733,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 56.0,
-        "wind_mph": 7.0,
-        "pressure_hpa": 992.5,
+        "temperature_f": 55.4,
+        "wind_mph": 7.5,
+        "pressure_hpa": 992.4,
         "is_dome": false,
         "elevation_m": 258
       },
@@ -849,9 +848,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 47.4,
-        "wind_mph": 7.5,
-        "pressure_hpa": 778.0,
+        "temperature_f": 45.3,
+        "wind_mph": 8.5,
+        "pressure_hpa": 777.6,
         "is_dome": false,
         "elevation_m": 2200
       },
@@ -963,9 +962,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 52.3,
-        "wind_mph": 5.3,
-        "pressure_hpa": 1016.5,
+        "temperature_f": 52.1,
+        "wind_mph": 5.7,
+        "pressure_hpa": 1015.8,
         "is_dome": false,
         "elevation_m": 102
       },
@@ -1077,9 +1076,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 62.0,
-        "wind_mph": 5.9,
-        "pressure_hpa": 986.0,
+        "temperature_f": 60.8,
+        "wind_mph": 5.4,
+        "pressure_hpa": 986.2,
         "is_dome": false,
         "elevation_m": 265
       },
@@ -1192,9 +1191,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 53.5,
-        "wind_mph": 8.3,
-        "pressure_hpa": 1018.6,
+        "temperature_f": 52.9,
+        "wind_mph": 8.1,
+        "pressure_hpa": 1017.4,
         "is_dome": false,
         "elevation_m": 56
       },
@@ -1306,9 +1305,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 57.1,
-        "wind_mph": 3.9,
-        "pressure_hpa": 996.5,
+        "temperature_f": 56.3,
+        "wind_mph": 3.6,
+        "pressure_hpa": 996.0,
         "is_dome": false,
         "elevation_m": 250
       },
@@ -1420,9 +1419,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 66.8,
-        "wind_mph": 11.2,
-        "pressure_hpa": 1014.0,
+        "temperature_f": 66.5,
+        "wind_mph": 12.5,
+        "pressure_hpa": 1013.7,
         "is_dome": false,
         "elevation_m": 48
       },
@@ -1506,12 +1505,12 @@
         {
           "player": "VAN@FLA Total (O 46.5) (VAN @ FLA)",
           "market_type": "total",
-          "model_win_prob": 0.5735,
-          "projected_mean_mu": 48.8,
-          "balls_deep_proj": 48.7,
-          "balls_deep_win_prob": 0.5703,
-          "ev_pct": 9.49,
-          "balls_deep_ev_pct": 8.88,
+          "model_win_prob": 0.564,
+          "projected_mean_mu": 48.5,
+          "balls_deep_proj": 48.4,
+          "balls_deep_win_prob": 0.5609,
+          "ev_pct": 7.68,
+          "balls_deep_ev_pct": 7.07,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
           "projected_variance_sigma2": 0,
@@ -1535,9 +1534,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 63.0,
-        "wind_mph": 5.5,
-        "pressure_hpa": 991.2,
+        "temperature_f": 62.2,
+        "wind_mph": 5.1,
+        "pressure_hpa": 990.5,
         "is_dome": false,
         "elevation_m": 286
       },
@@ -1561,7 +1560,6 @@
           "injuries_summary": [],
           "telemetry_source": "espn_fpi_2026_live",
           "epa_rank": 78,
-          "poll_rank": 1,
           "off_eff": 48.9,
           "def_eff": 44.5
         },
@@ -1651,9 +1649,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 50.8,
-        "wind_mph": 4.6,
-        "pressure_hpa": 1026.3,
+        "temperature_f": 50.5,
+        "wind_mph": 4.5,
+        "pressure_hpa": 1025.5,
         "is_dome": false,
         "elevation_m": 12
       },
@@ -1765,9 +1763,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 49.2,
-        "wind_mph": 5.8,
-        "pressure_hpa": 989.1,
+        "temperature_f": 48.4,
+        "wind_mph": 4.6,
+        "pressure_hpa": 989.2,
         "is_dome": false,
         "elevation_m": 255
       },
@@ -1879,9 +1877,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 60.6,
-        "wind_mph": 5.1,
-        "pressure_hpa": 978.1,
+        "temperature_f": 59.4,
+        "wind_mph": 5.6,
+        "pressure_hpa": 978.3,
         "is_dome": false,
         "elevation_m": 358
       },
@@ -1995,7 +1993,7 @@
       "hfa_base": 2.6180339887,
       "environmental_payload": {
         "temperature_f": 64.4,
-        "wind_mph": 5.5,
+        "wind_mph": 5.0,
         "pressure_hpa": 1021.2,
         "is_dome": false,
         "elevation_m": 2
@@ -2108,9 +2106,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 65.7,
-        "wind_mph": 5.4,
-        "pressure_hpa": 1005.4,
+        "temperature_f": 64.9,
+        "wind_mph": 5.6,
+        "pressure_hpa": 1005.2,
         "is_dome": false,
         "elevation_m": 152
       },
@@ -2223,9 +2221,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 56.4,
-        "wind_mph": 6.0,
-        "pressure_hpa": 1002.0,
+        "temperature_f": 55.6,
+        "wind_mph": 5.4,
+        "pressure_hpa": 1002.1,
         "is_dome": false,
         "elevation_m": 195
       },
@@ -2337,9 +2335,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 57.1,
-        "wind_mph": 3.7,
-        "pressure_hpa": 1006.2,
+        "temperature_f": 56.4,
+        "wind_mph": 3.2,
+        "pressure_hpa": 1005.9,
         "is_dome": false,
         "elevation_m": 168
       },
@@ -2451,9 +2449,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 53.3,
-        "wind_mph": 3.6,
-        "pressure_hpa": 987.0,
+        "temperature_f": 52.3,
+        "wind_mph": 3.4,
+        "pressure_hpa": 986.8,
         "is_dome": false,
         "elevation_m": 325
       },
@@ -2566,9 +2564,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 55.1,
-        "wind_mph": 5.8,
-        "pressure_hpa": 995.0,
+        "temperature_f": 54.4,
+        "wind_mph": 5.6,
+        "pressure_hpa": 994.7,
         "is_dome": false,
         "elevation_m": 286
       },
@@ -2680,8 +2678,8 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 67.0,
-        "wind_mph": 5.6,
+        "temperature_f": 66.0,
+        "wind_mph": 5.7,
         "pressure_hpa": 1011.5,
         "is_dome": false,
         "elevation_m": 115
@@ -2710,32 +2708,31 @@
           "def_eff": 62.5
         },
         "away": {
-          "net_epa_per_play": 0.5089,
+          "net_epa_per_play": -0.6102,
           "qb_replacement_delta": 0.0,
           "turnover_reg_delta": 0.2,
-          "closing_rank_pct": 0.926,
-          "active_win_streak": 2,
-          "opp_rz_dvoa": -0.174,
+          "closing_rank_pct": 0.25,
+          "active_win_streak": 0,
+          "opp_rz_dvoa": 0.15,
           "lt_or_rb_pass_pro_out": false,
           "is_third_string_qb": false,
           "injuries_summary": [],
-          "telemetry_source": "espn_fpi_2026_live",
-          "epa_rank": 11,
-          "poll_rank": 9,
-          "off_eff": 64.2,
-          "def_eff": 88.2
+          "telemetry_source": "fcs_calibrated_tier",
+          "off_eff": 20.0,
+          "def_eff": 20.0,
+          "is_fcs": true
         }
       },
       "props_board": [
         {
           "player": "MSST Spread (-34.5) (MSST vs TNTC)",
           "market_type": "spread",
-          "model_win_prob": 0.01,
-          "projected_mean_mu": 13.25,
-          "balls_deep_proj": 13.45,
-          "balls_deep_win_prob": 0.01,
-          "ev_pct": -98.09,
-          "balls_deep_ev_pct": -98.09,
+          "model_win_prob": 0.3938,
+          "projected_mean_mu": -31.15,
+          "balls_deep_proj": -31.38,
+          "balls_deep_win_prob": 0.4009,
+          "ev_pct": -24.82,
+          "balls_deep_ev_pct": -23.47,
           "tier_badge": "PASS",
           "flagship_slot": "",
           "projected_variance_sigma2": 0,
@@ -2748,12 +2745,12 @@
         {
           "player": "TNTC Spread (+34.5) (TNTC @ MSST)",
           "market_type": "spread",
-          "model_win_prob": 0.99,
-          "projected_mean_mu": -13.25,
-          "balls_deep_proj": -13.45,
-          "balls_deep_win_prob": 0.99,
-          "ev_pct": 89.0,
-          "balls_deep_ev_pct": 89.0,
+          "model_win_prob": 0.6062,
+          "projected_mean_mu": 31.15,
+          "balls_deep_proj": 31.38,
+          "balls_deep_win_prob": 0.5991,
+          "ev_pct": 15.73,
+          "balls_deep_ev_pct": 14.37,
           "tier_badge": "SMASH",
           "flagship_slot": "",
           "projected_variance_sigma2": 0,
@@ -2766,14 +2763,14 @@
         {
           "player": "TNTC@MSST Total (U 60.5) (TNTC @ MSST)",
           "market_type": "total",
-          "model_win_prob": 0.8661,
-          "projected_mean_mu": 46.0,
-          "balls_deep_proj": 46.1,
-          "balls_deep_win_prob": 0.8646,
-          "ev_pct": 65.35,
-          "balls_deep_ev_pct": 65.06,
+          "model_win_prob": 0.7965,
+          "projected_mean_mu": 49.9,
+          "balls_deep_proj": 49.8,
+          "balls_deep_win_prob": 0.7986,
+          "ev_pct": 52.07,
+          "balls_deep_ev_pct": 52.46,
           "tier_badge": "SMASH",
-          "flagship_slot": "M\u00c9NAGE \u00c0 TROIS #1",
+          "flagship_slot": "M\u00c9NAGE \u00c0 TROIS #3",
           "projected_variance_sigma2": 0,
           "base_line": 60.5,
           "base_odds_over": -110,
@@ -2795,9 +2792,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 68.6,
-        "wind_mph": 4.8,
-        "pressure_hpa": 1016.2,
+        "temperature_f": 67.6,
+        "wind_mph": 4.5,
+        "pressure_hpa": 1016.1,
         "is_dome": false,
         "elevation_m": 68
       },
@@ -2910,9 +2907,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 62.5,
-        "wind_mph": 5.1,
-        "pressure_hpa": 1009.2,
+        "temperature_f": 61.4,
+        "wind_mph": 4.8,
+        "pressure_hpa": 1009.0,
         "is_dome": false,
         "elevation_m": 220
       },
@@ -3024,9 +3021,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 62.5,
-        "wind_mph": 5.1,
-        "pressure_hpa": 1009.2,
+        "temperature_f": 61.4,
+        "wind_mph": 4.8,
+        "pressure_hpa": 1009.0,
         "is_dome": false,
         "elevation_m": 220
       },
@@ -3138,9 +3135,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 62.5,
-        "wind_mph": 5.1,
-        "pressure_hpa": 1009.2,
+        "temperature_f": 61.4,
+        "wind_mph": 4.8,
+        "pressure_hpa": 1009.0,
         "is_dome": false,
         "elevation_m": 220
       },
@@ -3252,9 +3249,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 47.6,
-        "wind_mph": 3.2,
-        "pressure_hpa": 904.7,
+        "temperature_f": 46.7,
+        "wind_mph": 2.2,
+        "pressure_hpa": 904.4,
         "is_dome": false,
         "elevation_m": 1016
       },
@@ -3366,9 +3363,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 62.5,
-        "wind_mph": 5.1,
-        "pressure_hpa": 1009.2,
+        "temperature_f": 61.4,
+        "wind_mph": 4.8,
+        "pressure_hpa": 1009.0,
         "is_dome": false,
         "elevation_m": 220
       },
@@ -3392,7 +3389,6 @@
           "injuries_summary": [],
           "telemetry_source": "espn_fpi_2026_live",
           "epa_rank": 95,
-          "poll_rank": 24,
           "off_eff": 55.4,
           "def_eff": 25.3
         },
@@ -3481,9 +3477,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 59.8,
-        "wind_mph": 5.9,
-        "pressure_hpa": 998.1,
+        "temperature_f": 58.7,
+        "wind_mph": 5.5,
+        "pressure_hpa": 998.4,
         "is_dome": false,
         "elevation_m": 225
       },
@@ -3574,7 +3570,7 @@
           "ev_pct": 54.4,
           "balls_deep_ev_pct": 54.4,
           "tier_badge": "SMASH",
-          "flagship_slot": "M\u00c9NAGE \u00c0 TROIS #3",
+          "flagship_slot": "M\u00c9NAGE \u00c0 TROIS #2",
           "projected_variance_sigma2": 0,
           "base_line": 40.5,
           "base_odds_over": -110,
@@ -3596,9 +3592,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 62.5,
-        "wind_mph": 5.1,
-        "pressure_hpa": 1009.2,
+        "temperature_f": 61.4,
+        "wind_mph": 4.8,
+        "pressure_hpa": 1009.0,
         "is_dome": false,
         "elevation_m": 220
       },
@@ -3710,9 +3706,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 70.5,
-        "wind_mph": 6.9,
-        "pressure_hpa": 881.0,
+        "temperature_f": 69.9,
+        "wind_mph": 6.7,
+        "pressure_hpa": 881.8,
         "is_dome": false,
         "elevation_m": 1190
       },
@@ -3824,9 +3820,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 62.5,
-        "wind_mph": 5.1,
-        "pressure_hpa": 1009.2,
+        "temperature_f": 61.4,
+        "wind_mph": 4.8,
+        "pressure_hpa": 1009.0,
         "is_dome": false,
         "elevation_m": 220
       },
@@ -3865,7 +3861,6 @@
           "injuries_summary": [],
           "telemetry_source": "espn_fpi_2026_live",
           "epa_rank": 115,
-          "poll_rank": 24,
           "off_eff": 21.5,
           "def_eff": 57.5
         }
@@ -3939,9 +3934,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 71.0,
-        "wind_mph": 3.5,
-        "pressure_hpa": 1000.2,
+        "temperature_f": 69.8,
+        "wind_mph": 2.5,
+        "pressure_hpa": 1000.9,
         "is_dome": false,
         "elevation_m": 165
       },
@@ -4054,9 +4049,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 62.7,
-        "wind_mph": 7.6,
-        "pressure_hpa": 1001.6,
+        "temperature_f": 62.0,
+        "wind_mph": 7.8,
+        "pressure_hpa": 1001.3,
         "is_dome": false,
         "elevation_m": 216
       },
@@ -4168,9 +4163,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 54.0,
-        "wind_mph": 6.5,
-        "pressure_hpa": 1013.25,
+        "temperature_f": 70.7,
+        "wind_mph": 4.8,
+        "pressure_hpa": 1006.9,
         "is_dome": false,
         "elevation_m": 122
       },
@@ -4283,9 +4278,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 54.0,
-        "wind_mph": 6.5,
-        "pressure_hpa": 1013.25,
+        "temperature_f": 64.8,
+        "wind_mph": 10.4,
+        "pressure_hpa": 1018.7,
         "is_dome": false,
         "elevation_m": 32
       },
@@ -4309,7 +4304,6 @@
           "injuries_summary": [],
           "telemetry_source": "espn_fpi_2026_live",
           "epa_rank": 40,
-          "poll_rank": 24,
           "off_eff": 73.1,
           "def_eff": 49.3
         },
@@ -4369,12 +4363,12 @@
         {
           "player": "NCST@FSU Total (O 56.5) (NCST @ FSU)",
           "market_type": "total",
-          "model_win_prob": 0.5321,
-          "projected_mean_mu": 57.5,
-          "balls_deep_proj": 57.5,
-          "balls_deep_win_prob": 0.5321,
-          "ev_pct": 1.59,
-          "balls_deep_ev_pct": 1.59,
+          "model_win_prob": 0.5289,
+          "projected_mean_mu": 57.4,
+          "balls_deep_proj": 57.4,
+          "balls_deep_win_prob": 0.5289,
+          "ev_pct": 0.98,
+          "balls_deep_ev_pct": 0.98,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
           "projected_variance_sigma2": 0,
@@ -4398,9 +4392,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 54.0,
-        "wind_mph": 6.5,
-        "pressure_hpa": 1013.25,
+        "temperature_f": 49.3,
+        "wind_mph": 3.4,
+        "pressure_hpa": 1011.8,
         "is_dome": false,
         "elevation_m": 12
       },
@@ -4513,9 +4507,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 58.0,
-        "wind_mph": 5.7,
-        "pressure_hpa": 995.8,
+        "temperature_f": 56.8,
+        "wind_mph": 6.0,
+        "pressure_hpa": 994.9,
         "is_dome": false,
         "elevation_m": 271
       },
@@ -4628,9 +4622,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 54.5,
-        "wind_mph": 6.9,
-        "pressure_hpa": 992.8,
+        "temperature_f": 54.1,
+        "wind_mph": 7.3,
+        "pressure_hpa": 992.4,
         "is_dome": false,
         "elevation_m": 268
       },
@@ -4743,9 +4737,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 50.8,
-        "wind_mph": 5.9,
-        "pressure_hpa": 1024.9,
+        "temperature_f": 49.8,
+        "wind_mph": 5.8,
+        "pressure_hpa": 1023.9,
         "is_dome": false,
         "elevation_m": 17
       },
@@ -4857,9 +4851,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 51.2,
-        "wind_mph": 6.5,
-        "pressure_hpa": 984.5,
+        "temperature_f": 50.1,
+        "wind_mph": 6.9,
+        "pressure_hpa": 983.8,
         "is_dome": false,
         "elevation_m": 354
       },
@@ -4971,9 +4965,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 65.5,
-        "wind_mph": 7.7,
-        "pressure_hpa": 979.9,
+        "temperature_f": 64.4,
+        "wind_mph": 6.3,
+        "pressure_hpa": 980.3,
         "is_dome": false,
         "elevation_m": 357
       },
@@ -5013,7 +5007,6 @@
           "injuries_summary": [],
           "telemetry_source": "espn_fpi_2026_live",
           "epa_rank": 29,
-          "poll_rank": 5,
           "off_eff": 42.5,
           "def_eff": 75.6
         }
@@ -5087,9 +5080,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 62.5,
-        "wind_mph": 5.1,
-        "pressure_hpa": 1009.2,
+        "temperature_f": 61.4,
+        "wind_mph": 4.8,
+        "pressure_hpa": 1009.0,
         "is_dome": false,
         "elevation_m": 220
       },
@@ -5128,7 +5121,6 @@
           "injuries_summary": [],
           "telemetry_source": "espn_fpi_2026_live",
           "epa_rank": 75,
-          "poll_rank": 1,
           "off_eff": 57.3,
           "def_eff": 52.1
         }
@@ -5202,9 +5194,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 62.5,
-        "wind_mph": 5.1,
-        "pressure_hpa": 1009.2,
+        "temperature_f": 61.4,
+        "wind_mph": 4.8,
+        "pressure_hpa": 1009.0,
         "is_dome": false,
         "elevation_m": 220
       },
@@ -5243,7 +5235,6 @@
           "injuries_summary": [],
           "telemetry_source": "espn_fpi_2026_live",
           "epa_rank": 101,
-          "poll_rank": 1,
           "off_eff": 50.0,
           "def_eff": 36.1
         }
@@ -5431,9 +5422,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 62.5,
-        "wind_mph": 5.1,
-        "pressure_hpa": 1009.2,
+        "temperature_f": 61.4,
+        "wind_mph": 4.8,
+        "pressure_hpa": 1009.0,
         "is_dome": false,
         "elevation_m": 220
       },
@@ -5523,7 +5514,7 @@
           "ev_pct": 57.7,
           "balls_deep_ev_pct": 57.35,
           "tier_badge": "SMASH",
-          "flagship_slot": "M\u00c9NAGE \u00c0 TROIS #2",
+          "flagship_slot": "M\u00c9NAGE \u00c0 TROIS #1",
           "projected_variance_sigma2": 0,
           "base_line": 66.5,
           "base_odds_over": -110,
@@ -5545,9 +5536,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 62.5,
-        "wind_mph": 5.1,
-        "pressure_hpa": 1009.2,
+        "temperature_f": 61.4,
+        "wind_mph": 4.8,
+        "pressure_hpa": 1009.0,
         "is_dome": false,
         "elevation_m": 220
       },
@@ -5571,7 +5562,6 @@
           "injuries_summary": [],
           "telemetry_source": "espn_fpi_2026_live",
           "epa_rank": 55,
-          "poll_rank": 5,
           "off_eff": 70.7,
           "def_eff": 52.9
         },
@@ -5660,9 +5650,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 63.3,
-        "wind_mph": 10.2,
-        "pressure_hpa": 1007.6,
+        "temperature_f": 62.6,
+        "wind_mph": 10.3,
+        "pressure_hpa": 1007.4,
         "is_dome": false,
         "elevation_m": 52
       },
@@ -5746,12 +5736,12 @@
         {
           "player": "MD@USC Total (U 57.5) (MD @ USC)",
           "market_type": "total",
-          "model_win_prob": 0.6614,
-          "projected_mean_mu": 52.3,
-          "balls_deep_proj": 52.2,
-          "balls_deep_win_prob": 0.6643,
-          "ev_pct": 26.27,
-          "balls_deep_ev_pct": 26.82,
+          "model_win_prob": 0.6643,
+          "projected_mean_mu": 52.2,
+          "balls_deep_proj": 52.1,
+          "balls_deep_win_prob": 0.6671,
+          "ev_pct": 26.82,
+          "balls_deep_ev_pct": 27.36,
           "tier_badge": "SMASH",
           "flagship_slot": "",
           "projected_variance_sigma2": 0,
@@ -5775,9 +5765,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 63.8,
-        "wind_mph": 6.9,
-        "pressure_hpa": 980.7,
+        "temperature_f": 62.4,
+        "wind_mph": 6.5,
+        "pressure_hpa": 981.2,
         "is_dome": false,
         "elevation_m": 330
       },
@@ -5890,9 +5880,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 62.5,
-        "wind_mph": 5.1,
-        "pressure_hpa": 1009.2,
+        "temperature_f": 61.4,
+        "wind_mph": 4.8,
+        "pressure_hpa": 1009.0,
         "is_dome": false,
         "elevation_m": 220
       },
@@ -6004,9 +5994,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 75.5,
-        "wind_mph": 2.9,
-        "pressure_hpa": 1013.2,
+        "temperature_f": 75.3,
+        "wind_mph": 3.1,
+        "pressure_hpa": 1013.1,
         "is_dome": false,
         "elevation_m": 3
       },
@@ -6120,8 +6110,8 @@
       "hfa_base": 2.6180339887,
       "environmental_payload": {
         "temperature_f": 53.5,
-        "wind_mph": 2.5,
-        "pressure_hpa": 1008.7,
+        "wind_mph": 1.6,
+        "pressure_hpa": 1008.6,
         "is_dome": false,
         "elevation_m": 29
       },
@@ -6233,9 +6223,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 53.0,
-        "wind_mph": 7.0,
-        "pressure_hpa": 996.0,
+        "temperature_f": 52.9,
+        "wind_mph": 7.1,
+        "pressure_hpa": 995.2,
         "is_dome": false,
         "elevation_m": 135
       },
@@ -6347,9 +6337,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 54.0,
-        "wind_mph": 11.4,
-        "pressure_hpa": 999.8,
+        "temperature_f": 53.9,
+        "wind_mph": 10.5,
+        "pressure_hpa": 999.1,
         "is_dome": false,
         "elevation_m": 99
       },
@@ -6432,12 +6422,12 @@
         {
           "player": "CSU@FRES Total (U 65.5) (CSU @ FRES)",
           "market_type": "total",
-          "model_win_prob": 0.6671,
-          "projected_mean_mu": 60.1,
-          "balls_deep_proj": 60.0,
-          "balls_deep_win_prob": 0.67,
-          "ev_pct": 33.43,
-          "balls_deep_ev_pct": 34.0,
+          "model_win_prob": 0.6614,
+          "projected_mean_mu": 60.3,
+          "balls_deep_proj": 60.2,
+          "balls_deep_win_prob": 0.6643,
+          "ev_pct": 32.28,
+          "balls_deep_ev_pct": 32.86,
           "tier_badge": "SMASH",
           "flagship_slot": "",
           "projected_variance_sigma2": 0,
@@ -6461,9 +6451,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 58.8,
-        "wind_mph": 6.7,
-        "pressure_hpa": 1020.2,
+        "temperature_f": 58.3,
+        "wind_mph": 6.6,
+        "pressure_hpa": 1019.5,
         "is_dome": false,
         "elevation_m": 55
       },
@@ -6577,9 +6567,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 63.1,
-        "wind_mph": 5.0,
-        "pressure_hpa": 996.3,
+        "temperature_f": 62.1,
+        "wind_mph": 4.6,
+        "pressure_hpa": 996.2,
         "is_dome": false,
         "elevation_m": 225
       },
@@ -6692,9 +6682,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 60.6,
-        "wind_mph": 3.2,
-        "pressure_hpa": 1009.9,
+        "temperature_f": 60.0,
+        "wind_mph": 3.0,
+        "pressure_hpa": 1009.7,
         "is_dome": false,
         "elevation_m": 142
       },
@@ -6807,9 +6797,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 55.2,
-        "wind_mph": 5.5,
-        "pressure_hpa": 997.0,
+        "temperature_f": 54.3,
+        "wind_mph": 6.0,
+        "pressure_hpa": 996.9,
         "is_dome": false,
         "elevation_m": 222
       },
@@ -6922,9 +6912,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 62.5,
-        "wind_mph": 5.1,
-        "pressure_hpa": 1009.2,
+        "temperature_f": 61.4,
+        "wind_mph": 4.8,
+        "pressure_hpa": 1009.0,
         "is_dome": false,
         "elevation_m": 220
       },
@@ -7036,9 +7026,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 70.7,
-        "wind_mph": 6.0,
-        "pressure_hpa": 999.9,
+        "temperature_f": 69.3,
+        "wind_mph": 4.4,
+        "pressure_hpa": 1000.1,
         "is_dome": false,
         "elevation_m": 185
       },
@@ -7151,9 +7141,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 45.5,
-        "wind_mph": 6.3,
-        "pressure_hpa": 912.8,
+        "temperature_f": 45.1,
+        "wind_mph": 5.3,
+        "pressure_hpa": 912.3,
         "is_dome": false,
         "elevation_m": 823
       },
@@ -7266,8 +7256,8 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 72.8,
-        "wind_mph": 4.5,
+        "temperature_f": 72.6,
+        "wind_mph": 4.1,
         "pressure_hpa": 972.7,
         "is_dome": false,
         "elevation_m": 355
@@ -7292,7 +7282,6 @@
           "injuries_summary": [],
           "telemetry_source": "espn_fpi_2026_live",
           "epa_rank": 53,
-          "poll_rank": 19,
           "off_eff": 55.2,
           "def_eff": 63.1
         },
@@ -7308,7 +7297,6 @@
           "injuries_summary": [],
           "telemetry_source": "espn_fpi_2026_live",
           "epa_rank": 27,
-          "poll_rank": 22,
           "off_eff": 76.9,
           "def_eff": 65.4
         }
@@ -7382,9 +7370,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 34.7,
-        "wind_mph": 3.5,
-        "pressure_hpa": 847.8,
+        "temperature_f": 34.3,
+        "wind_mph": 6.4,
+        "pressure_hpa": 847.0,
         "is_dome": false,
         "elevation_m": 1405
       },
@@ -7496,9 +7484,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 43.3,
-        "wind_mph": 4.3,
-        "pressure_hpa": 1005.4,
+        "temperature_f": 42.9,
+        "wind_mph": 5.0,
+        "pressure_hpa": 1004.3,
         "is_dome": false,
         "elevation_m": 72
       },
@@ -7522,7 +7510,6 @@
           "injuries_summary": [],
           "telemetry_source": "espn_fpi_2026_live",
           "epa_rank": 56,
-          "poll_rank": 13,
           "off_eff": 72.7,
           "def_eff": 49.5
         },
@@ -7538,7 +7525,6 @@
           "injuries_summary": [],
           "telemetry_source": "espn_fpi_2026_live",
           "epa_rank": 92,
-          "poll_rank": 2,
           "off_eff": 28.0,
           "def_eff": 62.4
         }
@@ -7612,8 +7598,8 @@
       "expected_plays": 126,
       "hfa_base": 1.9416110252,
       "environmental_payload": {
-        "temperature_f": 62.3,
-        "wind_mph": 4.8,
+        "temperature_f": 61.4,
+        "wind_mph": 5.3,
         "pressure_hpa": 990.2,
         "is_dome": false,
         "elevation_m": 250
@@ -7730,9 +7716,9 @@
       "expected_plays": 126,
       "hfa_base": 1.9416110252,
       "environmental_payload": {
-        "temperature_f": 55.8,
-        "wind_mph": 5.1,
-        "pressure_hpa": 1000.9,
+        "temperature_f": 55.3,
+        "wind_mph": 4.0,
+        "pressure_hpa": 1000.5,
         "is_dome": false,
         "elevation_m": 215
       },
@@ -7848,9 +7834,9 @@
       "expected_plays": 126,
       "hfa_base": 1.9416110252,
       "environmental_payload": {
-        "temperature_f": 52.1,
-        "wind_mph": 8.8,
-        "pressure_hpa": 996.1,
+        "temperature_f": 51.6,
+        "wind_mph": 8.0,
+        "pressure_hpa": 995.5,
         "is_dome": false,
         "elevation_m": 182
       },
@@ -7966,9 +7952,9 @@
       "expected_plays": 126,
       "hfa_base": 1.9416110252,
       "environmental_payload": {
-        "temperature_f": 57.4,
-        "wind_mph": 6.2,
-        "pressure_hpa": 1001.7,
+        "temperature_f": 56.7,
+        "wind_mph": 6.7,
+        "pressure_hpa": 1001.8,
         "is_dome": false,
         "elevation_m": 181
       },
@@ -8320,9 +8306,9 @@
       "expected_plays": 126,
       "hfa_base": 1.9416110252,
       "environmental_payload": {
-        "temperature_f": 57.6,
-        "wind_mph": 4.8,
-        "pressure_hpa": 1027.1,
+        "temperature_f": 56.7,
+        "wind_mph": 4.1,
+        "pressure_hpa": 1026.5,
         "is_dome": false,
         "elevation_m": 12
       },
@@ -8556,9 +8542,9 @@
       "expected_plays": 126,
       "hfa_base": 1.9416110252,
       "environmental_payload": {
-        "temperature_f": 50.8,
-        "wind_mph": 3.0,
-        "pressure_hpa": 835.3,
+        "temperature_f": 49.2,
+        "wind_mph": 3.4,
+        "pressure_hpa": 835.4,
         "is_dome": false,
         "elevation_m": 1609
       },
@@ -8674,9 +8660,9 @@
       "expected_plays": 126,
       "hfa_base": 1.9416110252,
       "environmental_payload": {
-        "temperature_f": 53.1,
-        "wind_mph": 4.5,
-        "pressure_hpa": 1026.7,
+        "temperature_f": 52.6,
+        "wind_mph": 5.0,
+        "pressure_hpa": 1025.9,
         "is_dome": false,
         "elevation_m": 2
       },
@@ -8792,9 +8778,9 @@
       "expected_plays": 126,
       "hfa_base": 1.9416110252,
       "environmental_payload": {
-        "temperature_f": 54.5,
-        "wind_mph": 2.7,
-        "pressure_hpa": 1011.9,
+        "temperature_f": 54.6,
+        "wind_mph": 2.8,
+        "pressure_hpa": 1011.6,
         "is_dome": false,
         "elevation_m": 7
       },
@@ -8910,9 +8896,9 @@
       "expected_plays": 126,
       "hfa_base": 1.9416110252,
       "environmental_payload": {
-        "temperature_f": 56.2,
-        "wind_mph": 5.5,
-        "pressure_hpa": 1020.8,
+        "temperature_f": 55.4,
+        "wind_mph": 5.8,
+        "pressure_hpa": 1020.0,
         "is_dome": false,
         "elevation_m": 60
       },
@@ -9028,9 +9014,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 62.5,
-        "wind_mph": 5.1,
-        "pressure_hpa": 1009.2,
+        "temperature_f": 61.4,
+        "wind_mph": 4.8,
+        "pressure_hpa": 1009.0,
         "is_dome": false,
         "elevation_m": 220
       },
@@ -9142,9 +9128,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 62.5,
-        "wind_mph": 5.1,
-        "pressure_hpa": 1009.2,
+        "temperature_f": 61.4,
+        "wind_mph": 4.8,
+        "pressure_hpa": 1009.0,
         "is_dome": false,
         "elevation_m": 220
       },
@@ -9183,7 +9169,6 @@
           "injuries_summary": [],
           "telemetry_source": "espn_fpi_2026_live",
           "epa_rank": 99,
-          "poll_rank": 7,
           "off_eff": 41.3,
           "def_eff": 38.3
         }
@@ -9611,9 +9596,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 56.5,
-        "wind_mph": 5.0,
-        "pressure_hpa": 906.7,
+        "temperature_f": 55.5,
+        "wind_mph": 5.2,
+        "pressure_hpa": 906.8,
         "is_dome": false,
         "elevation_m": 976
       },
@@ -9726,9 +9711,9 @@
       "expected_plays": 126,
       "hfa_base": 1.9416110252,
       "environmental_payload": {
-        "temperature_f": 52.1,
-        "wind_mph": 8.8,
-        "pressure_hpa": 996.1,
+        "temperature_f": 51.6,
+        "wind_mph": 8.0,
+        "pressure_hpa": 995.5,
         "is_dome": false,
         "elevation_m": 182
       },
@@ -9844,9 +9829,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 62.5,
-        "wind_mph": 5.1,
-        "pressure_hpa": 1009.2,
+        "temperature_f": 61.4,
+        "wind_mph": 4.8,
+        "pressure_hpa": 1009.0,
         "is_dome": false,
         "elevation_m": 220
       },
@@ -9958,9 +9943,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 58.2,
-        "wind_mph": 5.7,
-        "pressure_hpa": 996.2,
+        "temperature_f": 57.2,
+        "wind_mph": 5.2,
+        "pressure_hpa": 996.7,
         "is_dome": false,
         "elevation_m": 204
       },
@@ -10073,9 +10058,9 @@
       "expected_plays": 126,
       "hfa_base": 1.9416110252,
       "environmental_payload": {
-        "temperature_f": 53.8,
-        "wind_mph": 4.3,
-        "pressure_hpa": 997.9,
+        "temperature_f": 52.8,
+        "wind_mph": 3.8,
+        "pressure_hpa": 997.5,
         "is_dome": false,
         "elevation_m": 223
       },
@@ -10191,9 +10176,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 54.0,
-        "wind_mph": 6.5,
-        "pressure_hpa": 1013.25,
+        "temperature_f": 68.6,
+        "wind_mph": 2.9,
+        "pressure_hpa": 1008.1,
         "is_dome": false,
         "elevation_m": 103
       },
@@ -10217,7 +10202,6 @@
           "injuries_summary": [],
           "telemetry_source": "espn_fpi_2026_live",
           "epa_rank": 29,
-          "poll_rank": 5,
           "off_eff": 42.5,
           "def_eff": 75.6
         },
@@ -10307,9 +10291,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 54.0,
-        "wind_mph": 6.5,
-        "pressure_hpa": 1013.25,
+        "temperature_f": 43.4,
+        "wind_mph": 4.2,
+        "pressure_hpa": 997.3,
         "is_dome": false,
         "elevation_m": 130
       },
@@ -10422,9 +10406,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 54.0,
-        "wind_mph": 6.5,
-        "pressure_hpa": 1013.25,
+        "temperature_f": 57.2,
+        "wind_mph": 4.7,
+        "pressure_hpa": 990.4,
         "is_dome": false,
         "elevation_m": 298
       },
@@ -10538,9 +10522,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 53.8,
-        "wind_mph": 5.6,
-        "pressure_hpa": 1000.3,
+        "temperature_f": 52.8,
+        "wind_mph": 5.4,
+        "pressure_hpa": 999.8,
         "is_dome": false,
         "elevation_m": 217
       },
@@ -10653,9 +10637,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 63.1,
-        "wind_mph": 5.0,
-        "pressure_hpa": 996.3,
+        "temperature_f": 62.1,
+        "wind_mph": 4.6,
+        "pressure_hpa": 996.2,
         "is_dome": false,
         "elevation_m": 225
       },
@@ -10883,9 +10867,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 56.0,
-        "wind_mph": 4.7,
-        "pressure_hpa": 991.9,
+        "temperature_f": 54.7,
+        "wind_mph": 4.6,
+        "pressure_hpa": 991.7,
         "is_dome": false,
         "elevation_m": 272
       },
@@ -10998,9 +10982,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 60.2,
-        "wind_mph": 6.0,
-        "pressure_hpa": 983.8,
+        "temperature_f": 60.3,
+        "wind_mph": 10.0,
+        "pressure_hpa": 983.9,
         "is_dome": false,
         "elevation_m": 251
       },
@@ -11114,9 +11098,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 57.7,
+        "temperature_f": 56.7,
         "wind_mph": 5.5,
-        "pressure_hpa": 997.3,
+        "pressure_hpa": 997.0,
         "is_dome": false,
         "elevation_m": 235
       },
@@ -11229,9 +11213,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 68.6,
-        "wind_mph": 4.8,
-        "pressure_hpa": 1016.2,
+        "temperature_f": 67.6,
+        "wind_mph": 4.5,
+        "pressure_hpa": 1016.1,
         "is_dome": false,
         "elevation_m": 68
       },
@@ -11344,9 +11328,9 @@
       "expected_plays": 134,
       "hfa_base": 2.6180339887,
       "environmental_payload": {
-        "temperature_f": 76.8,
-        "wind_mph": 6.5,
-        "pressure_hpa": 929.7,
+        "temperature_f": 76.4,
+        "wind_mph": 7.9,
+        "pressure_hpa": 929.4,
         "is_dome": false,
         "elevation_m": 738
       },
@@ -11386,7 +11370,6 @@
           "injuries_summary": [],
           "telemetry_source": "espn_fpi_2026_live",
           "epa_rank": 53,
-          "poll_rank": 19,
           "off_eff": 55.2,
           "def_eff": 63.1
         }
@@ -11696,9 +11679,9 @@
       "expected_plays": 126,
       "hfa_base": 1.9416110252,
       "environmental_payload": {
-        "temperature_f": 57.9,
+        "temperature_f": 56.9,
         "wind_mph": 3.8,
-        "pressure_hpa": 1006.2,
+        "pressure_hpa": 1005.6,
         "is_dome": false,
         "elevation_m": 148
       },
@@ -11933,8 +11916,8 @@
       "hfa_base": 1.9416110252,
       "environmental_payload": {
         "temperature_f": 67.6,
-        "wind_mph": 9.5,
-        "pressure_hpa": 1021.0,
+        "wind_mph": 8.2,
+        "pressure_hpa": 1020.1,
         "is_dome": false,
         "elevation_m": 5
       },
@@ -12050,9 +12033,9 @@
       "expected_plays": 126,
       "hfa_base": 1.9416110252,
       "environmental_payload": {
-        "temperature_f": 75.5,
-        "wind_mph": 2.9,
-        "pressure_hpa": 1013.2,
+        "temperature_f": 75.3,
+        "wind_mph": 3.1,
+        "pressure_hpa": 1013.1,
         "is_dome": false,
         "elevation_m": 3
       },
@@ -12404,9 +12387,9 @@
       "expected_plays": 126,
       "hfa_base": 1.9416110252,
       "environmental_payload": {
-        "temperature_f": 54.5,
-        "wind_mph": 2.7,
-        "pressure_hpa": 1011.9,
+        "temperature_f": 54.6,
+        "wind_mph": 2.8,
+        "pressure_hpa": 1011.6,
         "is_dome": false,
         "elevation_m": 7
       },
@@ -12522,9 +12505,9 @@
       "expected_plays": 126,
       "hfa_base": 1.9416110252,
       "environmental_payload": {
-        "temperature_f": 56.2,
-        "wind_mph": 7.5,
-        "pressure_hpa": 1004.9,
+        "temperature_f": 55.8,
+        "wind_mph": 7.7,
+        "pressure_hpa": 1005.0,
         "is_dome": false,
         "elevation_m": 177
       },
@@ -12640,9 +12623,9 @@
       "expected_plays": 126,
       "hfa_base": 1.9416110252,
       "environmental_payload": {
-        "temperature_f": 70.8,
-        "wind_mph": 9.4,
-        "pressure_hpa": 1015.0,
+        "temperature_f": 70.9,
+        "wind_mph": 8.4,
+        "pressure_hpa": 1014.7,
         "is_dome": false,
         "elevation_m": 12
       },
@@ -15502,7 +15485,7 @@
           "balls_deep_win_pct": 82.42,
           "balls_deep_ev_pct": 57.35,
           "tier_badge": "SMASH",
-          "flagship_slot": "M\u00c9NAGE \u00c0 TROIS #2",
+          "flagship_slot": "M\u00c9NAGE \u00c0 TROIS #1",
           "result_tip": "PENDING",
           "result_balls_deep": "PENDING"
         }
@@ -18441,14 +18424,14 @@
           "pick_label": "ISU@UCF Total (O 48.5) (ISU @ UCF)",
           "vegas_closing_line": 48.5,
           "odds": -104,
-          "tip_proj": 51.8,
+          "tip_proj": 52.2,
           "tip_direction": "O",
-          "tip_win_pct": 60.47,
-          "tip_ev_pct": 18.61,
-          "balls_deep_proj": 51.8,
+          "tip_win_pct": 61.69,
+          "tip_ev_pct": 21.01,
+          "balls_deep_proj": 52.2,
           "balls_deep_direction": "O",
-          "balls_deep_win_pct": 60.47,
-          "balls_deep_ev_pct": 18.61,
+          "balls_deep_win_pct": 61.69,
+          "balls_deep_ev_pct": 21.01,
           "tier_badge": "SMASH",
           "flagship_slot": "",
           "result_tip": "PENDING",
@@ -18749,14 +18732,14 @@
           "pick_label": "VAN@FLA Total (O 46.5) (VAN @ FLA)",
           "vegas_closing_line": 46.5,
           "odds": -110,
-          "tip_proj": 48.8,
+          "tip_proj": 48.5,
           "tip_direction": "O",
-          "tip_win_pct": 57.35,
-          "tip_ev_pct": 9.49,
-          "balls_deep_proj": 48.7,
+          "tip_win_pct": 56.4,
+          "tip_ev_pct": 7.68,
+          "balls_deep_proj": 48.4,
           "balls_deep_direction": "O",
-          "balls_deep_win_pct": 57.03,
-          "balls_deep_ev_pct": 8.88,
+          "balls_deep_win_pct": 56.09,
+          "balls_deep_ev_pct": 7.07,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
           "result_tip": "PENDING",
@@ -19174,12 +19157,12 @@
           "pick_team": "TNTC",
           "vegas_closing_line": 34.5,
           "odds": -110,
-          "tip_proj": -13.25,
-          "tip_win_pct": 99.0,
-          "tip_ev_pct": 89.0,
-          "balls_deep_proj": -13.45,
-          "balls_deep_win_pct": 99.0,
-          "balls_deep_ev_pct": 89.0,
+          "tip_proj": 31.15,
+          "tip_win_pct": 60.62,
+          "tip_ev_pct": 15.73,
+          "balls_deep_proj": 31.38,
+          "balls_deep_win_pct": 59.91,
+          "balls_deep_ev_pct": 14.37,
           "tier_badge": "SMASH",
           "flagship_slot": "",
           "result_tip": "PENDING",
@@ -19189,16 +19172,16 @@
           "pick_label": "TNTC@MSST Total (U 60.5) (TNTC @ MSST)",
           "vegas_closing_line": 60.5,
           "odds": -110,
-          "tip_proj": 46.0,
+          "tip_proj": 49.9,
           "tip_direction": "U",
-          "tip_win_pct": 86.61,
-          "tip_ev_pct": 65.35,
-          "balls_deep_proj": 46.1,
+          "tip_win_pct": 79.65,
+          "tip_ev_pct": 52.07,
+          "balls_deep_proj": 49.8,
           "balls_deep_direction": "U",
-          "balls_deep_win_pct": 86.46,
-          "balls_deep_ev_pct": 65.06,
+          "balls_deep_win_pct": 79.86,
+          "balls_deep_ev_pct": 52.46,
           "tier_badge": "SMASH",
-          "flagship_slot": "M\u00c9NAGE \u00c0 TROIS #1",
+          "flagship_slot": "M\u00c9NAGE \u00c0 TROIS #3",
           "result_tip": "PENDING",
           "result_balls_deep": "PENDING"
         }
@@ -19330,7 +19313,7 @@
           "balls_deep_win_pct": 80.88,
           "balls_deep_ev_pct": 54.4,
           "tier_badge": "SMASH",
-          "flagship_slot": "M\u00c9NAGE \u00c0 TROIS #3",
+          "flagship_slot": "M\u00c9NAGE \u00c0 TROIS #2",
           "result_tip": "PENDING",
           "result_balls_deep": "PENDING"
         }
@@ -19541,14 +19524,14 @@
           "pick_label": "NCST@FSU Total (O 56.5) (NCST @ FSU)",
           "vegas_closing_line": 56.5,
           "odds": -110,
-          "tip_proj": 57.5,
+          "tip_proj": 57.4,
           "tip_direction": "O",
-          "tip_win_pct": 53.21,
-          "tip_ev_pct": 1.59,
-          "balls_deep_proj": 57.5,
+          "tip_win_pct": 52.89,
+          "tip_ev_pct": 0.98,
+          "balls_deep_proj": 57.4,
           "balls_deep_direction": "O",
-          "balls_deep_win_pct": 53.21,
-          "balls_deep_ev_pct": 1.59,
+          "balls_deep_win_pct": 52.89,
+          "balls_deep_ev_pct": 0.98,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
           "result_tip": "PENDING",
@@ -19849,14 +19832,14 @@
           "pick_label": "MD@USC Total (U 57.5) (MD @ USC)",
           "vegas_closing_line": 57.5,
           "odds": -110,
-          "tip_proj": 52.3,
+          "tip_proj": 52.2,
           "tip_direction": "U",
-          "tip_win_pct": 66.14,
-          "tip_ev_pct": 26.27,
-          "balls_deep_proj": 52.2,
+          "tip_win_pct": 66.43,
+          "tip_ev_pct": 26.82,
+          "balls_deep_proj": 52.1,
           "balls_deep_direction": "U",
-          "balls_deep_win_pct": 66.43,
-          "balls_deep_ev_pct": 26.82,
+          "balls_deep_win_pct": 66.71,
+          "balls_deep_ev_pct": 27.36,
           "tier_badge": "SMASH",
           "flagship_slot": "",
           "result_tip": "PENDING",
@@ -20069,14 +20052,14 @@
           "pick_label": "CSU@FRES Total (U 65.5) (CSU @ FRES)",
           "vegas_closing_line": 65.5,
           "odds": 100,
-          "tip_proj": 60.1,
+          "tip_proj": 60.3,
           "tip_direction": "U",
-          "tip_win_pct": 66.71,
-          "tip_ev_pct": 33.43,
-          "balls_deep_proj": 60.0,
+          "tip_win_pct": 66.14,
+          "tip_ev_pct": 32.28,
+          "balls_deep_proj": 60.2,
           "balls_deep_direction": "U",
-          "balls_deep_win_pct": 67.0,
-          "balls_deep_ev_pct": 34.0,
+          "balls_deep_win_pct": 66.43,
+          "balls_deep_ev_pct": 32.86,
           "tier_badge": "SMASH",
           "flagship_slot": "",
           "result_tip": "PENDING",
