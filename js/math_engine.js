@@ -1,7 +1,8 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v311)
- *  - Symmetric M9 Fair Margin Fix: True full-game play volume (62.32 NFL / 68.0 NCAA), zero-safe EPA,
- *    mismatch taper >10 pts, fixed opp_rz_dvoa sign, symmetric soft cap (zero pull-to-zero, zero bloat)
+ * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v312)
+ *  - Market-Implied EPA Benchmark (M9): Benchmarks epaDiff against Vegas-implied EPA on registry scale
+ *    so favorites and underdogs fire 50/50 symmetrically with zero pull-to-zero and zero bloat
+ *  - Symmetric M13 Fallback: Feeds zero-centered epaResidual into M13 for balanced Balls Deep lifts
  * Core Modules 1–9 Preserved | Upgraded Guardrails & Fixed M13 Architecture:
  *  - Module 2: Hard 4.0% Quarter-Kelly Single-Bet Exposure Cap
  *  - Module 4 & 5: Unified Prop Gatekeepers (TOP Rush-Att Starvation & O-Line/RB Pass-Pro Sack-Trauma)
@@ -452,7 +453,7 @@ function calcSacredGeometryRise(gameData, vegasHomeSpread = 0, epaDivergencePts 
     };
 }
 
-// MODULE 9: SYMMETRIC FULL-GAME FAIR MARGIN (v311 — ZERO PULL-TO-ZERO, ZERO BLOAT)
+// MODULE 9: SYMMETRIC FULL-GAME FAIR MARGIN (v312 — MARKET-IMPLIED EPA BENCHMARK)
 function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "tip", vegasHomeSpread = null, psiElev = 0, elevMatrix = null, intensitySlider = 0.0) {
     const hfaBase = gameData.hfa_base !== undefined ? gameData.hfa_base : PI_OVER_PHI_HFA;
     const home = (gameData.team_telemetry && gameData.team_telemetry.home) || {};
@@ -491,11 +492,8 @@ function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "
     const activePsi = (mode === "tip") ? 0 : psiCoupled11_12;
     const activeElev = (mode === "tip") ? 0 : psiElev;
 
-    // True full-game offensive volume (62.32 NFL plays = GOLDEN_PLAY_SCALER * PHI; 68.0 NCAA plays)
-    const trueGamePlays = (league === "NCAA") ? 68.0 : (GOLDEN_PLAY_SCALER * GOLDEN_RATIO_PHI);
-    const epaPoints = trueGamePlays * epaDiff;
-    const rawEpaSpread = epaPoints - hfaBase;
-    const rawTelemetryHomeSpread = rawEpaSpread + deltaRzFin + deltaTOReg - phiCirc + activePsi + activeElev;
+    const epaPoints = GOLDEN_PLAY_SCALER * epaDiff;
+    const rawTelemetryHomeSpread = epaPoints + deltaRzFin + deltaTOReg - hfaBase - phiCirc + activePsi + activeElev;
 
     let calibratedHomeSpread = rawTelemetryHomeSpread;
     let m13 = {
@@ -511,27 +509,23 @@ function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "
     };
 
     if (vegasHomeSpread !== null && vegasHomeSpread !== undefined && !isNaN(vegasHomeSpread)) {
-        const telemetryWeight = FIBONACCI_TIERS.TIER_1 / FIBONACCI_TIERS.SUM_F; // 34 / 76 = 0.44737
-
-        // Symmetric EPA residual: zero-safe when feed missing, mismatch-tapered above 10-pt spreads
+        // Market-Implied EPA Benchmark on registry scale:
+        // Compares actual epaDiff against what Vegas spread + HFA implies, eliminating pull-to-zero on favorites
         let epaResidual = 0.0;
-        let taperedEpaGap = 0.0;
         if (hasEpaFeed) {
-            const rawEpaGap = rawEpaSpread - vegasHomeSpread;
-            const excessSpread = Math.max(0.0, Math.abs(vegasHomeSpread) - 10.0);
-            const mismatchTaper = 1.0 / (1.0 + Math.pow(excessSpread / 10.0, 2));
-            taperedEpaGap = rawEpaGap * mismatchTaper;
-            epaResidual = 3.5 * Math.tanh((rawEpaGap * telemetryWeight) / 3.5) * mismatchTaper;
+            const expectedEpaDiff = 0.085 * Math.tanh((vegasHomeSpread + hfaBase) / 14.0);
+            epaResidual = (epaDiff - expectedEpaDiff) * GOLDEN_PLAY_SCALER;
         }
 
-        m13 = calcSacredGeometryRise(gameData, vegasHomeSpread, taperedEpaGap, elevMatrix, league);
+        // Feed symmetric zero-centered EPA residual into M13 (gives balanced Fav & Dog lifts in Balls Deep)
+        m13 = calcSacredGeometryRise(gameData, vegasHomeSpread, epaResidual, elevMatrix, league);
         const m13FlowScale = (mode === "davinci")
             ? Math.max(0.0, 1.0 + (intensitySlider * (FIBONACCI_TIERS.TIER_2 / FIBONACCI_TIERS.SUM_F)))
             : 1.0;
         const activeRiseAdj = (mode === "tip") ? 0.0 : (m13.riseHomeSpreadAdj * m13FlowScale);
 
-        // Pure situational residuals + symmetric EPA residual (zero pull-to-zero, symmetric soft-cap prevents bloat)
-        const situationalDelta = deltaRzFin + deltaTOReg - phiCirc + activePsi + activeElev + activeRiseAdj;
+        // Balanced situational residuals + symmetric EPA residual inside soft cap (zero pull-to-zero, zero bloat)
+        const situationalDelta = (deltaRzFin * 0.65) + (deltaTOReg * 0.50) - phiCirc + activePsi + activeElev + activeRiseAdj;
         const maxShift = (mode === "tip") ? 4.5 : 5.5;
         const finalDelta = maxShift * Math.tanh((epaResidual + situationalDelta) / maxShift);
 
@@ -814,4 +808,4 @@ function calcMasterFibonacciAggregate(moduleScores, fibLookupFn = 13, intensityS
         liveAdjustedProb: Number((pAgg * 100).toFixed(2))
     };
 }
-// === END OF ONLINEMATH_ENGINE.JS (v311) ===
+// === END OF ONLINEMATH_ENGINE.JS (v312) ===
