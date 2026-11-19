@@ -461,6 +461,8 @@ window.setComboFilter = function(filterType, value) {
     window.scrollTo(window.scrollX, savedY);
 };
 
+let sliderDragTimer = null;
+
 function bindUIControls() {
     const modeRadios = {
         "mode-tip": "tip",
@@ -484,13 +486,34 @@ function bindUIControls() {
         }
     });
 
+    // Fast-path while actively dragging the DaVinci slider
     document.addEventListener("input", (e) => {
         if (e.target && e.target.id === "davinci-intensity-slider") {
             const readout = document.getElementById("davinci-readout");
             const val = parseFloat(e.target.value) || 0.0;
             if (readout) readout.textContent = val > 0 ? "+" + val : val;
             AppState.intensitySlider = val;
-            recalculateAndRenderAll();
+
+            if (AppState.activeMode !== "davinci") return;
+            if (sliderDragTimer) return;
+            sliderDragTimer = setTimeout(() => {
+                sliderDragTimer = null;
+                requestAnimationFrame(() => recalculateAndRenderAll({ isSliderDrag: true }));
+            }, 60);
+        }
+    });
+
+    // Full sync of all tabs the moment you release the slider
+    document.addEventListener("change", (e) => {
+        if (e.target && e.target.id === "davinci-intensity-slider") {
+            if (sliderDragTimer) {
+                clearTimeout(sliderDragTimer);
+                sliderDragTimer = null;
+            }
+            AppState.intensitySlider = parseFloat(e.target.value) || 0.0;
+            if (AppState.activeMode === "davinci") {
+                recalculateAndRenderAll({ isSliderDrag: false });
+            }
         }
     });
 
@@ -511,7 +534,6 @@ function bindUIControls() {
         });
     }
 }
-
 async function pollDataFeed() {
     try {
         const response = await fetch(`./data.json?t=${Date.now()}`, { cache: "no-store" });
@@ -537,7 +559,8 @@ function renderLockCellHTML() {
     return `<span onclick="window.unlockBallsDeepMode(event)" title="Click to unlock Balls Deep Telemetry" style="cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-size:15px; user-select:none;">🔒</span>`;
 }
 
-function recalculateAndRenderAll() {
+function recalculateAndRenderAll(opts = {}) {
+    const isSliderDrag = Boolean(opts && opts.isSliderDrag);
     if (!AppState.rawPayload || !AppState.rawPayload.games) return;
 
     const savedScrollX = window.scrollX;
@@ -989,19 +1012,42 @@ function recalculateAndRenderAll() {
         };
     });
 
-    renderFlagshipFivePack();
-    render_game_cards(AppState.rawPayload);
-    renderCombinatoricsDeck();
-    renderCompendiumBoard();
-    renderTelemetryInspector();
-    renderBioWeatherLab();
-    renderHistoricalLedger();
-    renderLiveBottomTicker();
+    const isVisible = (id) => {
+        const el = document.getElementById(id);
+        return Boolean(el && el.offsetParent !== null);
+    };
 
-    window.scrollTo(savedScrollX, savedScrollY);
-    requestAnimationFrame(() => {
+    if (isSliderDrag) {
+        if (isVisible("flagship-five-pack-container")) renderFlagshipFivePack();
+
+        const hasOpenGameCards = Array.from(openCardMemory).some(
+            k => k !== "FLAGSHIP_5_PACK_DRAWER" && k !== "MASTER_BOARD_LEGEND_DRAWER" && k !== "LEDGER_LEGEND_DRAWER"
+        );
+        if (hasOpenGameCards && isVisible("master-board-body")) render_game_cards(AppState.rawPayload);
+
+        if (isVisible("combinatorics-container")) renderCombinatoricsDeck();
+        if (isVisible("compendium-board-body")) renderCompendiumBoard();
+        if (isVisible("telemetry-container")) renderTelemetryInspector();
+        if (isVisible("biolab-container")) renderBioWeatherLab();
+
+        if (window.scrollY !== savedScrollY) {
+            window.scrollTo(savedScrollX, savedScrollY);
+        }
+    } else {
+        renderFlagshipFivePack();
+        render_game_cards(AppState.rawPayload);
+        renderCombinatoricsDeck();
+        renderCompendiumBoard();
+        renderTelemetryInspector();
+        renderBioWeatherLab();
+        renderHistoricalLedger();
+        renderLiveBottomTicker();
+
         window.scrollTo(savedScrollX, savedScrollY);
-    });
+        requestAnimationFrame(() => {
+            window.scrollTo(savedScrollX, savedScrollY);
+        });
+    }
 }
 
 // Single Lightning Bolt Rule + Compendium Safe Floor (-2φ) & Ceiling Escalator (+φ) Bracket + Quarter-Kelly Cap
