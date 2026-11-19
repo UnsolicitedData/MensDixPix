@@ -2,7 +2,8 @@
  * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v236)
  * Smooth Momentum Arc & Zero-Lag Slider Edition — Synced 1:1 with onlinemath_engine.js (v311)
  *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
- *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge in Balls Deep / DaVinci
+ *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
+ *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
  *  - Zero-Lag DaVinci Slider: 50ms rAF drag fast-path (visible-tab-only repaint) + full sync on release
  *  - Organic Continuous Momentum Arc (calcMomentumArc): flows Spreads, Totals, Safe Floors & Ceilings
  *    smoothly across [-2φ, +2φ] without artificial .5 or 5-yard snapping
@@ -999,8 +1000,7 @@ function recalculateAndRenderAll(opts = {}) {
         p.flagshipSlot = "";
         p.porkysSlot = "";
     });
-    const bestSpreadPerGame = [];
-    const remainingPool = [];
+    const bestPlayPerGame = [];
     const trapPairsPool = [];
 
     const currentWeekGames = AppState.processedGames.filter(g => g.isCurrentWeek);
@@ -1010,12 +1010,17 @@ function recalculateAndRenderAll(opts = {}) {
         const gameSpreads = AppState.processedProps.filter(
             p => p.gameId === g.gameId && p.marketType === "spread" && Math.abs(p.baseLine) <= 28.5
         );
+        const gameTotals = AppState.processedProps.filter(
+            p => p.gameId === g.gameId && p.marketType === "total" && !p.gatekeeperBlocked
+        );
+
+        const gameCandidates = [];
         if (gameSpreads.length > 0) {
             gameSpreads.sort((a, b) => b.tipEvPct - a.tipEvPct);
             const bestSide = gameSpreads[0];
             const worstSide = gameSpreads[gameSpreads.length - 1];
             if (!bestSide.gatekeeperBlocked) {
-                bestSpreadPerGame.push(bestSide);
+                gameCandidates.push(bestSide);
             }
 
             if (gameSpreads.length > 1 && worstSide.tipEvPct <= PASS_EV_CUTOFF) {
@@ -1025,19 +1030,23 @@ function recalculateAndRenderAll(opts = {}) {
                 });
             }
         }
-        const gameTotals = AppState.processedProps.filter(
-            p => p.gameId === g.gameId && p.marketType !== "spread" && !p.gatekeeperBlocked
-        );
-        remainingPool.push(...gameTotals);
+        if (gameTotals.length > 0) {
+            gameTotals.sort((a, b) => b.tipEvPct - a.tipEvPct);
+            gameCandidates.push(gameTotals[0]);
+        }
+
+        // Strict 1-pick-per-game rule: highest-EV Spread OR O/U Total per stadium for clean x2/x3 Round Robins
+        if (gameCandidates.length > 0) {
+            gameCandidates.sort((a, b) => b.tipEvPct - a.tipEvPct);
+            bestPlayPerGame.push(gameCandidates[0]);
+        }
     });
 
-    bestSpreadPerGame.sort((a, b) => b.tipEvPct - a.tipEvPct);
-    const menageTop3 = bestSpreadPerGame.slice(0, 3);
+    bestPlayPerGame.sort((a, b) => b.tipEvPct - a.tipEvPct);
+    const menageTop3 = bestPlayPerGame.slice(0, 3);
     menageTop3.forEach((p, idx) => { p.flagshipSlot = `MÉNAGE À TROIS #${idx + 1}`; });
 
-    const leftoverSpreads = bestSpreadPerGame.slice(3);
-    const flexCandidates = [...leftoverSpreads, ...remainingPool].sort((a, b) => b.tipEvPct - a.tipEvPct);
-    const flexTop2 = flexCandidates.slice(0, 2);
+    const flexTop2 = bestPlayPerGame.slice(3, 5);
     flexTop2.forEach((p, idx) => { p.flagshipSlot = `5-PACK FLEX #${idx + 4}`; });
 
     AppState.flagshipFivePack = [...menageTop3, ...flexTop2];
@@ -1179,15 +1188,15 @@ function buildMasterBoardLegendHTML() {
 
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
                         <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">2. THE VIP FLOOR CODE (SYMMETRIC 3-TIER EV)</div>
-                        <div>• <span class="badge-smash" style="font-size:10px;">SMASH</span> <strong style="color:var(--accent-emerald);">(&ge;+10.0% EV):</strong> <em>Green-Light Money Shot.</em> Full-contact value (57.6%+ win rate, +2.4 pts edge). Pull your stack out and make it rain.</div>
-                        <div style="margin-top: 4px;">• <strong style="color:#94a3b8;">Neutral Slate / No Badge (-18.9% to +9.9% EV):</strong> <em>All Tease, No Squeeze.</em> Inside &plusmn;2.4 pts of Vegas—keep your wallet holstered.</div>
-                        <div style="margin-top: 4px;">• <span class="badge-pass" style="background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);font-size:10px;font-weight:800;">PASS</span> <strong style="color:var(--accent-danger);">(&le;-19.0% EV or Gated):</strong> <em>Grenades Dodged.</em> True counter-side SMASH trap or v311 guardrail stop (M4 TOP, M5 Sack-Trauma, M9 3rd-String QB).</div>
+                        <div>• <span class="badge-smash" style="font-size:10px;">SMASH</span> <strong style="color:var(--accent-emerald);">(&ge;+10.0% EV):</strong> <em>Green-Light Money Shot.</em> Full-contact value (57.6%+ win rate). Pull your stack out and make it rain.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:#94a3b8;">Neutral Slate / No Badge (-18.9% to +9.9% EV):</strong> <em>All Tease, No Squeeze.</em> Priced too tight to drop cash on. Keep your wallet holstered.</div>
+                        <div style="margin-top: 4px;">• <span class="badge-pass" style="background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);font-size:10px;font-weight:800;">PASS</span> <strong style="color:var(--accent-danger);">(&le;-19.0% EV or Gated):</strong> <em>Grenades Dodged.</em> Public trap or v311 guardrail stop (M4 TOP, M5 Sack-Trauma, M9 3rd-String QB).</div>
                     </div>
 
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
                         <div style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-gold); margin-bottom: 4px;">3. FLOOR-TO-CEILING VIP PASS &amp; OVERRIDES</div>
                         <div>• <strong style="color:var(--accent-cyan);">Just the Tip:</strong> Pure M1–M9 baseline efficiency, weather ballistics, and circadian travel drag.</div>
-                        <div style="margin-top: 4px;">• <strong style="color:var(--accent-emerald);">Balls Deep &amp; DaVinci:</strong> Unleashes M11–M13 (&Psi;_11,12 + 10-Zone Elevation <strong>M11&gt;M13</strong> + Fixed Objective <strong>M_rise</strong>) with <strong>🛡️ SAFE SMASH (&ge;+10% EV)</strong> across our <strong>🛡️ Safe Floor (-2&phi;)</strong> &amp; <strong>🎯 Ceiling (+&phi;)</strong> bracket.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:var(--accent-emerald);">Balls Deep &amp; DaVinci:</strong> Unleashes M11–M13 (&Psi;_11,12 + 10-Zone Elevation <strong>M11&gt;M13</strong> + Fixed Objective <strong>M_rise</strong>) with an organic continuous momentum arc across our <strong>🛡️ Safe Floor (-2&phi;)</strong> &amp; <strong>🎯 Ceiling (+&phi;)</strong> bracket.</div>
                     </div>
                 </div>
             </div>
@@ -1277,65 +1286,65 @@ function renderFlagshipFivePack() {
         `;
     }).join("");
 
-    const porkysRowsHTML = AppState.porkysFivePack.length > 0
-        ? AppState.porkysFivePack.map((item, idx) => {
-            const trap = item.trapProp;
-            const fade = item.fadeProp;
-            const fmtTrapProj = Number(trap.tipProjectedMean) > 0 ? `+${trap.tipProjectedMean}` : `${trap.tipProjectedMean}`;
-            const fmtFadeProj = Number(fade.tipProjectedMean) > 0 ? `+${fade.tipProjectedMean}` : `${fade.tipProjectedMean}`;
-            const trapEvStr = `${trap.tipEvPct > 0 ? '+' : ''}${trap.tipEvPct}% EV`;
+    const porkysRowsHTML = AppState.porkysFivePack.length === 0
+        ? `<div style="padding: 16px; text-align: center; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary);">No true &le;-19.0% EV public grenades flagged on this week's board yet.</div>`
+        : AppState.porkysFivePack.map((item, idx) => {
+        const trap = item.trapProp;
+        const fade = item.fadeProp;
+        const fmtTrapProj = Number(trap.tipProjectedMean) > 0 ? `+${trap.tipProjectedMean}` : `${trap.tipProjectedMean}`;
+        const fmtFadeProj = Number(fade.tipProjectedMean) > 0 ? `+${fade.tipProjectedMean}` : `${fade.tipProjectedMean}`;
+        const trapEvStr = `${trap.tipEvPct > 0 ? '+' : ''}${trap.tipEvPct}% EV`;
 
-            // Safe Floor (-2φ) Counter-Strike Fade metrics
-            const fadeTeamCode = fade.isHomeSpread ? fade.homeTeam : fade.awayTeam;
-            const safeFloorProbRaw = (fade.safeFloorWinPct || 82.0) / 100.0;
-            const m2SafeFloor = calcExpectedValueAndKelly(safeFloorProbRaw, -175);
-            const safeFloorEvPct = Number(m2SafeFloor.evPercentage.toFixed(2));
-            const safeFloorEvStr = `${safeFloorEvPct > 0 ? '+' : ''}${safeFloorEvPct}% EV`;
-            const safeFloorTier = getTierFromEv(safeFloorEvPct);
-            const fmtBaseSpread = fade.baseLine > 0 ? `+${fade.baseLine}` : `${fade.baseLine}`;
+        // Safe Floor (-2φ) Counter-Strike Fade metrics
+        const fadeTeamCode = fade.isHomeSpread ? fade.homeTeam : fade.awayTeam;
+        const safeFloorProbRaw = (fade.safeFloorWinPct || 82.0) / 100.0;
+        const m2SafeFloor = calcExpectedValueAndKelly(safeFloorProbRaw, -175);
+        const safeFloorEvPct = Number(m2SafeFloor.evPercentage.toFixed(2));
+        const safeFloorEvStr = `${safeFloorEvPct > 0 ? '+' : ''}${safeFloorEvPct}% EV`;
+        const safeFloorTier = getTierFromEv(safeFloorEvPct);
+        const fmtBaseSpread = fade.baseLine > 0 ? `+${fade.baseLine}` : `${fade.baseLine}`;
 
-            const slotBadgeStyle = item.isTopThreeTrap
-                ? "background:rgba(239,68,68,0.18); color:#f87171; border:1px solid rgba(239,68,68,0.55);"
-                : "background:rgba(236,72,153,0.16); color:#f472b6; border:1px solid rgba(236,72,153,0.5);";
+        const slotBadgeStyle = item.isTopThreeTrap
+            ? "background:rgba(239,68,68,0.18); color:#f87171; border:1px solid rgba(239,68,68,0.55);"
+            : "background:rgba(236,72,153,0.16); color:#f472b6; border:1px solid rgba(236,72,153,0.5);";
 
-            return `
-                <div style="padding: 12px 0; ${idx < AppState.porkysFivePack.length - 1 ? 'border-bottom: 1px solid #1e293b;' : ''}">
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; align-items: center;">
-                        <div style="background: rgba(239, 68, 68, 0.07); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 6px; padding: 8px 10px;">
-                            <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; margin-bottom: 3px;">
-                                <span style="font-family:var(--font-mono); font-size:10px; font-weight:800; padding:2px 6px; border-radius:4px; ${slotBadgeStyle}">
-                                    🐷 ${item.slotLabel}
-                                </span>
-                                ${renderTierBadgeHTML("PASS")}
-                            </div>
-                            <div style="font-size: 12.5px; font-weight: 800; color: var(--text-primary); margin-bottom: 2px;">
-                                🚫 TRAP: ${trap.player}
-                            </div>
-                            <div style="font-family: var(--font-mono); font-size: 11.5px; color: var(--accent-danger);">
-                                Proj: <strong>${fmtTrapProj}</strong> | Win: <strong>${trap.tipModelPct}%</strong> (${trapEvStr})
-                            </div>
+        return `
+            <div style="padding: 12px 0; ${idx < AppState.porkysFivePack.length - 1 ? 'border-bottom: 1px solid #1e293b;' : ''}">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; align-items: center;">
+                    <div style="background: rgba(239, 68, 68, 0.07); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 6px; padding: 8px 10px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; margin-bottom: 3px;">
+                            <span style="font-family:var(--font-mono); font-size:10px; font-weight:800; padding:2px 6px; border-radius:4px; ${slotBadgeStyle}">
+                                🐷 ${item.slotLabel}
+                            </span>
+                            ${renderTierBadgeHTML("PASS")}
                         </div>
-
-                        <div style="background: rgba(6, 182, 212, 0.09); border: 1px solid rgba(16, 185, 129, 0.45); border-radius: 6px; padding: 8px 10px;">
-                            <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; margin-bottom: 3px;">
-                                <span style="font-family:var(--font-mono); font-size:10px; font-weight:800; color:var(--accent-cyan);">
-                                    🛡️ RECOMMENDED SAFE FLOOR FADE (-2&phi;)
-                                </span>
-                                ${renderTierBadgeHTML(safeFloorTier)}
-                            </div>
-                            <div style="font-size: 12.5px; font-weight: 800; color: var(--text-primary); margin-bottom: 2px;">
-                                ✅ FADE TO FLOOR: ${fadeTeamCode} ${fade.safeFloorLabel} <span style="font-weight:600; font-size:11px; color:var(--text-secondary);">[Base: ${fmtBaseSpread}]</span>
-                            </div>
-                            <div style="font-family: var(--font-mono); font-size: 11.5px; color: ${getTierColor(safeFloorTier)};">
-                                Proj: <strong>${fmtFadeProj}</strong> | Floor Win: <strong>${fade.safeFloorWinPct}%</strong> (${safeFloorEvStr})
-                            </div>
+                        <div style="font-size: 12.5px; font-weight: 800; color: var(--text-primary); margin-bottom: 2px;">
+                            🚫 TRAP: ${trap.player}
+                        </div>
+                        <div style="font-family: var(--font-mono); font-size: 11.5px; color: var(--accent-danger);">
+                            Proj: <strong>${fmtTrapProj}</strong> | Win: <strong>${trap.tipModelPct}%</strong> (${trapEvStr})
                         </div>
                     </div>
-                    ${buildBallsDeepBoxHTML(fade, true)}
+
+                    <div style="background: rgba(6, 182, 212, 0.09); border: 1px solid rgba(16, 185, 129, 0.45); border-radius: 6px; padding: 8px 10px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; margin-bottom: 3px;">
+                            <span style="font-family:var(--font-mono); font-size:10px; font-weight:800; color:var(--accent-cyan);">
+                                🛡️ RECOMMENDED SAFE FLOOR FADE (-2&phi;)
+                            </span>
+                            ${renderTierBadgeHTML(safeFloorTier)}
+                        </div>
+                        <div style="font-size: 12.5px; font-weight: 800; color: var(--text-primary); margin-bottom: 2px;">
+                            ✅ FADE TO FLOOR: ${fadeTeamCode} ${fade.safeFloorLabel} <span style="font-weight:600; font-size:11px; color:var(--text-secondary);">[Base: ${fmtBaseSpread}]</span>
+                        </div>
+                        <div style="font-family: var(--font-mono); font-size: 11.5px; color: ${getTierColor(safeFloorTier)};">
+                            Proj: <strong>${fmtFadeProj}</strong> | Floor Win: <strong>${fade.safeFloorWinPct}%</strong> (${safeFloorEvStr})
+                        </div>
+                    </div>
                 </div>
-            `;
-        }).join("")
-        : `<div style="padding: 16px; text-align: center; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary);">No true &le;-19.0% EV public grenades flagged on this week's board yet.</div>`;
+                ${buildBallsDeepBoxHTML(fade, true)}
+            </div>
+        `;
+    }).join("");
 
     container.innerHTML = `
         ${buildMasterBoardLegendHTML()}
@@ -2178,12 +2187,12 @@ function buildLedgerLegendHTML() {
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
                         <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">MAIN STAGE vs. LAP-DANCE COIN FLIPS</div>
                         <div>• <strong style="color:var(--accent-emerald);">🔥 Official SMASH (&ge;+10.0% EV):</strong> Our headline earners that clear the +10% EV velvet rope, tracked alongside the <strong>Flagship 5-Pack</strong> and <strong>Ménage à Trois</strong>.</div>
-                        <div style="margin-top: 4px;">• <strong style="color:#60a5fa;">🔵 All Tease, No Squeeze (-18.9% to +9.9% EV):</strong> Tight toss-ups inside the &plusmn;2.4 pt buffer—quarantined in their own booth so 50/50 bar-bet variance never waters down our Official SMASH record.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:#60a5fa;">🔵 All Tease, No Squeeze (-18.9% to +9.9% EV):</strong> Tight toss-ups inside the -9.9% to +9.9% EV buffer—quarantined in their own booth so 50/50 bar-bet variance never waters down our Official SMASH record.</div>
                     </div>
 
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
                         <div style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-danger); margin-bottom: 4px;">💣 GRENADES DODGED (&le;-19.0% EV)</div>
-                        <div>• <strong>Wingman Intervention:</strong> <em>You were a little too drunk to make that call last night.</em> Tracks the 1:45 AM beer-goggle public favorites we stamped with a red <strong>PASS (&le;-19.0% EV)</strong>—the exact mirror of a +10% EV counter-side SMASH.</div>
+                        <div>• <strong>Wingman Intervention:</strong> <em>You were a little too drunk to make that call last night.</em> Tracks the 1:45 AM beer-goggle public favorites we stamped with a red <strong>PASS (&le;-19.0% EV)</strong>—the ones that look like a 10 on TV after six drinks, right before they wreck your life.</div>
                         <div style="margin-top: 4px;">• Every time a casual-bait favorite blows up and fails to cover, <strong>Grenades Dodged</strong> ticks up—counting how many times your wingman jumped on the grenade so you didn't wake up chewing your own arm off on Monday morning.</div>
                     </div>
                 </div>
@@ -2354,7 +2363,7 @@ function renderHistoricalLedger() {
             const trapLabel = cleanLabelCodes(entry.trap_pick_label || `${cleanMatchup} Public Favorite Trap`);
             const trapLine = entry.trap_vegas_line !== undefined ? entry.trap_vegas_line : "--";
             const trapProj = entry.trap_tip_proj !== undefined ? entry.trap_tip_proj : "--";
-            const trapEv = entry.trap_tip_ev_pct !== undefined ? `${entry.trap_tip_ev_pct}% EV` : "&le;-19% EV";
+            const trapEv = entry.trap_tip_ev_pct !== undefined ? `${entry.trap_tip_ev_pct}% EV` : "&le;-19.0% EV";
             const fadeSideLabel = (entry.spread_record && entry.spread_record.pick_label) ? cleanLabelCodes(entry.spread_record.pick_label) : "Counter-Strike Dog";
 
             vaultRows.grenades_dodged.push(`
@@ -2695,11 +2704,11 @@ function renderHistoricalLedger() {
             vaultAccentColor = "var(--accent-emerald)";
             selectedRowsHTML = vaultRows.overall_smash.join("");
         } else if (AppState.activeLedgerVault === "all_tease") {
-            vaultTitle = `🔵 ALL TEASE, NO SQUEEZE VAULT (-18.9% to +9.9% EV COMPLETED RECEIPTS) // ${fmtBucket("all_tease")}`;
+            vaultTitle = `🔵 ALL TEASE, NO SQUEEZE VAULT (&plusmn;10% EV COMPLETED RECEIPTS) // ${fmtBucket("all_tease")}`;
             vaultAccentColor = "#60a5fa";
             selectedRowsHTML = vaultRows.all_tease.join("");
         } else if (AppState.activeLedgerVault === "grenades_dodged") {
-            vaultTitle = `💣 GRENADES DODGED VAULT (&le;-19.0% EV PUBLIC TRAPS AVOIDED) // ${fmtTraps()}`;
+            vaultTitle = `💣 GRENADES DODGED VAULT (&le;-10% EV PUBLIC TRAPS AVOIDED) // ${fmtTraps()}`;
             vaultAccentColor = "var(--accent-danger)";
             selectedRowsHTML = vaultRows.grenades_dodged.join("");
         } else if (isFloorsCeilingsVault) {
@@ -2786,7 +2795,7 @@ function renderHistoricalLedger() {
             </div>
 
             <div onclick="window.toggleLedgerVault('all_tease', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('all_tease', 'rgba(59, 130, 246, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
-                <div style="font-size: 11px; color: #60a5fa; font-weight: 800;">🔵 ALL TEASE, NO SQUEEZE (&plusmn;2.4 PTS)</div>
+                <div style="font-size: 11px; color: #60a5fa; font-weight: 800;">🔵 ALL TEASE, NO SQUEEZE (-18.9% to +9.9% EV)</div>
                 <div style="font-size: 14.5px; font-weight: 800; margin: 6px 0; color: var(--text-primary);">${fmtBucket("all_tease")}</div>
                 <div style="font-size: 11px; color: var(--text-muted);">Coin-flip zone | BB = Missed line by &le;3 pts</div>
             </div>
@@ -2794,4 +2803,155 @@ function renderHistoricalLedger() {
             <div onclick="window.toggleLedgerVault('grenades_dodged', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('grenades_dodged', 'rgba(239, 68, 68, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
                 <div style="font-size: 11px; color: var(--accent-danger); font-weight: 800;">💣 GRENADES DODGED (&le;-19.0% EV)</div>
                 <div style="font-size: 15.5px; font-weight: 800; margin: 6px 0; color: var(--accent-emerald);">${fmtTraps()}</div>
-                <div style="font
+                <div style="font-size: 11px; color: var(--text-muted);">You were a little too drunk to make that call last night</div>
+            </div>
+
+            <div onclick="window.toggleLedgerVault('floors_ceilings', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('floors_ceilings', 'rgba(245, 158, 11, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
+                <div style="font-size: 11px; color: var(--accent-gold); font-weight: 800;">🛡️ SAFE FLOORS &amp; 🎯 CEILINGS</div>
+                <div style="font-size: 13px; font-weight: 800; margin: 6px 0; color: var(--accent-cyan);">🛡️ Floors (-2&phi;): ${fmtBucket("safe_floors")}</div>
+                <div style="font-size: 12.5px; font-weight: 800; color: var(--accent-gold);">🎯 Ceilings (+&phi;): ${fmtBucket("ceilings")}</div>
+            </div>
+
+            <div onclick="window.toggleLedgerVault('tip_vs_bd', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('tip_vs_bd', 'rgba(6, 182, 212, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
+                <div style="font-size: 11px; color: var(--accent-cyan); font-weight: 800;">⚡ TIP vs. BALLS DEEP HEAD-TO-HEAD</div>
+                <div style="font-size: 13px; font-weight: 800; margin: 6px 0;">Tip: ${fmtBucket("tip_all")}</div>
+                ${showBallsDeep
+                    ? `<div style="font-size: 13px; font-weight: 800; color: var(--accent-emerald);">Balls Deep: ${fmtBucket("balls_deep_all")}</div>`
+                    : `<div style="font-size: 11px; color: var(--accent-gold); cursor: pointer;" onclick="window.unlockBallsDeepMode(event)">🔒 Click to unlock Balls Deep Record</div>`
+                }
+            </div>
+        </div>
+
+        ${activeVaultDrawerHTML}
+
+        <div style="margin-bottom: 10px; padding: 8px 14px; border-radius: 6px; background: rgba(15, 23, 42, 0.85); border: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; font-family: var(--font-mono);">
+            <span style="font-size: 12px; font-weight: 800; color: var(--accent-cyan);">
+                🕒 ACTIVE WEEK // UPCOMING &amp; IN-PLAY CLOSING LINE LEDGER
+            </span>
+            <span style="font-size: 11px; color: var(--text-secondary);">
+                Completed games move automatically into the 6 Scorecard Vaults above upon hitting FINAL
+            </span>
+        </div>
+
+        <div class="table-responsive">
+            <table class="quant-table">
+                <thead>
+                    <tr>
+                        <th>Matchup &amp; Status</th>
+                        <th>Market &amp; Slot</th>
+                        <th>Official Model Pick</th>
+                        <th>Vegas Closing</th>
+                        <th>Just the Tip Closing</th>
+                        <th>Balls Deep Closing</th>
+                        <th>Graded Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${upcomingRowsHTML}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+// ==========================================
+// RESPONSIVE 5-PACK CSS & FIXED-BOTTOM ZERO-TOKEN ESPN LIVE WIRE TICKER (300s CRAWL)
+// ==========================================
+function ensureTickerStylesInjected() {
+    if (document.getElementById("dixpix-ticker-keyframes")) return;
+    const styleEl = document.createElement("style");
+    styleEl.id = "dixpix-ticker-keyframes";
+    styleEl.textContent = `
+        @keyframes dixpixMarqueeScroll {
+            0% { transform: translateX(0%); }
+            100% { transform: translateX(-50%); }
+        }
+        #dixpix-live-wire-track:hover {
+            animation-play-state: paused !important;
+        }
+        #flagship-banner-toggle {
+            position: relative;
+            cursor: pointer;
+            padding: 14px 145px;
+            text-align: center;
+            user-select: none;
+        }
+        .five-pack-corner-btn {
+            position: absolute;
+            top: 12px;
+            right: 14px;
+        }
+        @media (max-width: 720px) {
+            #flagship-banner-toggle {
+                padding: 12px 14px !important;
+            }
+            .five-pack-corner-btn {
+                position: static !important;
+                display: inline-block !important;
+                margin-bottom: 8px !important;
+            }
+        }
+    `;
+    document.head.appendChild(styleEl);
+    document.body.style.paddingBottom = "46px";
+}
+
+function renderLiveBottomTicker() {
+    ensureTickerStylesInjected();
+
+    let tickerBar = document.getElementById("dixpix-live-wire-bar");
+    if (!tickerBar) {
+        tickerBar = document.createElement("div");
+        tickerBar.id = "dixpix-live-wire-bar";
+        tickerBar.style.cssText = "position:fixed; bottom:0; left:0; right:0; height:36px; background:rgba(9,13,22,0.96); border-top:1px solid rgba(245,158,11,0.55); box-shadow:0 -4px 16px rgba(0,0,0,0.65); z-index:9999; display:flex; align-items:center; overflow:hidden; font-family:var(--font-mono); font-size:11.5px;";
+        document.body.appendChild(tickerBar);
+    }
+
+    const tickerItems = [];
+
+    // 1. Add Permanent Graded Archive Highlights
+    tickerItems.push(`<span style="color:var(--accent-emerald);font-weight:800;">🟢 FINAL: LAC 23 - BAL 20</span> <span style="color:var(--text-primary);">[BAL +6.5 ✅ HIT (+27.6% EV) • O 44.5 🔵 BLUE BALLS (-1.5 pts)]</span>`);
+
+    // 2. Add Live / Final ESPN Feed Games + Current Week Slate Picks
+    const currentWeekGames = AppState.processedGames.filter(g => g.isCurrentWeek);
+    currentWeekGames.forEach(g => {
+        const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[g.matchup];
+        const gameSpreads = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "spread").sort((a, b) => b.tipEvPct - a.tipEvPct);
+        const topSpread = gameSpreads[0];
+        if (!topSpread) return;
+
+        const pickTag = `${topSpread.player} (${topSpread.tipEvPct > 0 ? '+' : ''}${topSpread.tipEvPct}% EV)`;
+        const tierColor = getTierColor(topSpread.tipBadge, true);
+
+        if (espnMatch && espnMatch.state === "in") {
+            tickerItems.push(`<span style="color:#ef4444;font-weight:800;">🔴 LIVE (${espnMatch.shortDetail || 'IN-PLAY'}): ${espnMatch.scoreStr}</span> <span style="color:${tierColor};">[Model: ${pickTag}]</span>`);
+        } else if (espnMatch && espnMatch.state === "post") {
+            tickerItems.push(`<span style="color:var(--accent-emerald);font-weight:800;">🟢 FINAL: ${espnMatch.scoreStr}</span> <span style="color:${tierColor};">[Model: ${pickTag}]</span>`);
+        } else {
+            let kickStr = "UPCOMING";
+            if (g.commenceTime) {
+                const dt = new Date(g.commenceTime);
+                kickStr = dt.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase() + " " + dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+            }
+            const badgeStr = topSpread.tipBadge === "SMASH" ? "🔥 SMASH" : (topSpread.tipBadge === "PASS" ? "💣 PASS" : "⚖️ TEASE");
+            tickerItems.push(`<span style="color:var(--accent-cyan);font-weight:700;">🕒 ${kickStr}: ${g.matchup}</span> <span style="color:${tierColor};">[${badgeStr}: ${pickTag}]</span>`);
+        }
+    });
+
+    const joinedStrip = tickerItems.join(` <span style="color:rgba(245,158,11,0.55);margin:0 18px;">//</span> `);
+
+    tickerBar.innerHTML = `
+        <div style="flex-shrink:0; height:100%; padding:0 12px; background:linear-gradient(90deg, rgba(245,158,11,0.25), rgba(15,23,42,0.98)); border-right:1px solid rgba(245,158,11,0.55); display:flex; align-items:center; gap:7px; color:var(--accent-gold); font-weight:800; letter-spacing:0.03em; z-index:2;">
+            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--accent-emerald); box-shadow:0 0 8px var(--accent-emerald);"></span>
+            📡 DIXPIX LIVE WIRE
+        </div>
+        <div style="flex:1; overflow:hidden; white-space:nowrap; position:relative;">
+            <div id="dixpix-live-wire-track" style="display:inline-block; white-space:nowrap; padding-left:24px; animation: dixpixMarqueeScroll 300s linear infinite;">
+                <span>${joinedStrip}</span>
+                <span style="color:rgba(245,158,11,0.55);margin:0 18px;">//</span>
+                <span>${joinedStrip}</span>
+            </div>
+        </div>
+    `;
+}
+// === END OF APP_CONTROLLER.JS (v236) ===
