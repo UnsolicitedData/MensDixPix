@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v239)
- * Pure OG M1–M9 + Live 2026 Telemetry Edition — Synced 1:1 with onlinemath_engine.js (v313) & scraper.py (v212)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v240)
+ * Pure OG M1–M9 + Live Auto-Grading Ledger Edition — Synced 1:1 with onlinemath_engine.js (v313) & scraper.py (v214)
  *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
  *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
  *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
@@ -2394,8 +2394,37 @@ function renderHistoricalLedger() {
         `;
     };
 
+    // Helper: extract numeric {awayScore, homeScore} from ESPN live cache or archived final_score ("IND 3 - HOU 26")
+    const parseFinalScores = (entryObj, espnObj) => {
+        if (espnObj && espnObj.state === "post" && !isNaN(espnObj.homeScore) && !isNaN(espnObj.awayScore)) {
+            return { awayScore: Number(espnObj.awayScore), homeScore: Number(espnObj.homeScore) };
+        }
+        if (entryObj && typeof entryObj.final_score === "string") {
+            const m = entryObj.final_score.match(/\s(\d+)\s*-\s*[A-Za-z0-9()]+\s+(\d+)/);
+            if (m) {
+                return { awayScore: Number(m[1]), homeScore: Number(m[2]) };
+            }
+        }
+        return null;
+    };
+
+    // Prioritize permanent archive -> canonical prefixed FINAL/graded entries -> newer entries (fixes IND_HOU_2026 vs NFL_IND_HOU_2026 shadowing)
+    const sortedArchiveIds = Object.keys(entriesMap).sort((a, b) => {
+        const ea = entriesMap[a] || {};
+        const eb = entriesMap[b] || {};
+        const scoreEntry = (id, e) => {
+            let s = 0;
+            if (PERMANENT_LEDGER_ARCHIVE[id]) s += 100;
+            if (e.status === "FINAL") s += 30;
+            if (e.spread_record && e.spread_record.result_tip && e.spread_record.result_tip !== "PENDING") s += 20;
+            if (id.startsWith("NFL_") || id.startsWith("NCAA_")) s += 10;
+            return s;
+        };
+        return scoreEntry(b, eb) - scoreEntry(a, ea);
+    });
+
     // 1. Process COMPLETED/FINAL archived games and store them in their respective Clickable Card Vaults
-    Object.keys(entriesMap).forEach(archId => {
+    sortedArchiveIds.forEach(archId => {
         const entry = entriesMap[archId];
         if (!entry) return;
 
@@ -2406,6 +2435,7 @@ function renderHistoricalLedger() {
         if (!isRankedLedgerEntry(cleanMatchup, entryLeague)) return;
 
         const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[cleanMatchup];
+        const parsedScores = parseFinalScores(entry, espnMatch);
         const isFinal = entry.status === "FINAL" || (espnMatch && espnMatch.state === "post");
 
         if (activeSlateMatchups.has(cleanMatchup) && !isFinal) return;
@@ -2413,16 +2443,22 @@ function renderHistoricalLedger() {
         const hasGradedResult = entry.spread_record && (
             entry.spread_record.result_tip === "HIT" ||
             entry.spread_record.result_tip === "MISS" ||
-            entry.spread_record.result_tip === "BLUE_BALLS"
+            entry.spread_record.result_tip === "BLUE_BALLS" ||
+            entry.spread_record.result_tip === "PUSH"
         );
         if (!isFinal && !hasGradedResult) return;
 
         renderedMatchups.add(cleanMatchup);
 
-        const weekLabel = inferFootballWeekLabel(entry, "Week 10");
+        const weekLabel = inferFootballWeekLabel(entry, "Week 11");
         const scoreDisplay = entry.final_score || (espnMatch ? espnMatch.scoreStr : "COMPLETED");
         const statusLabel = `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${scoreDisplay})</span>`;
 
+        const matchupParts = cleanMatchup.split("@").map(s => cleanTeamCode(s.trim()));
+        const entryAwayCode = cleanTeamCode(entry.away_team || matchupParts[0] || "");
+        const entryHomeCode = cleanTeamCode(entry.home_team || matchupParts[1] || "");
+
+        // Detect Grenade Dodged either from explicit archive metadata OR live from final score on a SMASH fade
         if (entry.trap_avoided) {
             buckets.champagne_room.total += 1;
             buckets.champagne_room.dodged += 1;
@@ -2467,44 +2503,87 @@ function renderHistoricalLedger() {
             const bdTier = getTierFromEv(bdEvPct);
             const bdColor = getTierColor(bdTier);
 
-            const isUnderTip = !isSpread && (tipProj < vegasLine);
+            const pickTeamClean = cleanTeamCode(rec.pick_team || "");
+            const isHomeSpreadPick = isSpread && (
+                (pickTeamClean && pickTeamClean === entryHomeCode) ||
+                pickLabel.startsWith(`${entryHomeCode} `)
+            );
+
+            const isUnderTip = !isSpread && (rec.tip_direction ? rec.tip_direction === "U" : (tipProj < vegasLine));
             const defaultFloorHook = isSpread
                 ? snapToHalfPointHook(vegasLine, +3.5)
                 : (isUnderTip ? (Math.floor(vegasLine + 3.5) + 0.5) : (Math.floor(vegasLine - 3.5) + 0.5));
+            const defaultCeilHook = isSpread
+                ? snapToHalfPointHook(vegasLine, -3.0)
+                : (isUnderTip ? (Math.floor(vegasLine - 3.0) + 0.5) : (Math.floor(vegasLine + 3.0) + 0.5));
             const safeFloorLabel = rec.safe_floor_label || rec.safeFloorLabel || (isSpread
                 ? `Alt ${defaultFloorHook > 0 ? '+' + defaultFloorHook.toFixed(1) : defaultFloorHook.toFixed(1)} (-175)`
                 : `Alt ${isUnderTip ? 'U' : 'O'} ${defaultFloorHook.toFixed(1)} (-175)`);
             const safeFloorWinPct = rec.safe_floor_win_pct || rec.safeFloorWinPct || 84.5;
 
-            const bdAltLabel = rec.bd_alt_label || rec.bdAltLabel || "Alt Escalator";
+            const bdAltLabel = rec.bd_alt_label || rec.bdAltLabel || (isSpread
+                ? `Alt ${defaultCeilHook > 0 ? '+' + defaultCeilHook.toFixed(1) : defaultCeilHook.toFixed(1)} (+145)`
+                : `Alt ${isUnderTip ? 'U' : 'O'} ${defaultCeilHook.toFixed(1)} (+155)`);
             const bdAltEvPct = rec.bd_alt_ev_pct !== undefined ? rec.bd_alt_ev_pct : (rec.bdAltEvPct || 0);
             const slot = rec.flagship_slot || rec.flagshipSlot || "";
 
             let gradedTip = rec.result_tip || rec.result || "PENDING";
             let gradedBd = rec.result_bd || rec.result_balls_deep || gradedTip;
-            const missByPts = Number(rec.miss_by_pts || 0);
-
+            let missByPts = Number(rec.miss_by_pts || 0);
             let gradedFloor = rec.result_floor || "";
             let floorMissBy = 0;
-            if (!gradedFloor) {
-                if (gradedTip === "HIT" || gradedTip === "BLUE_BALLS") {
-                    gradedFloor = "HIT";
-                } else if (gradedTip === "MISS") {
-                    const remMiss = Number((missByPts - 3.5).toFixed(1));
-                    if (remMiss <= 0) gradedFloor = "HIT";
-                    else if (remMiss <= BLUE_BALLS_MARGIN) { gradedFloor = "BLUE_BALLS"; floorMissBy = remMiss; }
-                    else { gradedFloor = "MISS"; floorMissBy = remMiss; }
-                }
-            }
-
             let gradedCeiling = rec.result_ceiling || "";
             let ceilingMissBy = 0;
-            if (!gradedCeiling) {
-                if (gradedTip === "BLUE_BALLS" || gradedTip === "MISS") {
-                    gradedCeiling = "MISS";
-                    ceilingMissBy = Number((missByPts + 3.0).toFixed(1));
-                } else if (gradedTip === "HIT") {
-                    gradedCeiling = "HIT";
+
+            // Live client-side auto-grading from final score (prevents black-hole PENDING drops & ensures exact BLUE_BALLS / Floor / Ceiling grades)
+            if (parsedScores) {
+                const { homeScore, awayScore } = parsedScores;
+                const liveTipObj = isSpread
+                    ? gradeSpreadPick(isHomeSpreadPick, vegasLine, homeScore, awayScore)
+                    : gradeTotalPick(tipProj, vegasLine, homeScore, awayScore);
+                const liveBdObj = isSpread
+                    ? gradeSpreadPick(isHomeSpreadPick, vegasLine, homeScore, awayScore)
+                    : gradeTotalPick(bdProj, vegasLine, homeScore, awayScore);
+                const liveFloorObj = isSpread
+                    ? gradeSpreadPick(isHomeSpreadPick, defaultFloorHook, homeScore, awayScore)
+                    : gradeTotalPick(tipProj, defaultFloorHook, homeScore, awayScore);
+                const liveCeilObj = isSpread
+                    ? gradeSpreadPick(isHomeSpreadPick, defaultCeilHook, homeScore, awayScore)
+                    : gradeTotalPick(tipProj, defaultCeilHook, homeScore, awayScore);
+
+                if (gradedTip === "PENDING" || (gradedTip === "MISS" && missByPts === 0)) {
+                    gradedTip = liveTipObj.outcome;
+                    missByPts = liveTipObj.missBy;
+                }
+                if (gradedBd === "PENDING" || (gradedBd === "MISS" && !rec.miss_by_pts)) {
+                    gradedBd = liveBdObj.outcome;
+                }
+                if (!gradedFloor) {
+                    gradedFloor = liveFloorObj.outcome;
+                    floorMissBy = liveFloorObj.missBy;
+                }
+                if (!gradedCeiling) {
+                    gradedCeiling = liveCeilObj.outcome;
+                    ceilingMissBy = liveCeilObj.missBy;
+                }
+            } else {
+                if (!gradedFloor) {
+                    if (gradedTip === "HIT" || gradedTip === "BLUE_BALLS") {
+                        gradedFloor = "HIT";
+                    } else if (gradedTip === "MISS") {
+                        const remMiss = Number((missByPts - 3.5).toFixed(1));
+                        if (missByPts > 0 && remMiss <= 0) gradedFloor = "HIT";
+                        else if (missByPts > 0 && remMiss <= BLUE_BALLS_MARGIN) { gradedFloor = "BLUE_BALLS"; floorMissBy = remMiss; }
+                        else { gradedFloor = "MISS"; floorMissBy = Math.max(0, remMiss); }
+                    }
+                }
+                if (!gradedCeiling) {
+                    if (gradedTip === "BLUE_BALLS" || gradedTip === "MISS") {
+                        gradedCeiling = "MISS";
+                        ceilingMissBy = Number((missByPts + 3.0).toFixed(1));
+                    } else if (gradedTip === "HIT") {
+                        gradedCeiling = "HIT";
+                    }
                 }
             }
 
@@ -2518,13 +2597,14 @@ function renderHistoricalLedger() {
                 safeFloorLabel, safeFloorWinPct, bdAltLabel, bdAltEvPct, gradedTip, missByPts
             );
 
-            if (gradedTip === "HIT" || gradedTip === "MISS" || gradedTip === "BLUE_BALLS") {
-                tallyGrade("tip_all", gradedTip);
-                tallyGrade("balls_deep_all", gradedBd);
+            if (gradedTip === "HIT" || gradedTip === "MISS" || gradedTip === "BLUE_BALLS" || gradedTip === "PUSH") {
+                if (gradedTip !== "PUSH") {
+                    tallyGrade("tip_all", gradedTip);
+                    tallyGrade("balls_deep_all", gradedBd);
+                    tallyGrade("safe_floors", gradedFloor);
+                    tallyGrade("ceilings", gradedCeiling);
+                }
                 vaultRows.tip_vs_bd.push(rowHTML);
-
-                tallyGrade("safe_floors", gradedFloor);
-                tallyGrade("ceilings", gradedCeiling);
                 vaultRows.floors_ceilings.push(
                     buildFloorCeilingVaultRowHTML(
                         weekLabel, cleanMatchup, statusLabel, type, pickLabel, vegasLine,
@@ -2534,24 +2614,34 @@ function renderHistoricalLedger() {
                 );
 
                 if (slot) {
-                    tallyGrade("flagship_5pack", gradedTip);
-                    if (slot.includes("MÉNAGE")) tallyGrade("menage_a_trois", gradedTip);
-
+                    if (gradedTip !== "PUSH") {
+                        tallyGrade("flagship_5pack", gradedTip);
+                        if (slot.includes("MÉNAGE")) tallyGrade("menage_a_trois", gradedTip);
+                    }
                     const wkObj = ensureWeekFivePackBucket(weekLabel);
-                    tallyGradeToObj(wkObj, gradedTip);
-                    if (slot.includes("MÉNAGE")) tallyGradeToObj(wkObj.menage, gradedTip);
+                    if (gradedTip !== "PUSH") {
+                        tallyGradeToObj(wkObj, gradedTip);
+                        if (slot.includes("MÉNAGE")) tallyGradeToObj(wkObj.menage, gradedTip);
+                    }
                     wkObj.rows.push(rowHTML);
                     vaultRows.flagship_5pack.push({ weekLabel, rowHTML });
                 }
 
                 if (ledgerTier === "SMASH") {
-                    tallyGrade("overall_smash", gradedTip);
-                    tallyGrade(isSpread ? "spread_smash" : "total_smash", gradedTip);
+                    if (gradedTip !== "PUSH") {
+                        tallyGrade("overall_smash", gradedTip);
+                        tallyGrade(isSpread ? "spread_smash" : "total_smash", gradedTip);
+                    }
                     vaultRows.overall_smash.push(rowHTML);
                 } else if (ledgerTier === "TOO_CLOSE") {
-                    tallyGrade("all_tease", gradedTip);
+                    if (gradedTip !== "PUSH") {
+                        tallyGrade("all_tease", gradedTip);
+                    }
                     vaultRows.all_tease.push(rowHTML);
                 }
+            } else {
+                // Fallback: never silently drop an ungraded completed game — show it in the table as FINAL / AWAITING GRADE
+                upcomingRowsHTML += rowHTML;
             }
         });
     });
@@ -3020,4 +3110,4 @@ function renderLiveBottomTicker() {
         </div>
     `;
 }
-// === END OF APP_CONTROLLER.JS (v239) ===
+// === END OF APP_CONTROLLER.JS (v240) ===
