@@ -1,5 +1,5 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v213)
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v214)
 Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
   1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
   2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
@@ -923,7 +923,9 @@ def fetch_espn_scores():
 
     endpoints = [
         ("NFL", f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=100&dates={start_str}-{end_str}"),
-        ("NCAA", f"https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?limit=200&dates={start_str}-{end_str}")
+        ("NFL", "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"),
+        ("NCAA", f"https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?groups=80&limit=200&dates={start_str}-{end_str}"),
+        ("NCAA", "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?groups=80&limit=150")
     ]
 
     for lg, url in endpoints:
@@ -1175,33 +1177,51 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc):
             entry["final_score"] = f"{entry['away_team']} {a_pts} - {entry['home_team']} {h_pts}"
 
             s_rec = entry.get("spread_record")
-            if s_rec and s_rec.get("result_tip") == "PENDING":
+            if s_rec and (s_rec.get("result_tip") == "PENDING" or s_rec.get("miss_by_pts") is None):
                 pick_team = s_rec["pick_team"]
                 line = float(s_rec["vegas_closing_line"])
                 team_margin = (h_pts - a_pts) if pick_team == entry["home_team"] else (a_pts - h_pts)
                 cover_diff = team_margin + line
-                grade = "HIT" if cover_diff > 0 else ("MISS" if cover_diff < 0 else "PUSH")
+                miss_pts = round(abs(cover_diff), 1) if cover_diff < 0 else 0.0
+                if cover_diff > 0:
+                    grade = "HIT"
+                elif cover_diff == 0:
+                    grade = "PUSH"
+                elif miss_pts <= 3.0:
+                    grade = "BLUE_BALLS"
+                else:
+                    grade = "MISS"
                 s_rec["result_tip"] = grade
+                s_rec["miss_by_pts"] = miss_pts
 
                 bd_proj = float(s_rec.get("balls_deep_proj", s_rec["tip_proj"]))
                 bd_same_side = (line - bd_proj) >= 0
                 if bd_same_side:
                     s_rec["result_balls_deep"] = grade
                 else:
-                    s_rec["result_balls_deep"] = "MISS" if grade == "HIT" else ("HIT" if grade == "MISS" else "PUSH")
+                    s_rec["result_balls_deep"] = "MISS" if grade == "HIT" else ("HIT" if grade in ("MISS", "BLUE_BALLS") else "PUSH")
 
             t_rec = entry.get("total_record")
-            if t_rec and t_rec.get("result_tip") == "PENDING":
+            if t_rec and (t_rec.get("result_tip") == "PENDING" or t_rec.get("miss_by_pts") is None):
                 total_pts = h_pts + a_pts
                 t_line = float(t_rec["vegas_closing_line"])
                 for mode_key, dir_key in [("result_tip", "tip_direction"), ("result_balls_deep", "balls_deep_direction")]:
                     direction = t_rec.get(dir_key, "O")
                     if total_pts == t_line:
                         t_rec[mode_key] = "PUSH"
-                    elif direction == "O":
-                        t_rec[mode_key] = "HIT" if total_pts > t_line else "MISS"
+                        if mode_key == "result_tip":
+                            t_rec["miss_by_pts"] = 0.0
                     else:
-                        t_rec[mode_key] = "HIT" if total_pts < t_line else "MISS"
+                        c_diff = (total_pts - t_line) if direction == "O" else (t_line - total_pts)
+                        t_miss = round(abs(c_diff), 1) if c_diff < 0 else 0.0
+                        if c_diff > 0:
+                            t_rec[mode_key] = "HIT"
+                        elif t_miss <= 3.0:
+                            t_rec[mode_key] = "BLUE_BALLS"
+                        else:
+                            t_rec[mode_key] = "MISS"
+                        if mode_key == "result_tip":
+                            t_rec["miss_by_pts"] = t_miss
 
     counters = {
         "overall_smash": {"hits": 0, "total": 0},
@@ -1215,7 +1235,7 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc):
     }
 
     def tally(bucket, result_str):
-        if result_str in ("HIT", "MISS"):
+        if result_str in ("HIT", "MISS", "BLUE_BALLS"):
             counters[bucket]["total"] += 1
             if result_str == "HIT":
                 counters[bucket]["hits"] += 1
@@ -1226,7 +1246,7 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc):
                 continue
             res_tip = rec.get("result_tip", "PENDING")
             res_bd = rec.get("result_balls_deep", "PENDING")
-            if res_tip not in ("HIT", "MISS"):
+            if res_tip not in ("HIT", "MISS", "BLUE_BALLS"):
                 continue
 
             tally("tip_all", res_tip)
@@ -1588,7 +1608,7 @@ def build_master_payload():
             "league": "NFL_NCAA",
             "week": 12,
             "last_updated": now_iso,
-            "telemetry_version": "v213_live_feeds",
+            "telemetry_version": "v214_live_feeds",
             "ranked_ncaa_teams": live_ranked_ncaa
         },
         "games": games_slate,
@@ -1603,7 +1623,7 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v213)")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v214)")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("=========================================================")
 
