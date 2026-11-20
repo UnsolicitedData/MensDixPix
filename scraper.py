@@ -1,5 +1,5 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v214)
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v215)
 Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
   1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
   2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
@@ -1080,8 +1080,9 @@ def fetch_live_odds_for_sport(sport_key, league_label):
         print(f"[Odds API Error - {league_label}] {e}")
         return []
 
-def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc):
+def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by_gid=None):
     entries = ledger.get("entries", {})
+    porkys_by_gid = porkys_by_gid or {}
 
     for g in games_slate:
         gid = g["game_id"]
@@ -1157,6 +1158,12 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc):
                     "result_balls_deep": "PENDING"
                 }
 
+        if not existing.get("is_locked", False):
+            if gid in porkys_by_gid:
+                existing["porkys_record"] = porkys_by_gid[gid]
+            elif "porkys_record" in existing:
+                existing.pop("porkys_record", None)
+
         entries[gid] = existing
 
     for gid, entry in entries.items():
@@ -1222,6 +1229,24 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc):
                             t_rec[mode_key] = "MISS"
                         if mode_key == "result_tip":
                             t_rec["miss_by_pts"] = t_miss
+
+            p_rec = entry.get("porkys_record")
+            if p_rec and (p_rec.get("result_floor") == "PENDING" or p_rec.get("result_straight") == "PENDING"):
+                fade_team = p_rec.get("fade_team", entry["home_team"])
+                team_margin = (h_pts - a_pts) if fade_team == entry["home_team"] else (a_pts - h_pts)
+                floor_hook = float(p_rec.get("safe_floor_hook", float(p_rec.get("fade_line", 0.0)) + 3.5))
+                straight_line = float(p_rec.get("fade_line", 0.0))
+
+                fl_diff = team_margin + floor_hook
+                fl_miss = round(abs(fl_diff), 1) if fl_diff < 0 else 0.0
+                p_rec["result_floor"] = "HIT" if fl_diff > 0 else ("PUSH" if fl_diff == 0 else ("BLUE_BALLS" if fl_miss <= 3.0 else "MISS"))
+                p_rec["floor_miss_by"] = fl_miss
+
+                st_diff = team_margin + straight_line
+                st_miss = round(abs(st_diff), 1) if st_diff < 0 else 0.0
+                p_rec["result_straight"] = "HIT" if st_diff > 0 else ("PUSH" if st_diff == 0 else ("BLUE_BALLS" if st_miss <= 3.0 else "MISS"))
+                p_rec["straight_miss_by"] = st_miss
+                p_rec["trap_dodged"] = (p_rec["result_straight"] == "HIT")
 
     counters = {
         "overall_smash": {"hits": 0, "total": 0},
@@ -1600,15 +1625,58 @@ def build_master_payload():
     for idx, p in enumerate(selected_five[3:5], start=4):
         p["flagship_slot"] = f"5-PACK FLEX #{idx}"
 
+    # Build Porky's 5-Pack (3 Core Day-Shift Traps + 2 Keep-It-In-Your-Pants Flex) for permanent Ledger audit
+    porkys_candidates = []
+    for g in games_slate:
+        g_spreads = [p for p in g["props_board"] if p["market_type"] == "spread" and abs(p["base_line"]) <= 28.5]
+        if len(g_spreads) >= 2:
+            g_spreads_sorted = sorted(g_spreads, key=lambda x: x["ev_pct"], reverse=True)
+            best_side = g_spreads_sorted[0]
+            worst_side = g_spreads_sorted[-1]
+            if worst_side["ev_pct"] <= -19.0:
+                porkys_candidates.append((worst_side["ev_pct"], g, worst_side, best_side))
+
+    porkys_candidates.sort(key=lambda x: x[0])
+    porkys_by_gid = {}
+    for idx, (_, g, trap_p, fade_p) in enumerate(porkys_candidates[:5], start=1):
+        slot_lbl = f"DAY-SHIFT TRAP #{idx}" if idx <= 3 else f"KEEP IT IN YOUR PANTS #{idx}"
+        trap_p["porkys_slot"] = slot_lbl
+        fade_line = float(fade_p["base_line"])
+        floor_hook = math.floor(fade_line + 3.5) + 0.5
+        floor_gap = floor_hook - float(fade_p["projected_mean_mu"])
+        floor_prob = max(0.05, min(0.96, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * floor_gap))))
+        fade_team = g["home_team"] if fade_p["player"].startswith(f"{g['home_team']} ") else g["away_team"]
+        porkys_by_gid[g["game_id"]] = {
+            "porkys_slot": slot_lbl,
+            "is_core_three": (idx <= 3),
+            "trap_label": trap_p["player"],
+            "trap_line": float(trap_p["base_line"]),
+            "trap_proj": float(trap_p["projected_mean_mu"]),
+            "trap_ev_pct": float(trap_p["ev_pct"]),
+            "fade_label": fade_p["player"],
+            "fade_team": fade_team,
+            "fade_line": fade_line,
+            "fade_proj": float(fade_p["projected_mean_mu"]),
+            "fade_ev_pct": float(fade_p["ev_pct"]),
+            "safe_floor_hook": floor_hook,
+            "safe_floor_label": f"Alt {'+' if floor_hook > 0 else ''}{floor_hook:.1f} (-175)",
+            "safe_floor_win_pct": round(floor_prob * 100.0, 1),
+            "result_floor": "PENDING",
+            "result_straight": "PENDING",
+            "floor_miss_by": 0.0,
+            "straight_miss_by": 0.0,
+            "trap_dodged": None
+        }
+
     existing_ledger = load_existing_ledger()
-    updated_ledger = update_and_grade_ledger(existing_ledger, games_slate, espn_scores, now_utc)
+    updated_ledger = update_and_grade_ledger(existing_ledger, games_slate, espn_scores, now_utc, porkys_by_gid)
 
     return {
         "slate_info": {
             "league": "NFL_NCAA",
             "week": 12,
             "last_updated": now_iso,
-            "telemetry_version": "v214_live_feeds",
+            "telemetry_version": "v215_live_feeds",
             "ranked_ncaa_teams": live_ranked_ncaa
         },
         "games": games_slate,
@@ -1623,7 +1691,7 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v214)")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v215)")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("=========================================================")
 
