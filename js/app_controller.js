@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v240)
- * Pure OG M1–M9 + Live Auto-Grading Ledger Edition — Synced 1:1 with onlinemath_engine.js (v313) & scraper.py (v214)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v241)
+ * Pure OG M1–M9 + Porky's 3-Pick / 2-Flex Parlay Ledger Audit — Synced 1:1 with onlinemath_engine.js (v313) & scraper.py (v215)
  *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
  *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
  *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
@@ -19,8 +19,10 @@ const AppState = {
     lastDataHash: "",
     activeMode: "tip",                // "tip" | "balls_deep" | "davinci"
     fivePackView: "main_stage",       // "main_stage" | "porkys"
-    activeLedgerVault: null,          // null | "flagship_5pack" | "overall_smash" | "all_tease" | "grenades_dodged" | "floors_ceilings" | "tip_vs_bd"
+    ledgerFivePackView: "flagship",   // "flagship" | "porkys" (swaps Card #1 on Historical Ledger)
+    activeLedgerVault: null,          // null | "flagship_5pack" | "porkys_5pack" | "overall_smash" | "all_tease" | "grenades_dodged" | "floors_ceilings" | "tip_vs_bd"
     selectedFivePackWeek: "ALL",      // "ALL" | "Week 10" | "Week 11" ...
+    selectedPorkysWeek: "ALL",        // "ALL" | "Week 10" | "Week 11" ...
     intensitySlider: 0.0,             // -3.236 (-2φ) to +3.236 (+2φ)
     filters: { nfl: true, ncaa: true },
     comboFilters: { team: "ALL", market: "ALL", tier: "ALL" },
@@ -390,7 +392,36 @@ window.setFivePackVaultWeek = function(weekVal, event) {
     }
     const savedY = window.scrollY;
     AppState.selectedFivePackWeek = weekVal || "ALL";
+    AppState.ledgerFivePackView = "flagship";
     AppState.activeLedgerVault = "flagship_5pack";
+    renderHistoricalLedger();
+    window.scrollTo(window.scrollX, savedY);
+};
+
+// Swaps Card #1 on the Historical Ledger between Flagship 5-Pack and Porky's 5-Pack Audit (just like Main Card!)
+window.toggleLedgerFivePackView = function(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const savedY = window.scrollY;
+    AppState.ledgerFivePackView = (AppState.ledgerFivePackView === "flagship") ? "porkys" : "flagship";
+    if (AppState.activeLedgerVault === "flagship_5pack" || AppState.activeLedgerVault === "porkys_5pack") {
+        AppState.activeLedgerVault = (AppState.ledgerFivePackView === "porkys") ? "porkys_5pack" : "flagship_5pack";
+    }
+    renderHistoricalLedger();
+    window.scrollTo(window.scrollX, savedY);
+};
+
+// Changes the Selected Week inside the Porky's 5-Pack Ledger Card Dropdown and opens the Porky's Vault
+window.setPorkysVaultWeek = function(weekVal, event) {
+    if (event) {
+        event.stopPropagation();
+    }
+    const savedY = window.scrollY;
+    AppState.selectedPorkysWeek = weekVal || "ALL";
+    AppState.ledgerFivePackView = "porkys";
+    AppState.activeLedgerVault = "porkys_5pack";
     renderHistoricalLedger();
     window.scrollTo(window.scrollX, savedY);
 };
@@ -2088,6 +2119,27 @@ const PERMANENT_LEDGER_ARCHIVE = {
         trap_vegas_line: -6.5,
         trap_tip_proj: -2.1,
         trap_tip_ev_pct: -27.62,
+        porkys_record: {
+            porkys_slot: "DAY-SHIFT TRAP #1",
+            is_core_three: true,
+            trap_label: "LAC Spread (-6.5) (LAC @ BAL)",
+            trap_line: -6.5,
+            trap_proj: -2.1,
+            trap_ev_pct: -27.62,
+            fade_label: "BAL Spread (+6.5) (BAL vs LAC)",
+            fade_team: "BAL",
+            fade_line: 6.5,
+            fade_proj: 2.1,
+            fade_ev_pct: 27.62,
+            safe_floor_hook: 10.5,
+            safe_floor_label: "Alt +10.5 (-175)",
+            safe_floor_win_pct: 88.4,
+            result_floor: "HIT",
+            result_straight: "HIT",
+            floor_miss_by: 0,
+            straight_miss_by: 0,
+            trap_dodged: true
+        },
         spread_record: {
             pick_label: "BAL Spread (+6.5) (BAL vs LAC)",
             vegas_line: 6.5,
@@ -2312,6 +2364,9 @@ function renderHistoricalLedger() {
     const buckets = {
         flagship_5pack: makeBucket(),
         menage_a_trois: makeBucket(),
+        porkys_5pack:   makeBucket(),
+        porkys_core3:   makeBucket(),
+        porkys_flex2:   makeBucket(),
         overall_smash:  makeBucket(),
         spread_smash:   makeBucket(),
         total_smash:    makeBucket(),
@@ -2338,8 +2393,27 @@ function renderHistoricalLedger() {
         return fivePackByWeek[wk];
     };
 
+    const porkysByWeek = {};
+    const ensureWeekPorkysBucket = (wk) => {
+        if (!porkysByWeek[wk]) {
+            porkysByWeek[wk] = {
+                hits: 0,
+                misses: 0,
+                blueBalls: 0,
+                total: 0,
+                core3: makeBucket(),
+                flex2: makeBucket(),
+                coreLegs: [],
+                flexLegs: [],
+                rows: []
+            };
+        }
+        return porkysByWeek[wk];
+    };
+
     const vaultRows = {
         flagship_5pack: [],
+        porkys_5pack: [],
         overall_smash: [],
         all_tease: [],
         grenades_dodged: [],
@@ -2393,6 +2467,28 @@ function renderHistoricalLedger() {
             </tr>
         `;
     };
+
+    const buildPorkysVaultRowHTML = (weekLabel, cleanMatchup, statusLabel, slotLabel, isCore3, trapLabel, trapLine, trapProj, trapEvPct, fadeTeam, safeFloorLabel, safeFloorWinPct, fadeBaseLine, gradedFloor, floorMissBy, gradedStraight, straightMissBy) => {
+        const slotStyle = isCore3
+            ? "background:rgba(239,68,68,0.18); color:#f87171; border:1px solid rgba(239,68,68,0.55);"
+            : "background:rgba(236,72,153,0.16); color:#f472b6; border:1px solid rgba(236,72,153,0.5);";
+        const tierLabel = isCore3 ? "3-PICK CORE" : "2-PICK FLEX";
+        const fmtTrapLine = Number(trapLine) > 0 ? `+${trapLine}` : `${trapLine}`;
+        const fmtFadeLine = Number(fadeBaseLine) > 0 ? `+${fadeBaseLine}` : `${fadeBaseLine}`;
+        return `
+            <tr>
+                <td><span style="font-family:var(--font-mono); font-size:10px; color:#f87171; font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+                <td><span style="font-family:var(--font-mono); font-size:10px; font-weight:800; padding:2px 6px; border-radius:4px; ${slotStyle}">🐷 ${slotLabel}</span><br><small style="color:var(--text-secondary);">${tierLabel}</small></td>
+                <td><strong style="color:var(--accent-danger);">🚫 ${trapLabel}</strong><br><small style="color:var(--text-secondary);">Line: ${fmtTrapLine} | Proj: ${trapProj} (${trapEvPct}% EV)</small></td>
+                <td style="color:var(--accent-cyan); font-weight:700;">🛡️ ${fadeTeam} ${safeFloorLabel}<br><small style="color:var(--text-secondary);">Base Fade: ${fadeTeam} ${fmtFadeLine} • Floor Win: ${safeFloorWinPct}%</small></td>
+                <td>${renderGradeBadge(gradedFloor, floorMissBy)}</td>
+                <td>${renderGradeBadge(gradedStraight, straightMissBy)}</td>
+                <td>${gradedFloor === "HIT" ? '<span class="badge-smash" style="font-size:11px;">🐷 PARLAY LEG HIT</span>' : (gradedFloor === "PENDING" ? '<span class="badge-pass" style="color:var(--accent-cyan);border-color:rgba(6,182,212,0.4);font-size:11px;">⏳ ACTIVE LEG</span>' : '<span class="badge-pass" style="background:rgba(239,68,68,0.18);color:var(--accent-danger);font-size:11px;">💥 LEG BUSTED</span>')}</td>
+            </tr>
+        `;
+    };
+
+    const recordedPorkysMatchups = new Set();
 
     // Helper: extract numeric {awayScore, homeScore} from ESPN live cache or archived final_score ("IND 3 - HOU 26")
     const parseFinalScores = (entryObj, espnObj) => {
@@ -2479,6 +2575,54 @@ function renderHistoricalLedger() {
                     <td><span class="badge-smash" style="font-size:11px;">💣 GRENADE DODGED</span></td>
                 </tr>
             `);
+        }
+
+        // Audit archived Porky's 5-Pack (3 Core Day-Shift Traps + 2 Keep-It-In-Your-Pants Flex)
+        if (entry.porkys_record && !recordedPorkysMatchups.has(cleanMatchup)) {
+            recordedPorkysMatchups.add(cleanMatchup);
+            const pr = entry.porkys_record;
+            const pSlot = pr.porkys_slot || "DAY-SHIFT TRAP #1";
+            const isCore3 = pr.is_core_three !== undefined ? Boolean(pr.is_core_three) : pSlot.toUpperCase().includes("DAY-SHIFT");
+            const pTrapLabel = cleanLabelCodes(pr.trap_label || `${cleanMatchup} Trap`);
+            const pFadeTeam = cleanTeamCode(pr.fade_team || entryHomeCode);
+            const isHomeFade = (pFadeTeam === entryHomeCode);
+            const pFadeLine = Number(pr.fade_line !== undefined ? pr.fade_line : 0);
+            const pFloorHook = pr.safe_floor_hook !== undefined ? Number(pr.safe_floor_hook) : snapToHalfPointHook(pFadeLine, +3.5);
+            const pFloorLabel = pr.safe_floor_label || `Alt ${pFloorHook > 0 ? '+' + pFloorHook.toFixed(1) : pFloorHook.toFixed(1)} (-175)`;
+            const pFloorWinPct = pr.safe_floor_win_pct || 85.0;
+
+            let pFloorRes = pr.result_floor || "PENDING";
+            let pFloorMiss = Number(pr.floor_miss_by || 0);
+            let pStraightRes = pr.result_straight || "PENDING";
+            let pStraightMiss = Number(pr.straight_miss_by || 0);
+
+            if (parsedScores && (pFloorRes === "PENDING" || pStraightRes === "PENDING")) {
+                const flObj = gradeSpreadPick(isHomeFade, pFloorHook, parsedScores.homeScore, parsedScores.awayScore);
+                const stObj = gradeSpreadPick(isHomeFade, pFadeLine, parsedScores.homeScore, parsedScores.awayScore);
+                if (pFloorRes === "PENDING") { pFloorRes = flObj.outcome; pFloorMiss = flObj.missBy; }
+                if (pStraightRes === "PENDING") { pStraightRes = stObj.outcome; pStraightMiss = stObj.missBy; }
+            }
+
+            const pRowHTML = buildPorkysVaultRowHTML(
+                weekLabel, cleanMatchup, statusLabel, pSlot, isCore3,
+                pTrapLabel, pr.trap_line !== undefined ? pr.trap_line : -pFadeLine,
+                pr.trap_proj !== undefined ? pr.trap_proj : "--",
+                pr.trap_ev_pct !== undefined ? pr.trap_ev_pct : "--",
+                pFadeTeam, pFloorLabel, pFloorWinPct, pFadeLine,
+                pFloorRes, pFloorMiss, pStraightRes, pStraightMiss
+            );
+
+            const pWkObj = ensureWeekPorkysBucket(weekLabel);
+            if (pFloorRes === "HIT" || pFloorRes === "MISS" || pFloorRes === "BLUE_BALLS") {
+                tallyGrade("porkys_5pack", pFloorRes);
+                tallyGrade(isCore3 ? "porkys_core3" : "porkys_flex2", pFloorRes);
+                tallyGradeToObj(pWkObj, pFloorRes);
+                tallyGradeToObj(isCore3 ? pWkObj.core3 : pWkObj.flex2, pFloorRes);
+            }
+            if (isCore3) pWkObj.coreLegs.push({ slot: pSlot, outcome: pFloorRes });
+            else pWkObj.flexLegs.push({ slot: pSlot, outcome: pFloorRes });
+            pWkObj.rows.push(pRowHTML);
+            vaultRows.porkys_5pack.push({ weekLabel, rowHTML: pRowHTML, isCore3, outcome: pFloorRes });
         }
 
         const archivedRecords = [
@@ -2793,6 +2937,93 @@ function renderHistoricalLedger() {
         });
     });
 
+    // 3. Audit Active / Current-Week Porky's 5-Pack (3 Core Day-Shift + 2 Keep-It-In-Your-Pants Flex)
+    if (Array.isArray(AppState.porkysFivePack) && AppState.porkysFivePack.length > 0) {
+        AppState.porkysFivePack.forEach(item => {
+            const trap = item.trapProp;
+            const fade = item.fadeProp;
+            if (!trap || !fade) return;
+            const matchup = fade.matchup;
+            if (recordedPorkysMatchups.has(matchup)) return;
+            if (!isRankedLedgerEntry(matchup, fade.league)) return;
+            recordedPorkysMatchups.add(matchup);
+
+            const weekLabel = fade.weekLabel || "Week 12";
+            const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[matchup];
+            const isFinal = Boolean(espnMatch && espnMatch.state === "post");
+            const isLive = Boolean(espnMatch && espnMatch.state === "in");
+            const scoreDisplay = espnMatch ? espnMatch.scoreStr : "";
+            const statusLabel = isFinal
+                ? `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${scoreDisplay})</span>`
+                : (isLive
+                    ? `<span style="color:var(--accent-gold);font-weight:700;">🔒 IN-PLAY (${scoreDisplay})</span>`
+                    : `<span style="color:var(--text-secondary);">ACTIVE WEEK TICKET</span>`);
+
+            const isCore3 = Boolean(item.isTopThreeTrap);
+            const fadeTeam = fade.isHomeSpread ? fade.homeTeam : fade.awayTeam;
+            let pFloorRes = "PENDING", pFloorMiss = 0, pStraightRes = "PENDING", pStraightMiss = 0;
+
+            if (isFinal && espnMatch) {
+                const flObj = gradeSpreadPick(fade.isHomeSpread, fade.safeFloorHookNum, espnMatch.homeScore, espnMatch.awayScore);
+                const stObj = gradeSpreadPick(fade.isHomeSpread, fade.baseLine, espnMatch.homeScore, espnMatch.awayScore);
+                pFloorRes = flObj.outcome;
+                pFloorMiss = flObj.missBy;
+                pStraightRes = stObj.outcome;
+                pStraightMiss = stObj.missBy;
+            }
+
+            const pRowHTML = buildPorkysVaultRowHTML(
+                weekLabel, matchup, statusLabel, item.slotLabel, isCore3,
+                trap.player, trap.baseLine,
+                Number(trap.tipProjectedMean) > 0 ? `+${trap.tipProjectedMean}` : `${trap.tipProjectedMean}`,
+                trap.tipEvPct, fadeTeam, fade.safeFloorLabel, fade.safeFloorWinPct, fade.baseLine,
+                pFloorRes, pFloorMiss, pStraightRes, pStraightMiss
+            );
+
+            const pWkObj = ensureWeekPorkysBucket(weekLabel);
+            if (isFinal && (pFloorRes === "HIT" || pFloorRes === "MISS" || pFloorRes === "BLUE_BALLS")) {
+                tallyGrade("porkys_5pack", pFloorRes);
+                tallyGrade(isCore3 ? "porkys_core3" : "porkys_flex2", pFloorRes);
+                tallyGradeToObj(pWkObj, pFloorRes);
+                tallyGradeToObj(isCore3 ? pWkObj.core3 : pWkObj.flex2, pFloorRes);
+            }
+            if (isCore3) pWkObj.coreLegs.push({ slot: item.slotLabel, outcome: pFloorRes });
+            else pWkObj.flexLegs.push({ slot: item.slotLabel, outcome: pFloorRes });
+            pWkObj.rows.push(pRowHTML);
+            vaultRows.porkys_5pack.push({ weekLabel, rowHTML: pRowHTML, isCore3, outcome: pFloorRes });
+        });
+    }
+
+    // Compute Weekly Porky's Parlay Audit (3-Pick Core Parlay, 2-Pick Flex Parlay, Full 5-Pick Parlay at -175 Safe Floor odds)
+    const evalParlayTicket = (legsArr, expectedLegCount) => {
+        if (!legsArr || legsArr.length === 0) return "EMPTY";
+        const hasLoss = legsArr.some(l => l.outcome === "MISS" || l.outcome === "BLUE_BALLS");
+        if (hasLoss) return "BUST";
+        const hits = legsArr.filter(l => l.outcome === "HIT").length;
+        const pushes = legsArr.filter(l => l.outcome === "PUSH").length;
+        if (legsArr.length >= expectedLegCount && (hits + pushes) === legsArr.length && hits > 0) return "CASH";
+        return "PENDING";
+    };
+
+    const computeParlaySummaryForWeeks = (weekKeys) => {
+        const res = {
+            core3: { cashed: 0, busted: 0, pending: 0 },
+            flex2: { cashed: 0, busted: 0, pending: 0 },
+            full5: { cashed: 0, busted: 0, pending: 0 }
+        };
+        weekKeys.forEach(wk => {
+            const w = porkysByWeek[wk];
+            if (!w) return;
+            const c3 = evalParlayTicket(w.coreLegs, 3);
+            const f2 = evalParlayTicket(w.flexLegs, 2);
+            const a5 = evalParlayTicket([...w.coreLegs, ...w.flexLegs], 5);
+            if (c3 === "CASH") res.core3.cashed++; else if (c3 === "BUST") res.core3.busted++; else if (c3 === "PENDING") res.core3.pending++;
+            if (f2 === "CASH") res.flex2.cashed++; else if (f2 === "BUST") res.flex2.busted++; else if (f2 === "PENDING") res.flex2.pending++;
+            if (a5 === "CASH") res.full5.cashed++; else if (a5 === "BUST") res.full5.busted++; else if (a5 === "PENDING") res.full5.pending++;
+        });
+        return res;
+    };
+
     const fmtBucketObj = (b) => {
         if (!b || !b.total) return "0W - 0L - 0BB (0.0%)";
         const pct = ((b.hits / b.total) * 100).toFixed(1);
@@ -2837,12 +3068,50 @@ function renderHistoricalLedger() {
         </select>
     `;
 
+    const availablePorkysWeeks = Object.keys(porkysByWeek).sort((a, b) => {
+        const numA = parseInt(a.replace(/\D/g, ""), 10) || 0;
+        const numB = parseInt(b.replace(/\D/g, ""), 10) || 0;
+        return numB - numA;
+    });
+
+    if (AppState.selectedPorkysWeek !== "ALL" && !porkysByWeek[AppState.selectedPorkysWeek]) {
+        AppState.selectedPorkysWeek = "ALL";
+    }
+
+    const activePorkysRecordBucket = (AppState.selectedPorkysWeek === "ALL")
+        ? buckets.porkys_5pack
+        : porkysByWeek[AppState.selectedPorkysWeek];
+    const activePorkysCore3Bucket = (AppState.selectedPorkysWeek === "ALL")
+        ? buckets.porkys_core3
+        : porkysByWeek[AppState.selectedPorkysWeek].core3;
+    const activePorkysFlex2Bucket = (AppState.selectedPorkysWeek === "ALL")
+        ? buckets.porkys_flex2
+        : porkysByWeek[AppState.selectedPorkysWeek].flex2;
+
+    const activePorkysWeekKeys = (AppState.selectedPorkysWeek === "ALL")
+        ? availablePorkysWeeks
+        : [AppState.selectedPorkysWeek];
+    const activePorkysParlays = computeParlaySummaryForWeeks(activePorkysWeekKeys);
+
+    const totalPorkysWeeksCount = Math.max(1, availablePorkysWeeks.length) * 5;
+    const porkysWeekDropdownHTML = `
+        <select onchange="window.setPorkysVaultWeek(this.value, event)" onclick="event.stopPropagation()" style="background:#0f172a; color:#f87171; border:1px solid rgba(239,68,68,0.55); border-radius:4px; padding:2px 6px; font-family:var(--font-mono); font-size:10.5px; font-weight:800; cursor:pointer;">
+            <option value="ALL" ${AppState.selectedPorkysWeek === "ALL" ? "selected" : ""}>All Weeks (${buckets.porkys_5pack.hits}/${totalPorkysWeeksCount})</option>
+            ${availablePorkysWeeks.map(wk => {
+                const wObj = porkysByWeek[wk];
+                return `<option value="${wk}" ${AppState.selectedPorkysWeek === wk ? "selected" : ""}>${wk} (${wObj.hits}/${Math.max(5, wObj.total)})</option>`;
+            }).join("")}
+        </select>
+    `;
+
     let activeVaultDrawerHTML = "";
     if (AppState.activeLedgerVault) {
         let vaultTitle = "";
         let vaultAccentColor = "var(--accent-cyan)";
         let selectedRowsHTML = "";
+        let vaultSubBannerHTML = "";
         const isFloorsCeilingsVault = (AppState.activeLedgerVault === "floors_ceilings");
+        const isPorkysVault = (AppState.activeLedgerVault === "porkys_5pack");
 
         if (AppState.activeLedgerVault === "flagship_5pack") {
             const wkFilter = AppState.selectedFivePackWeek;
@@ -2852,6 +3121,49 @@ function renderHistoricalLedger() {
             vaultTitle = `👑 FLAGSHIP 5-PACK &amp; MÉNAGE À TROIS VAULT // ${wkScoreTag}`;
             vaultAccentColor = "var(--accent-gold)";
             const matchingRows = vaultRows.flagship_5pack
+                .filter(item => wkFilter === "ALL" || item.weekLabel === wkFilter)
+                .map(item => item.rowHTML);
+            selectedRowsHTML = matchingRows.join("");
+        } else if (isPorkysVault) {
+            const wkFilter = AppState.selectedPorkysWeek;
+            const wkScoreTag = wkFilter === "ALL"
+                ? `ALL WEEKS (${buckets.porkys_5pack.hits}/${totalPorkysWeeksCount} FLOOR FADES HIT)`
+                : `${wkFilter.toUpperCase()} (${porkysByWeek[wkFilter].hits}/5 FLOOR FADES HIT)`;
+            vaultTitle = `🐷 PORKY&apos;S 5-PACK &amp; PARLAY AUDIT VAULT // ${wkScoreTag}`;
+            vaultAccentColor = "#f87171";
+
+            const dec175 = americanToDecimal(-175);
+            const mult3 = Math.pow(dec175, 3);
+            const mult2 = Math.pow(dec175, 2);
+            const mult5 = Math.pow(dec175, 5);
+            const fmtNet10 = (cashed, busted, mult) => {
+                const net = (cashed * 10.0 * (mult - 1.0)) - (busted * 10.0);
+                const sign = net >= 0 ? "+" : "-";
+                const col = net >= 0 ? "var(--accent-emerald)" : "var(--accent-danger)";
+                return `<span style="color:${col}; font-weight:800;">${sign}$${Math.abs(net).toFixed(2)}</span>`;
+            };
+
+            vaultSubBannerHTML = `
+                <div style="padding: 10px 16px; background: rgba(239, 68, 68, 0.08); border-bottom: 1px solid rgba(239, 68, 68, 0.35); display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; font-family: var(--font-mono); font-size: 11px;">
+                    <div style="background: rgba(15, 23, 42, 0.85); padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(239, 68, 68, 0.45);">
+                        <div style="color: #f87171; font-weight: 800;">🐷 3-PICK CORE PARLAY (#1–#3 @ ${mult3.toFixed(2)}x)</div>
+                        <div style="margin-top: 3px;">Legs: <strong>${fmtBucketObj(activePorkysCore3Bucket)}</strong></div>
+                        <div style="margin-top: 2px;">Tickets: <strong style="color:var(--accent-emerald);">${activePorkysParlays.core3.cashed}W</strong> - <strong style="color:var(--accent-danger);">${activePorkysParlays.core3.busted}L</strong> (${activePorkysParlays.core3.pending} Live) • $10 Net: ${fmtNet10(activePorkysParlays.core3.cashed, activePorkysParlays.core3.busted, mult3)}</div>
+                    </div>
+                    <div style="background: rgba(15, 23, 42, 0.85); padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(236, 72, 153, 0.45);">
+                        <div style="color: #f472b6; font-weight: 800;">🔞 2-PICK FLEX PARLAY (#4–#5 @ ${mult2.toFixed(2)}x)</div>
+                        <div style="margin-top: 3px;">Legs: <strong>${fmtBucketObj(activePorkysFlex2Bucket)}</strong></div>
+                        <div style="margin-top: 2px;">Tickets: <strong style="color:var(--accent-emerald);">${activePorkysParlays.flex2.cashed}W</strong> - <strong style="color:var(--accent-danger);">${activePorkysParlays.flex2.busted}L</strong> (${activePorkysParlays.flex2.pending} Live) • $10 Net: ${fmtNet10(activePorkysParlays.flex2.cashed, activePorkysParlays.flex2.busted, mult2)}</div>
+                    </div>
+                    <div style="background: rgba(15, 23, 42, 0.85); padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(6, 182, 212, 0.45);">
+                        <div style="color: var(--accent-cyan); font-weight: 800;">🛡️ FULL 5-PICK SAFE FLOOR PARLAY (@ ${mult5.toFixed(2)}x)</div>
+                        <div style="margin-top: 3px;">All 5 Legs: <strong>${fmtBucketObj(activePorkysRecordBucket)}</strong></div>
+                        <div style="margin-top: 2px;">Tickets: <strong style="color:var(--accent-emerald);">${activePorkysParlays.full5.cashed}W</strong> - <strong style="color:var(--accent-danger);">${activePorkysParlays.full5.busted}L</strong> (${activePorkysParlays.full5.pending} Live) • $10 Net: ${fmtNet10(activePorkysParlays.full5.cashed, activePorkysParlays.full5.busted, mult5)}</div>
+                    </div>
+                </div>
+            `;
+
+            const matchingRows = vaultRows.porkys_5pack
                 .filter(item => wkFilter === "ALL" || item.weekLabel === wkFilter)
                 .map(item => item.rowHTML);
             selectedRowsHTML = matchingRows.join("");
@@ -2877,29 +3189,48 @@ function renderHistoricalLedger() {
             selectedRowsHTML = vaultRows.tip_vs_bd.join("");
         }
 
-        const vaultTableHeadHTML = isFloorsCeilingsVault
+        const vaultTableHeadHTML = isPorkysVault
             ? `
                 <tr>
-                    <th>Week &amp; Final Score</th>
-                    <th>Market</th>
-                    <th>Base Model Pick</th>
-                    <th>🛡️ Safe Floor (-2&phi; / -175)</th>
+                    <th>Week &amp; Score</th>
+                    <th>Porky&apos;s Slot</th>
+                    <th>🚫 Public Trap (PASS)</th>
+                    <th>🛡️ Safe Floor Fade (-2&phi; / -175)</th>
                     <th>Floor Result</th>
-                    <th>🎯 Ceiling Escalator (+&phi;)</th>
-                    <th>Ceiling Result</th>
+                    <th>Straight Fade</th>
+                    <th>Parlay Status</th>
                 </tr>
             `
-            : `
-                <tr>
-                    <th>Week &amp; Final Score</th>
-                    <th>Market &amp; Slot</th>
-                    <th>Official Model Pick</th>
-                    <th>Vegas Closing</th>
-                    <th>Just the Tip Closing</th>
-                    <th>${AppState.activeLedgerVault === "grenades_dodged" ? "Counter-Strike Fade Outcome" : "Balls Deep Closing"}</th>
-                    <th>Graded Result</th>
-                </tr>
-            `;
+            : (isFloorsCeilingsVault
+                ? `
+                    <tr>
+                        <th>Week &amp; Final Score</th>
+                        <th>Market</th>
+                        <th>Base Model Pick</th>
+                        <th>🛡️ Safe Floor (-2&phi; / -175)</th>
+                        <th>Floor Result</th>
+                        <th>🎯 Ceiling Escalator (+&phi;)</th>
+                        <th>Ceiling Result</th>
+                    </tr>
+                `
+                : `
+                    <tr>
+                        <th>Week &amp; Final Score</th>
+                        <th>Market &amp; Slot</th>
+                        <th>Official Model Pick</th>
+                        <th>Vegas Closing</th>
+                        <th>Just the Tip Closing</th>
+                        <th>${AppState.activeLedgerVault === "grenades_dodged" ? "Counter-Strike Fade Outcome" : "Balls Deep Closing"}</th>
+                        <th>Graded Result</th>
+                    </tr>
+                `);
+
+        const swapBtnLabel = isPorkysVault ? "👑 Swap to Flagship 5-Pack ➔" : "🐷 Swap to Porky&apos;s Audit ➔";
+        const vaultHeaderToggleBtn = (AppState.activeLedgerVault === "flagship_5pack" || isPorkysVault)
+            ? `<button class="calc-action-btn" onclick="window.toggleLedgerFivePackView(event)" style="font-size: 11px; padding: 4px 10px; border-color: ${isPorkysVault ? 'var(--accent-gold)' : 'rgba(239,68,68,0.65)'}; color: ${isPorkysVault ? 'var(--accent-gold)' : '#f87171'};">
+                   ${swapBtnLabel}
+               </button>`
+            : "";
 
         activeVaultDrawerHTML = `
             <div style="margin-bottom: 22px; border: 1px solid ${vaultAccentColor}; border-radius: 8px; background: #0f172a; box-shadow: 0 8px 24px rgba(0,0,0,0.5); overflow: hidden;">
@@ -2907,10 +3238,14 @@ function renderHistoricalLedger() {
                     <span style="font-family: var(--font-mono); font-size: 12.5px; font-weight: 800; color: ${vaultAccentColor};">
                         📂 ${vaultTitle}
                     </span>
-                    <button class="calc-action-btn" onclick="window.toggleLedgerVault('${AppState.activeLedgerVault}', event)" style="font-size: 11px; padding: 4px 10px;">
-                        ✕ Close Vault ▲
-                    </button>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        ${vaultHeaderToggleBtn}
+                        <button class="calc-action-btn" onclick="window.toggleLedgerVault('${AppState.activeLedgerVault}', event)" style="font-size: 11px; padding: 4px 10px;">
+                            ✕ Close Vault ▲
+                        </button>
+                    </div>
                 </div>
+                ${vaultSubBannerHTML}
                 <div class="table-responsive">
                     <table class="quant-table">
                         <thead>
@@ -2933,14 +3268,33 @@ function renderHistoricalLedger() {
         ${buildLedgerLegendHTML()}
 
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-bottom: 20px; font-family: var(--font-mono);">
+            ${AppState.ledgerFivePackView === "porkys" ? `
+            <div onclick="window.toggleLedgerVault('porkys_5pack', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('porkys_5pack', 'rgba(239, 68, 68, 0.6)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
+                    <span style="font-size: 11px; color: #f87171; font-weight: 800;">🐷 PORKY&apos;S 5-PACK</span>
+                    <button onclick="window.toggleLedgerFivePackView(event)" title="Swap back to Flagship 5-Pack" style="cursor:pointer; font-family:var(--font-mono); font-size:9.5px; font-weight:800; padding:2px 6px; border-radius:4px; background:rgba(15,23,42,0.9); color:var(--accent-gold); border:1px solid rgba(245,158,11,0.6);">👑 Flagship ➔</button>
+                </div>
+                <div style="margin-top: 6px; display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
+                    <span style="font-size: 13.5px; font-weight: 800; color: var(--accent-cyan);">Core 3: ${fmtBucketObj(activePorkysCore3Bucket)}</span>
+                    ${porkysWeekDropdownHTML}
+                </div>
+                <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
+                    Flex 2: <strong>${fmtBucketObj(activePorkysFlex2Bucket)}</strong> • Parlays (3/5): <strong style="color:var(--accent-emerald);">${activePorkysParlays.core3.cashed}-${activePorkysParlays.core3.busted}</strong> / <strong style="color:var(--accent-gold);">${activePorkysParlays.full5.cashed}-${activePorkysParlays.full5.busted}</strong>
+                </div>
+            </div>
+            ` : `
             <div onclick="window.toggleLedgerVault('flagship_5pack', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('flagship_5pack', 'rgba(245, 158, 11, 0.5)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
                 <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
                     <span style="font-size: 11px; color: var(--accent-gold); font-weight: 800;">👑 FLAGSHIP 5-PACK</span>
+                    <button onclick="window.toggleLedgerFivePackView(event)" title="Swap to Porky&apos;s 5-Pack &amp; Parlay Audit" style="cursor:pointer; font-family:var(--font-mono); font-size:9.5px; font-weight:800; padding:2px 6px; border-radius:4px; background:rgba(15,23,42,0.9); color:#f87171; border:1px solid rgba(239,68,68,0.6);">🐷 Porky&apos;s ➔</button>
+                </div>
+                <div style="margin-top: 6px; display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
+                    <span style="font-size: 13.5px; font-weight: 800;">5-Pack: ${fmtBucketObj(activeFivePackRecordBucket)}</span>
                     ${weekDropdownHTML}
                 </div>
-                <div style="font-size: 14.5px; font-weight: 800; margin: 6px 0;">5-Pack: ${fmtBucketObj(activeFivePackRecordBucket)}</div>
-                <div style="font-size: 11.5px; color: var(--text-secondary);">Ménage à Trois: <strong>${fmtBucketObj(activeMenageRecordBucket)}</strong></div>
+                <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 4px;">Ménage à Trois: <strong>${fmtBucketObj(activeMenageRecordBucket)}</strong></div>
             </div>
+            `}
 
             <div onclick="window.toggleLedgerVault('overall_smash', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('overall_smash', 'rgba(16, 185, 129, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
                 <div style="font-size: 11px; color: var(--accent-emerald); font-weight: 800;">🔥 OFFICIAL SMASH (&ge;+10.0% EV)</div>
@@ -3110,4 +3464,4 @@ function renderLiveBottomTicker() {
         </div>
     `;
 }
-// === END OF APP_CONTROLLER.JS (v240) ===
+// === END OF APP_CONTROLLER.JS (v241) ===
