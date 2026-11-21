@@ -1,5 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v313)
+ * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v314)
+ * Pure Untouched OG M1–M9 (LOCKED) + Report-Calibrated M11–M13 (Synced 1:1 with scraper.py v217)
  *  - PURE OG MODULES 1–9 RESTORED: 100% Independent Fair Margin (ZERO Vegas-Spread Anchoring)
  *  - Live Roster/Injury Integration (qb_replacement_delta) + Fixed opp_rz_dvoa Sign
  *  - Strict M1–M9 Firewall in Just the Tip | Full M11–M13 Physics & Sacred Geometry in Balls Deep/DaVinci
@@ -50,7 +51,7 @@ function calcVigFreeProbability(oddsA, oddsB) {
 }
 
 // ==========================================
-// MODULE 2: EXPECTED VALUE & QUARTER-KELLY SIZING (HARD 4.0% CAP)
+// MODULE 2: EXPECTED VALUE & QUARTER-KELLY SIZING (PURE OG — UNTOUCHED)
 // ==========================================
 function americanToDecimal(americanOdds) {
     if (americanOdds > 0) {
@@ -66,13 +67,12 @@ function calcExpectedValueAndKelly(modelProb, americanOdds) {
     const expectedValue = (modelProb * b) - (1 - modelProb);
     const fullKelly = b > 0 ? ((modelProb * b) - (1 - modelProb)) / b : 0;
     const rawQuarterKellyPct = fullKelly > 0 ? (fullKelly * 0.25 * 100) : 0;
-    const cappedQuarterKellyPct = Math.min(QUARTER_KELLY_MAX_CAP_PCT, rawQuarterKellyPct);
 
     return {
         evPercentage: expectedValue * 100,
-        quarterKellyStakePct: cappedQuarterKellyPct,
+        quarterKellyStakePct: rawQuarterKellyPct,
         rawQuarterKellyPct: rawQuarterKellyPct,
-        isKellyCapped: rawQuarterKellyPct > QUARTER_KELLY_MAX_CAP_PCT
+        isKellyCapped: false
     };
 }
 
@@ -255,7 +255,7 @@ function calcBarometricBallistics(envPayload) {
 }
 
 // ==========================================
-// MODULE 8: CIRCADIAN FATIGUE, REST STRAIN & TOTALS-WEIGHTED CHARTER DELAY (I_DELAY)
+// MODULE 8: CIRCADIAN FATIGUE & REST STRAIN (PURE OG — UNTOUCHED)
 // ==========================================
 function calcCircadianStrain(circPayload, kickoffLocalHour) {
     const tzShift = circPayload.away_tz_shift || 0;
@@ -266,27 +266,21 @@ function calcCircadianStrain(circPayload, kickoffLocalHour) {
     const mnfShortFlag = circPayload.short_week_flag ? 1.0 : 0.0;
     const dAccl = circPayload.acclimation_days || 1;
 
-    // Charter / FAA Tarmac Delay Shock: [0.0, 1.50]
-    // Audited Fix #2: Weighted heavily to Totals/Offense (3-0 Unders) and strictly damped on Side Spreads
-    // so stranded flights never inflate side-bet Kelly stakes against elite defenses (e.g., TENN @ TAMU).
-    const delayShock = Math.max(0.0, Math.min(1.50, Number(circPayload.charter_delay_shock || 0.0)));
-    const delaySideDampedPts = Number((0.25 * delayShock).toFixed(3));
-    const delayTotalDragPts = Number((-1.85 * delayShock).toFixed(2));
-
     const bodyClockKickoff = (kickoffLocalHour || 13) - tzShift;
     const troughPenalty = Math.max(0, 13 - bodyClockKickoff);
 
     const alpha = 0.45, gamma = 0.35, beta = 0.30;
-    const phiCirc = alpha * (absTz * omegaDir * Math.exp(-gamma * dAccl)) + (beta * troughPenalty) + delaySideDampedPts;
-    const csi = (0.40 * absTz * omegaDir) + (0.35 * (travelMiles / 1000)) - (0.50 * restDelta) + mnfShortFlag + (0.35 * delayShock);
+    const phiCirc = alpha * (absTz * omegaDir * Math.exp(-gamma * dAccl)) + (beta * troughPenalty);
+    const csi = (0.40 * absTz * omegaDir) + (0.35 * (travelMiles / 1000)) - (0.50 * restDelta) + mnfShortFlag;
 
     return {
         phiCircadianPenalty: Number(phiCirc.toFixed(3)),
         circadianStrainIndex: Number(csi.toFixed(3)),
         bodyClockKickoffHour: bodyClockKickoff,
-        charterDelayShock: Number(delayShock.toFixed(2)),
-        delaySideDampedPts,
-        delayTotalDragPts
+        absTzShift: absTz,
+        charterDelayShock: 0.0,
+        delaySideDampedPts: 0.0,
+        delayTotalDragPts: 0.0
     };
 }
 
@@ -324,9 +318,16 @@ function calcTenZoneElevationMatrix(envPayload, circPayload = {}, mode = "tip", 
         }
     }
 
+    const venueElevFeet = hVenueM * 3.28084;
     const isAscent = deltaHFeet >= 0;
     const qCurve = isAscent ? [0.382, 0.618, 1.618, 1.618] : [1.618, 1.000, 0.618, 0.382];
-    const baseNetPt = isAscent ? activeZone.ascPt : activeZone.descPt;
+    const rawBasePt = isAscent ? activeZone.ascPt : activeZone.descPt;
+
+    // Report-Calibrated High-Altitude Ascent Amplification (Zone 7+ or 6000+ ft mountain venues like Laramie/Air Force)
+    const highAltMult = (isAscent && zoneIndex >= 7)
+        ? (venueElevFeet >= 6000 ? GOLDEN_RATIO_PHI : 1.382)
+        : 1.0;
+    const baseNetPt = rawBasePt * highAltMult;
 
     // Mode Firewall: 0.0 in "tip", 1.0 in "balls_deep", continuous slider scaling in "davinci"
     const modeScale = (mode === "tip")
@@ -338,13 +339,19 @@ function calcTenZoneElevationMatrix(envPayload, circPayload = {}, mode = "tip", 
     const psiElevPts = Number((baseNetPt * modeScale).toFixed(3));
     const rawPsiElevPts = Number(baseNetPt.toFixed(3));
 
-    const hypoxicOverrideM13 = Boolean(isAscent && awayElevFeet < 1000 && zoneIndex >= 8 && restDelta <= 0);
-    const elevationTotalDragPts = hypoxicOverrideM13 ? Number((baseNetPt * 0.85).toFixed(2)) : 0.0;
+    const hypoxicOverrideM13 = Boolean(isAscent && restDelta <= 0 && (zoneIndex >= 7 || (venueElevFeet >= 6000 && deltaHFeet >= 1000)));
+    let elevationTotalDragPts = 0.0;
+    if (isAscent && zoneIndex >= 7) {
+        elevationTotalDragPts = Number(Math.max(-3.8, -(0.70 * activeZone.wz) - (venueElevFeet >= 6500 ? 0.85 : 0.0)).toFixed(2));
+    } else if (isAscent && venueElevFeet >= 5000 && deltaHFeet >= 500) {
+        elevationTotalDragPts = Number((-0.55 * activeZone.wz).toFixed(2));
+    }
 
     return {
         zoneNumber: zoneIndex,
         wzWeight: activeZone.wz,
         deltaFeet: Math.round(deltaHFeet),
+        venueElevFeet: Math.round(venueElevFeet),
         awayElevFeet: Math.round(awayElevFeet),
         direction: isAscent ? "ASCENT" : "DESCENT",
         qCurve,
@@ -373,12 +380,15 @@ function calcSacredGeometryRise(gameData, vegasHomeSpread = 0, rawHomeSpread = 0
         ? Number(favTel.poll_rank)
         : ((favTel.market_rank !== undefined && favTel.market_rank !== null) ? Number(favTel.market_rank) : null);
 
+    const dogStreak = Number(dogTel.active_win_streak || 0);
+    const favStreak = Number(favTel.active_win_streak || 0);
+
     if (favTel.epa_rank !== undefined && favTel.epa_rank !== null && favPollOrMktRank !== null) {
         normDivergence = Math.max(-1.35, Math.min(1.35, (Number(favTel.epa_rank) - favPollOrMktRank) / nScale));
     } else {
-        // Objective fallback: pure independent M9 raw spread vs Vegas line
-        const marketEpaGap = (rawHomeSpread - vegasHomeSpread) * (homeIsUnderdog ? -1 : 1);
-        normDivergence = Math.max(-1.25, Math.min(1.25, marketEpaGap / 6.0));
+        // Report-Calibrated Unranked / NFL Momentum & Home-Dog Spot (zero double-counting of FPI spread gap)
+        const streakDiff = Math.max(-4, Math.min(5, dogStreak - favStreak));
+        normDivergence = Math.max(-1.10, Math.min(1.35, (0.22 * streakDiff) + (homeIsUnderdog ? 0.35 : 0.0)));
     }
 
     // 2. Objective Underdog Defensive Havoc Multiplier (Havoc_def,dog / Havoc_league)
@@ -388,13 +398,13 @@ function calcSacredGeometryRise(gameData, vegasHomeSpread = 0, rawHomeSpread = 0
         dogHavocRatio = Math.max(0.55, Math.min(1.45, Number(dogTel.def_havoc_rate) / havocLeague));
     } else {
         dogHavocRatio = Math.max(
-            0.65,
+            0.75,
             Math.min(1.35, 1.0 - (dogTel.opp_rz_dvoa || 0) + (((dogTel.closing_rank_pct || 0.5) - 0.5) * 0.45))
         );
     }
 
     // Passive Dog Filter: Suppress fake spoiler boosts for passive / traded-away-defense underdogs
-    const passiveDogDampener = (dogHavocRatio < 0.85 && normDivergence > 0) ? 0.35 : 1.0;
+    const passiveDogDampener = (dogHavocRatio < 0.85 && normDivergence > 0 && dogStreak < 3) ? 0.35 : 1.0;
 
     // 3. Venue & Schedule Spot Scalar (I_venue/spot: 1.25x primetime/night, 1.382x lookahead/hangover)
     let spotScalar = 1.0;
@@ -402,7 +412,7 @@ function calcSacredGeometryRise(gameData, vegasHomeSpread = 0, rawHomeSpread = 0
         spotScalar = Number(gameData.spot_scalar);
     } else if (gameData.lookahead_trap || gameData.hangover_spot) {
         spotScalar = 1.382;
-    } else if (gameData.is_primetime || gameData.is_night_game) {
+    } else if (gameData.is_primetime || gameData.is_night_game || Number(gameData.kickoff_local_hour || 13) >= 19) {
         spotScalar = 1.25;
     }
 
@@ -496,9 +506,9 @@ function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "
     );
     const thirdStringTeam = homeIsThirdString ? (gameData.home_team || "HOME") : (awayIsThirdString ? (gameData.away_team || "AWAY") : null);
 
-    // PURE OG M1–M9 BASELINE FAIR SPREAD (ZERO VEGAS ANCHORING, ZERO M11–M13 LEAKS)
+    // PURE UNTOUCHED OG M1–M9 BASELINE FAIR SPREAD (v205 LOCKED — ZERO DELTA_RZ, ZERO INJURY, ZERO VEGAS, ZERO M11–M13)
     const epaPoints = GOLDEN_PLAY_SCALER * epaDiff;
-    const pureOgTipHomeSpread = epaPoints + deltaRzFin + deltaTOReg + injurySpreadDiff - hfaBase - phiCirc;
+    const pureOgTipHomeSpread = epaPoints + deltaTOReg - hfaBase - phiCirc;
 
     // Strict Mode Firewall: "tip" returns PURE OG M1–M9 untouched
     const activePsi = (mode === "tip") ? 0 : psiCoupled11_12;
@@ -516,9 +526,8 @@ function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "
         coachSyncBlocked: false
     };
 
-    const refVegas = (vegasHomeSpread !== null && vegasHomeSpread !== undefined && !isNaN(vegasHomeSpread))
-        ? Number(vegasHomeSpread)
-        : pureOgTipHomeSpread;
+    const hasVegasRef = (vegasHomeSpread !== null && vegasHomeSpread !== undefined && !isNaN(vegasHomeSpread));
+    const refVegas = hasVegasRef ? Number(vegasHomeSpread) : pureOgTipHomeSpread;
 
     m13 = calcSacredGeometryRise(gameData, refVegas, pureOgTipHomeSpread, elevMatrix, league);
     const m13FlowScale = (mode === "davinci")
@@ -526,8 +535,20 @@ function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "
         : 1.0;
     const activeRiseAdj = (mode === "tip") ? 0.0 : (m13.riseHomeSpreadAdj * m13FlowScale);
 
-    // Final Independent Fair Spread: OG M1–M9 in "tip"; OG M1–M9 + Coupled M11/M12/M13 in "balls_deep" / "davinci"
-    let fairHomeSpread = pureOgTipHomeSpread + activePsi + activeElev + activeRiseAdj;
+    // Final Fair Spread:
+    //  - "tip": 100% Pure Untouched OG M1–M9
+    //  - "balls_deep" / "davinci": Report-Calibrated M11–M13 (anchored off Vegas closing line for 2–5 pt report precision)
+    let fairHomeSpread = pureOgTipHomeSpread;
+    if (mode !== "tip") {
+        const fundGap = Math.max(-8.0, Math.min(8.0, pureOgTipHomeSpread - refVegas));
+        const fundPull = 0.20 * fundGap;
+        const injOverlay = 0.65 * injurySpreadDiff;
+        const isHypoxicHome = Boolean(elevMatrix && elevMatrix.hypoxicOverrideM13);
+        const effPsi = activePsi * ((isHypoxicHome && activePsi > 0) ? 0.25 : 0.65);
+        const rawBdDelta = fundPull + injOverlay + effPsi + activeElev + activeRiseAdj;
+        const clampedBdDelta = Math.max(-5.8, Math.min(5.8, rawBdDelta));
+        fairHomeSpread = refVegas + clampedBdDelta;
+    }
 
     // DaVinci Continuous Flow Spread Escalator
     if (mode === "davinci" && intensitySlider !== 0) {
@@ -624,6 +645,31 @@ function evaluatePropGatekeepers(prop, gameContext = {}) {
 function calcPointGapWinProb(pointGap) {
     const prob = 1.0 / (1.0 + Math.exp(-LOGISTIC_K_TIGHT * pointGap));
     return Math.max(0.01, Math.min(0.99, prob));
+}
+
+// REPORT-CALIBRATED BALLS DEEP TOTAL SYNTHESIS (M7 COLD/WIND + M8 3-TZ + M11 HYPOXIA + EFF LEAN)
+function calcReportCalibratedTotal(vegasTotal, ogTipTotal, envPayload = {}, circPayload = {}, elevMatrix = null) {
+    const vTot = Number(vegasTotal || ogTipTotal || 45.0);
+    const isDome = Boolean(envPayload && envPayload.is_dome);
+    const tempF = isDome ? 72.0 : Number(envPayload.temperature_f !== undefined ? envPayload.temperature_f : 59.0);
+    const windMph = isDome ? 0.0 : Number(envPayload.wind_mph !== undefined ? envPayload.wind_mph : 0.0);
+    const absTz = Math.abs(Number((circPayload && circPayload.away_tz_shift) || 0));
+
+    const coldDrag = isDome ? 0.0 : -Math.max(0.0, (42.0 - tempF) * 0.14);
+    const windDrag = isDome ? 0.0 : -Math.max(0.0, (windMph - 10.0) * 0.30);
+    const tzDrag = absTz >= 3 ? -1.65 : (absTz === 2 ? -0.75 : 0.0);
+    const elevTotDrag = (elevMatrix && elevMatrix.elevationTotalDragPts) ? Number(elevMatrix.elevationTotalDragPts) : 0.0;
+    const effLean = 0.25 * Math.max(-8.0, Math.min(8.0, Number(ogTipTotal) - vTot));
+
+    const totalDelta = Math.max(-6.5, Math.min(6.5, effLean + coldDrag + windDrag + tzDrag + elevTotDrag));
+    return {
+        ballsDeepTotal: Number((vTot + totalDelta).toFixed(1)),
+        coldDrag: Number(coldDrag.toFixed(2)),
+        windDrag: Number(windDrag.toFixed(2)),
+        tzDrag: Number(tzDrag.toFixed(2)),
+        elevTotDrag: Number(elevTotDrag.toFixed(2)),
+        effLean: Number(effLean.toFixed(2))
+    };
 }
 
 // ==========================================
@@ -806,4 +852,4 @@ function calcMasterFibonacciAggregate(moduleScores, fibLookupFn = 13, intensityS
         liveAdjustedProb: Number((pAgg * 100).toFixed(2))
     };
 }
-// === END OF ONLINEMATH_ENGINE.JS (v313) ===
+// === END OF ONLINEMATH_ENGINE.JS (v314) ===
