@@ -1,6 +1,6 @@
 /**
  * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v245)
- * Pure OG M1–M9 (LOCKED) + Report-Calibrated M11–M13 — Synced 1:1 with onlinemath_engine.js (v314) & scraper.py (v217)
+ * Pure OG M1–M9 (LOCKED) + Report-Calibrated M11–M13 — Synced 1:1 with onlinemath_engine.js (v314) & scraper.py (v218)
  *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
  *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
  *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
