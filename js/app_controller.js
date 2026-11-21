@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v242)
- * Pure OG M1–M9 + Auto-Polling ESPN Scoreboard & Live Top-25 Ledger Filter — Synced 1:1 with onlinemath_engine.js (v313) & scraper.py (v215)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v245)
+ * Pure OG M1–M9 (LOCKED) + Report-Calibrated M11–M13 — Synced 1:1 with onlinemath_engine.js (v314) & scraper.py (v217)
  *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
  *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
  *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
@@ -23,6 +23,7 @@ const AppState = {
     activeLedgerVault: null,          // null | "flagship_5pack" | "porkys_5pack" | "overall_smash" | "all_tease" | "grenades_dodged" | "floors_ceilings" | "tip_vs_bd"
     selectedFivePackWeek: "ALL",      // "ALL" | "Week 10" | "Week 11" ...
     selectedPorkysWeek: "ALL",        // "ALL" | "Week 10" | "Week 11" ...
+    ledgerShowAllCompleted: false,    // false = Top-25 NCAA + NFL | true = All Completed FBS + NFL
     intensitySlider: 0.0,             // -3.236 (-2φ) to +3.236 (+2φ)
     filters: { nfl: true, ncaa: true },
     comboFilters: { team: "ALL", market: "ALL", tier: "ALL" },
@@ -265,10 +266,17 @@ function isRankedNCAAGame(game) {
     if ((homeTel.poll_rank && homeTel.poll_rank <= 25) || (awayTel.poll_rank && awayTel.poll_rank <= 25)) {
         return true;
     }
-    const liveRanked = (AppState.rawPayload && AppState.rawPayload.slate_info && Array.isArray(AppState.rawPayload.slate_info.ranked_ncaa_teams) && AppState.rawPayload.slate_info.ranked_ncaa_teams.length > 0)
-        ? AppState.rawPayload.slate_info.ranked_ncaa_teams
-        : RANKED_NCAA_FULL_NAMES;
-    if (liveRanked.includes(hFull) || liveRanked.includes(aFull)) {
+    const hasLivePoll = Boolean(
+        AppState.rawPayload &&
+        AppState.rawPayload.slate_info &&
+        Array.isArray(AppState.rawPayload.slate_info.ranked_ncaa_teams) &&
+        AppState.rawPayload.slate_info.ranked_ncaa_teams.length >= 20
+    );
+    if (hasLivePoll) {
+        const liveRanked = AppState.rawPayload.slate_info.ranked_ncaa_teams;
+        return liveRanked.includes(hFull) || liveRanked.includes(aFull);
+    }
+    if (RANKED_NCAA_FULL_NAMES.includes(hFull) || RANKED_NCAA_FULL_NAMES.includes(aFull)) {
         return true;
     }
     return RANKED_NCAA_CODES.has(game.home_team) || RANKED_NCAA_CODES.has(game.away_team);
@@ -423,6 +431,18 @@ window.setPorkysVaultWeek = function(weekVal, event) {
     AppState.selectedPorkysWeek = weekVal || "ALL";
     AppState.ledgerFivePackView = "porkys";
     AppState.activeLedgerVault = "porkys_5pack";
+    renderHistoricalLedger();
+    window.scrollTo(window.scrollX, savedY);
+};
+
+// Toggles Historical Ledger between Top-25 NCAA + NFL and ALL Completed Games (including unranked FBS)
+window.toggleLedgerAllCompleted = function(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const savedY = window.scrollY;
+    AppState.ledgerShowAllCompleted = !AppState.ledgerShowAllCompleted;
     renderHistoricalLedger();
     window.scrollTo(window.scrollX, savedY);
 };
@@ -900,18 +920,19 @@ function recalculateAndRenderAll(opts = {}) {
                     const tipTotalDiff = baseProjectedLine - vegasLine;
                     tipModelProb = calcPointGapWinProb(Math.abs(tipTotalDiff));
 
-                    const dirSign = tipTotalDiff >= 0 ? 1 : -1;
-                    const bdTotalShift = (dirSign * Math.min(3.2, (Math.abs(psiBd) * 0.35 + Math.abs(m7.passGameModifierYards) * 0.18 + 0.8))) + elevBd.elevationTotalDragPts;
-                    bdProjectedLine = Number((baseProjectedLine + bdTotalShift).toFixed(1));
-                    bdModelProb = calcPointGapWinProb(Math.abs(bdProjectedLine - vegasLine));
+                    const bdTotObj = calcReportCalibratedTotal(vegasLine, baseProjectedLine, envPayload, circPayload, elevBd);
+                    bdProjectedLine = bdTotObj.ballsDeepTotal;
+                    const bdTotalDiff = bdProjectedLine - vegasLine;
+                    bdModelProb = calcPointGapWinProb(Math.abs(bdTotalDiff));
 
+                    const bdDirSign = bdTotalDiff >= 0 ? 1 : -1;
                     const totalArc = isActiveMomentumArc ? calcMomentumArc(sliderVal, 1.15) : 0.0;
 
                     if (mode === "balls_deep") {
                         finalCalculatedLine = bdProjectedLine;
                         activeModelProb = bdModelProb;
                     } else if (mode === "davinci") {
-                        const dvTotal = bdProjectedLine + (dirSign * totalArc);
+                        const dvTotal = bdProjectedLine + (bdDirSign * totalArc);
                         finalCalculatedLine = Number(dvTotal.toFixed(1));
                         activeModelProb = calcPointGapWinProb(Math.abs(finalCalculatedLine - vegasLine));
                     } else {
@@ -919,33 +940,33 @@ function recalculateAndRenderAll(opts = {}) {
                         activeModelProb = tipModelProb;
                     }
 
-                    const isUnderTip = baseProjectedLine < vegasLine;
+                    const isUnderActive = finalCalculatedLine < vegasLine;
 
                     // Organic Continuous Momentum Arc on Total Floor & Ceiling (zero .5 snapping while sliding)
-                    const baseSafeTotal = isUnderTip
+                    const baseSafeTotal = isUnderActive
                         ? (Math.floor(vegasLine + 3.5) + 0.5)
                         : (Math.floor(vegasLine - 3.5) + 0.5);
                     const safeTotalVal = isActiveMomentumArc
-                        ? Number((isUnderTip ? (baseSafeTotal - totalArc) : (baseSafeTotal + totalArc)).toFixed(1))
+                        ? Number((isUnderActive ? (baseSafeTotal - totalArc) : (baseSafeTotal + totalArc)).toFixed(1))
                         : baseSafeTotal;
                     safeFloorHookNum = safeTotalVal;
-                    const safeTotalEdge = isUnderTip
+                    const safeTotalEdge = isUnderActive
                         ? (safeTotalVal - finalCalculatedLine)
                         : (finalCalculatedLine - safeTotalVal);
                     const safeTotalProb = Math.min(0.96, Math.max(0.05, calcPointGapWinProb(safeTotalEdge)));
                     safeFloorWinPct = Number((safeTotalProb * 100).toFixed(1));
-                    safeFloorLabel = `Alt ${isUnderTip ? 'U' : 'O'} ${safeTotalVal.toFixed(1)} (-175)`;
+                    safeFloorLabel = `Alt ${isUnderActive ? 'U' : 'O'} ${safeTotalVal.toFixed(1)} (-175)`;
 
-                    const baseAltTotal = isUnderTip
+                    const baseAltTotal = isUnderActive
                         ? (Math.floor(vegasLine - 3.0) + 0.5)
                         : (Math.floor(vegasLine + 3.0) + 0.5);
                     const altTotalVal = isActiveMomentumArc
-                        ? Number((isUnderTip ? (baseAltTotal - totalArc) : (baseAltTotal + totalArc)).toFixed(1))
+                        ? Number((isUnderActive ? (baseAltTotal - totalArc) : (baseAltTotal + totalArc)).toFixed(1))
                         : baseAltTotal;
                     ceilingHookNum = altTotalVal;
-                    bdAltLineLabel = `Alt ${isUnderTip ? 'U' : 'O'} ${altTotalVal.toFixed(1)} (+155)`;
+                    bdAltLineLabel = `Alt ${isUnderActive ? 'U' : 'O'} ${altTotalVal.toFixed(1)} (+155)`;
                     bdLongerOdds = 155;
-                    const altTotalEdge = isUnderTip
+                    const altTotalEdge = isUnderActive
                         ? (altTotalVal - finalCalculatedLine)
                         : (finalCalculatedLine - altTotalVal);
                     bdReachProb = calcPointGapWinProb(altTotalEdge);
@@ -1006,10 +1027,19 @@ function recalculateAndRenderAll(opts = {}) {
                     activeDisplayLabel = `${cleanAway}@${cleanHome} Total (${isUnderActive ? "U" : "O"} ${vegasLine})`;
                 }
 
+                let bdSideOdds = prop.base_odds_over || -110;
+                let activeSideOdds = prop.base_odds_over || -110;
+                if (prop.market_type === "total") {
+                    const tipIsUnder = baseProjectedLine < vegasLine;
+                    const bdIsUnder = bdProjectedLine < vegasLine;
+                    const activeIsUnder = finalCalculatedLine < vegasLine;
+                    if (bdIsUnder !== tipIsUnder && prop.base_odds_under) bdSideOdds = prop.base_odds_under;
+                    if (activeIsUnder !== tipIsUnder && prop.base_odds_under) activeSideOdds = prop.base_odds_under;
+                }
                 const m2Tip = calcExpectedValueAndKelly(tipModelProb, prop.base_odds_over || -110);
-                const m2Bd = calcExpectedValueAndKelly(bdModelProb, prop.base_odds_over || -110);
+                const m2Bd = calcExpectedValueAndKelly(bdModelProb, bdSideOdds);
                 const m2BdAlt = calcExpectedValueAndKelly(bdReachProb, bdLongerOdds);
-                const m2Active = calcExpectedValueAndKelly(activeModelProb, prop.base_odds_over || -110);
+                const m2Active = calcExpectedValueAndKelly(activeModelProb, activeSideOdds);
 
                 const tipWinPct = Number((tipModelProb * 100).toFixed(2));
                 const tipEvPct = Number(m2Tip.evPercentage.toFixed(2));
@@ -1076,15 +1106,21 @@ function recalculateAndRenderAll(opts = {}) {
     const bestPlayPerGame = [];
     const trapPairsPool = [];
 
-    const currentWeekGames = AppState.processedGames.filter(g => g.isCurrentWeek);
-    const activeWeekPool = currentWeekGames.length > 0 ? currentWeekGames : AppState.processedGames;
+    const nowMs = Date.now();
+    const isPreKickoffGame = (g) => {
+        if (!g.commenceTime) return true;
+        const kickMs = new Date(g.commenceTime).getTime();
+        return isNaN(kickMs) || kickMs > nowMs;
+    };
+    const currentWeekGames = AppState.processedGames.filter(g => g.isCurrentWeek && isPreKickoffGame(g));
+    const activeWeekPool = currentWeekGames.length > 0 ? currentWeekGames : AppState.processedGames.filter(isPreKickoffGame);
 
     activeWeekPool.forEach(g => {
         const gameSpreads = AppState.processedProps.filter(
-            p => p.gameId === g.gameId && p.marketType === "spread" && Math.abs(p.baseLine) <= 28.5
+            p => p.gameId === g.gameId && p.marketType === "spread" && Math.abs(p.baseLine) <= 28.5 && Math.abs(p.baseOdds || -110) < 220
         );
         const gameTotals = AppState.processedProps.filter(
-            p => p.gameId === g.gameId && p.marketType === "total" && !p.gatekeeperBlocked
+            p => p.gameId === g.gameId && p.marketType === "total" && !p.gatekeeperBlocked && Math.abs(p.baseOdds || -110) < 220
         );
 
         const gameCandidates = [];
@@ -2246,19 +2282,28 @@ async function syncEspnLiveScores() {
     renderLiveBottomTicker();
 }
 
-function isRankedLedgerEntry(matchupStr, league) {
+function isRankedLedgerEntry(matchupStr, league, entryObj = null) {
     if (league === "NFL") return AppState.filters.nfl;
     if (league === "NCAA") {
         if (!AppState.filters.ncaa) return false;
-        const parts = (matchupStr || "").split("@").map(s => cleanTeamCode(s.trim()));
-        if (parts.some(code => RANKED_NCAA_CODES.has(code))) return true;
-        // Dynamically honor any team currently ranked in live ESPN Top-25 / active ranked slate
+        if (AppState.ledgerShowAllCompleted) return true;
         if (AppState.processedGames.some(g => g.league === "NCAA" && g.matchup === matchupStr)) return true;
+        const liveRanked = (AppState.rawPayload && AppState.rawPayload.slate_info && Array.isArray(AppState.rawPayload.slate_info.ranked_ncaa_teams))
+            ? AppState.rawPayload.slate_info.ranked_ncaa_teams
+            : [];
+        if (entryObj && liveRanked.length >= 20) {
+            const hFull = entryObj.home_full_name || "";
+            const aFull = entryObj.away_full_name || "";
+            if (hFull || aFull) {
+                return liveRanked.includes(hFull) || liveRanked.includes(aFull);
+            }
+        }
         if (AppState.rawPayload && Array.isArray(AppState.rawPayload.games)) {
             const rawMatch = AppState.rawPayload.games.find(g => g.league === "NCAA" && `${cleanTeamCode(g.away_team)} @ ${cleanTeamCode(g.home_team)}` === matchupStr);
-            if (rawMatch && isRankedNCAAGame(rawMatch)) return true;
+            if (rawMatch) return isRankedNCAAGame(rawMatch);
         }
-        return false;
+        const parts = (matchupStr || "").split("@").map(s => cleanTeamCode(s.trim()));
+        return parts.some(code => RANKED_NCAA_CODES.has(code) && code !== "UNM" && code !== "SMU" && code !== "OKST" && code !== "LSU");
     }
     return true;
 }
@@ -2519,6 +2564,10 @@ function renderHistoricalLedger() {
         const scoreEntry = (id, e) => {
             let s = 0;
             if (PERMANENT_LEDGER_ARCHIVE[id]) s += 100;
+            const sOdds = Math.abs(Number((e.spread_record && e.spread_record.odds) || -110));
+            const tOdds = Math.abs(Number((e.total_record && e.total_record.odds) || -110));
+            const isCorruptedLive = (sOdds >= 220 || tOdds >= 220);
+            if (!isCorruptedLive) s += 50;
             if (e.status === "FINAL") s += 30;
             if (e.spread_record && e.spread_record.result_tip && e.spread_record.result_tip !== "PENDING") s += 20;
             if (id.startsWith("NFL_") || id.startsWith("NCAA_")) s += 10;
@@ -2536,7 +2585,7 @@ function renderHistoricalLedger() {
         if (!cleanMatchup || renderedMatchups.has(cleanMatchup)) return;
 
         const entryLeague = entry.league || "NFL";
-        if (!isRankedLedgerEntry(cleanMatchup, entryLeague)) return;
+        if (!isRankedLedgerEntry(cleanMatchup, entryLeague, entry)) return;
 
         const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[cleanMatchup];
         const parsedScores = parseFinalScores(entry, espnMatch);
@@ -2562,7 +2611,7 @@ function renderHistoricalLedger() {
         const entryAwayCode = cleanTeamCode(entry.away_team || matchupParts[0] || "");
         const entryHomeCode = cleanTeamCode(entry.home_team || matchupParts[1] || "");
 
-        // Detect Grenade Dodged either from explicit archive metadata OR live from final score on a SMASH fade
+        // Detect Grenade Dodged from explicit archive metadata, Porky's record, OR any archived FINAL spread whose opposite side was <= -19.0% EV PASS
         if (entry.trap_avoided) {
             buckets.champagne_room.total += 1;
             buckets.champagne_room.dodged += 1;
@@ -2583,6 +2632,55 @@ function renderHistoricalLedger() {
                     <td><span class="badge-smash" style="font-size:11px;">💣 GRENADE DODGED</span></td>
                 </tr>
             `);
+        } else if (isFinal && entry.spread_record) {
+            const sr = entry.spread_record;
+            const fadeWinProb = Number(sr.tip_win_pct !== undefined ? sr.tip_win_pct : (sr.tipModelPct || 50)) / 100.0;
+            const oppWinProb = Math.max(0.01, Math.min(0.99, 1.0 - fadeWinProb));
+            const derivedTrapEv = Number((((oppWinProb * (100.0 / 110.0)) - (1.0 - oppWinProb)) * 100.0).toFixed(2));
+            const prTrapEv = (entry.porkys_record && entry.porkys_record.trap_ev_pct !== undefined) ? Number(entry.porkys_record.trap_ev_pct) : null;
+            const trapEvNum = prTrapEv !== null ? prTrapEv : derivedTrapEv;
+
+            if (trapEvNum <= PASS_EV_CUTOFF) {
+                const fadeLineNum = Number(sr.vegas_line !== undefined ? sr.vegas_line : (sr.vegas_closing_line !== undefined ? sr.vegas_closing_line : 0));
+                const fadeProjNum = Number(sr.tip_proj !== undefined ? sr.tip_proj : fadeLineNum);
+                const fadeTeamClean = cleanTeamCode(sr.pick_team || "");
+                const fadeIsHome = (fadeTeamClean && fadeTeamClean === entryHomeCode) || cleanLabelCodes(sr.pick_label || "").startsWith(`${entryHomeCode} `);
+                const trapTeamCode = fadeIsHome ? entryAwayCode : entryHomeCode;
+                const trapLineNum = -fadeLineNum;
+                const trapProjNum = Number((-fadeProjNum).toFixed(2));
+                const fmtTrapLine = trapLineNum > 0 ? `+${trapLineNum}` : `${trapLineNum}`;
+                const fmtTrapProj = trapProjNum > 0 ? `+${trapProjNum}` : `${trapProjNum}`;
+                const trapLabel = (entry.porkys_record && entry.porkys_record.trap_label)
+                    ? cleanLabelCodes(entry.porkys_record.trap_label)
+                    : `${trapTeamCode} Spread (${fmtTrapLine}) (${cleanMatchup})`;
+                const fadeSideLabel = cleanLabelCodes(sr.pick_label || `${fadeTeamClean || (fadeIsHome ? entryHomeCode : entryAwayCode)} Spread`);
+
+                let trapOutcome = null;
+                if (parsedScores) {
+                    trapOutcome = gradeSpreadPick(!fadeIsHome, trapLineNum, parsedScores.homeScore, parsedScores.awayScore).outcome;
+                } else if (sr.result_tip && sr.result_tip !== "PENDING") {
+                    trapOutcome = (sr.result_tip === "HIT" || sr.result_tip === "PUSH") ? "MISS" : "HIT";
+                }
+
+                if (trapOutcome) {
+                    buckets.champagne_room.total += 1;
+                    const dodgedSuccess = (trapOutcome !== "HIT");
+                    if (dodgedSuccess) {
+                        buckets.champagne_room.dodged += 1;
+                    }
+                    vaultRows.grenades_dodged.push(`
+                        <tr>
+                            <td><span style="font-family:var(--font-mono); font-size:10px; color:var(--accent-gold); font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+                            <td>PUBLIC GRENADE<br><span class="badge-pass" style="background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);font-size:10px;font-weight:800;">PASS</span></td>
+                            <td><strong style="color:var(--accent-danger);">🚫 TRAP: ${trapLabel}</strong></td>
+                            <td>${fmtTrapLine} (-110)</td>
+                            <td style="color:var(--accent-danger);">Proj: <strong>${fmtTrapProj}</strong> (${trapEvNum}% EV)</td>
+                            <td style="color:${dodgedSuccess ? 'var(--accent-emerald)' : 'var(--accent-danger)'};"><strong>${dodgedSuccess ? '✅ FADE HIT:' : '💥 TRAP COVERED:'}</strong> ${fadeSideLabel}</td>
+                            <td>${dodgedSuccess ? '<span class="badge-smash" style="font-size:11px;">💣 GRENADE DODGED</span>' : '<span class="badge-pass" style="background:rgba(239,68,68,0.18);color:var(--accent-danger);font-size:11px;">💥 BLEW UP</span>'}</td>
+                        </tr>
+                    `);
+                }
+            }
         }
 
         // Audit archived Porky's 5-Pack (3 Core Day-Shift Traps + 2 Keep-It-In-Your-Pants Flex)
@@ -3346,9 +3444,14 @@ function renderHistoricalLedger() {
             <span style="font-size: 12px; font-weight: 800; color: var(--accent-cyan);">
                 🕒 ACTIVE WEEK // UPCOMING &amp; IN-PLAY CLOSING LINE LEDGER
             </span>
-            <span style="font-size: 11px; color: var(--text-secondary);">
-                Completed games move automatically into the 6 Scorecard Vaults above upon hitting FINAL
-            </span>
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <button onclick="window.toggleLedgerAllCompleted(event)" class="calc-action-btn" style="font-size: 10.5px; padding: 3px 9px; border-color: ${AppState.ledgerShowAllCompleted ? 'var(--accent-emerald)' : 'rgba(245,158,11,0.55)'}; color: ${AppState.ledgerShowAllCompleted ? 'var(--accent-emerald)' : 'var(--accent-gold)'};">
+                    ${AppState.ledgerShowAllCompleted ? '📋 Showing ALL Completed FBS + NFL (Click for Top-25 Only)' : '🏆 Top-25 NCAA + NFL Only (Click to Show ALL FBS Finals)'}
+                </button>
+                <span style="font-size: 11px; color: var(--text-secondary);">
+                    Completed games move automatically into the 6 Scorecard Vaults above upon hitting FINAL
+                </span>
+            </div>
         </div>
 
         <div class="table-responsive">
@@ -3472,4 +3575,4 @@ function renderLiveBottomTicker() {
         </div>
     `;
 }
-// === END OF APP_CONTROLLER.JS (v242) ===
+// === END OF APP_CONTROLLER.JS (v245) ===
