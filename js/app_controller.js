@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v241)
- * Pure OG M1–M9 + Porky's 3-Pick / 2-Flex Parlay Ledger Audit — Synced 1:1 with onlinemath_engine.js (v313) & scraper.py (v215)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v242)
+ * Pure OG M1–M9 + Auto-Polling ESPN Scoreboard & Live Top-25 Ledger Filter — Synced 1:1 with onlinemath_engine.js (v313) & scraper.py (v215)
  *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
  *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
  *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
@@ -57,7 +57,7 @@ const RANKED_NCAA_CODES = new Set([
     "UGA", "UTAH", "ND", "UCLA", "UCBR", "MIA", "IND", "ALA", "TEX",
     "TENN", "WAKE", "WAFO", "BYU", "TTU", "UK", "KEWI", "HOU", "HOCO", "IOWA",
     "IOHA", "USC", "ORE", "MISS", "OSU", "LSU", "BSU", "SCAR", "ARI", "ARWI",
-    "UNM", "SMU", "OKST"
+    "UNM", "SMU", "OKST", "FLA", "TAMU", "OU", "LOU", "PSU", "MIZZ"
 ]);
 
 const CLEAN_CODE_OVERRIDES = {
@@ -342,6 +342,7 @@ document.addEventListener("DOMContentLoaded", () => {
     bindUIControls();
     pollDataFeed();
     setInterval(pollDataFeed, 5000);
+    setInterval(syncEspnLiveScores, 60000);
     window.addEventListener("resize", () => {
         if (AppState.rawPayload) render_game_cards(AppState.rawPayload);
     });
@@ -2250,7 +2251,14 @@ function isRankedLedgerEntry(matchupStr, league) {
     if (league === "NCAA") {
         if (!AppState.filters.ncaa) return false;
         const parts = (matchupStr || "").split("@").map(s => cleanTeamCode(s.trim()));
-        return parts.some(code => RANKED_NCAA_CODES.has(code));
+        if (parts.some(code => RANKED_NCAA_CODES.has(code))) return true;
+        // Dynamically honor any team currently ranked in live ESPN Top-25 / active ranked slate
+        if (AppState.processedGames.some(g => g.league === "NCAA" && g.matchup === matchupStr)) return true;
+        if (AppState.rawPayload && Array.isArray(AppState.rawPayload.games)) {
+            const rawMatch = AppState.rawPayload.games.find(g => g.league === "NCAA" && `${cleanTeamCode(g.away_team)} @ ${cleanTeamCode(g.home_team)}` === matchupStr);
+            if (rawMatch && isRankedNCAAGame(rawMatch)) return true;
+        }
+        return false;
     }
     return true;
 }
@@ -3464,4 +3472,4 @@ function renderLiveBottomTicker() {
         </div>
     `;
 }
-// === END OF APP_CONTROLLER.JS (v241) ===
+// === END OF APP_CONTROLLER.JS (v242) ===
