@@ -1,5 +1,5 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v215)
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v218)
 Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
   1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
   2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
@@ -949,12 +949,16 @@ def fetch_espn_scores():
                     if not home_c or not away_c:
                         continue
 
-                    h_abbr = ESPN_CODE_MAP.get(home_c.get("team", {}).get("abbreviation", ""), home_c.get("team", {}).get("abbreviation", ""))
-                    a_abbr = ESPN_CODE_MAP.get(away_c.get("team", {}).get("abbreviation", ""), away_c.get("team", {}).get("abbreviation", ""))
+                    h_team_obj = home_c.get("team", {})
+                    a_team_obj = away_c.get("team", {})
+                    h_abbr = ESPN_CODE_MAP.get(h_team_obj.get("abbreviation", ""), h_team_obj.get("abbreviation", ""))
+                    a_abbr = ESPN_CODE_MAP.get(a_team_obj.get("abbreviation", ""), a_team_obj.get("abbreviation", ""))
+                    h_full_espn = normalize_team_key(h_team_obj.get("displayName") or h_team_obj.get("name") or "")
+                    a_full_espn = normalize_team_key(a_team_obj.get("displayName") or a_team_obj.get("name") or "")
                     h_score = int(float(home_c.get("score", 0) or 0))
                     a_score = int(float(away_c.get("score", 0) or 0))
 
-                    score_lookup[f"{a_abbr}_{h_abbr}"] = {
+                    rec_payload = {
                         "event_id": event_id,
                         "league": lg,
                         "state": state,
@@ -962,10 +966,51 @@ def fetch_espn_scores():
                         "home_score": h_score,
                         "away_score": a_score
                     }
+                    score_lookup[f"{a_abbr}_{h_abbr}"] = rec_payload
+                    if a_full_espn and h_full_espn:
+                        score_lookup[f"name:{a_full_espn}__{h_full_espn}"] = rec_payload
         except Exception as e:
             print(f"[ESPN Scoreboard Notice] {e}")
 
     return score_lookup
+
+def calc_ten_zone_elevation(env_weather, away_elev_m):
+    h_venue_m = float(env_weather.get("elevation_m", 0))
+    h_away_m = float(away_elev_m if away_elev_m is not None else 150)
+    delta_ft = (h_venue_m - h_away_m) * 3.28084
+    venue_ft = h_venue_m * 3.28084
+    abs_ft = abs(delta_ft)
+    zones = [
+        (100,   0.1, -0.03, -0.01),
+        (200,   0.2, -0.06, -0.02),
+        (300,   0.3, -0.10, -0.03),
+        (500,   0.5, -0.16, -0.05),
+        (800,   0.8, -0.26, -0.09),
+        (1300,  1.3, -0.42, -0.14),
+        (2100,  2.1, -0.68, -0.23),
+        (3400,  3.4, -1.10, -0.37),
+        (5500,  5.5, -1.78, -0.60),
+        (99999, 8.9, -2.88, -0.97),
+    ]
+    z_idx, z_wz, asc_pt, desc_pt = 1, 0.1, -0.03, -0.01
+    for idx, (mft, wz, ap, dp) in enumerate(zones, start=1):
+        if abs_ft <= mft:
+            z_idx, z_wz, asc_pt, desc_pt = idx, wz, ap, dp
+            break
+    is_ascent = (delta_ft >= 0)
+    raw_base_pt = asc_pt if is_ascent else desc_pt
+    high_alt_mult = (GOLDEN_RATIO_PHI if venue_ft >= 6000 else 1.382) if (is_ascent and z_idx >= 7) else 1.0
+    psi_elev = round(raw_base_pt * high_alt_mult, 3)
+    hypoxic = bool(is_ascent and (z_idx >= 7 or (venue_ft >= 6000 and delta_ft >= 1000)))
+    elev_tot_drag = 0.0
+    if is_ascent and z_idx >= 7:
+        elev_tot_drag = round(max(-3.8, -(0.70 * z_wz) - (0.85 if venue_ft >= 6500 else 0.0)), 2)
+    elif is_ascent and venue_ft >= 5000 and delta_ft >= 500:
+        elev_tot_drag = round(-0.55 * z_wz, 2)
+    return {
+        "zone": z_idx, "wz": z_wz, "psi_elev": psi_elev,
+        "hypoxic": hypoxic, "elev_tot_drag": elev_tot_drag
+    }
 
 def calc_coupled_balls_deep_psi(home_meta, away_meta, env_weather):
     h = float(env_weather.get("elevation_m", 0))
@@ -992,11 +1037,11 @@ def calc_coupled_balls_deep_psi(home_meta, away_meta, env_weather):
     po2_drop = 1.0 - math.exp(-h / 8500.0)
     phi_bio_raw = (100.0 * (delta_fg_bio / (95.0 * g_sea))) + (10.0 * ((rho_player_h / rho_player_0) - 1.0)) + (2.5 * 1.45 * po2_drop)
 
-    close_mult = 0.786 if home_meta["close_pct"] >= 0.53 else 0.618
-    phi_bio = phi_bio_raw * close_mult
-
     h_rank = home_meta["close_pct"]
     a_rank = away_meta["close_pct"]
+    close_mult = 0.786 if h_rank >= 0.53 else 0.618
+    phi_bio = phi_bio_raw * close_mult
+
     h_4q = 0.786 if h_rank >= 0.53 else 0.618
     a_4q = 0.786 if a_rank >= 0.53 else 0.618
 
@@ -1006,8 +1051,55 @@ def calc_coupled_balls_deep_psi(home_meta, away_meta, env_weather):
 
     sum_val = phi_bio + net_tov
     sign = 1.0 if sum_val > 0 else (-1.0 if sum_val < 0 else 0.0)
-    # Negative favors Home Team in spread notation (matches app_controller.js)
-    return round(max(-2.85, min(2.85, -(sign * math.sqrt(abs(phi_bio * net_tov))))), 4)
+    return round(max(-2.85, min(2.85, -(sign * math.sqrt(abs(phi_bio * net_tov))))), 3)
+
+def calc_report_calibrated_bd_spread(og_tip_home_spread, vegas_home_spread, home_meta, away_meta, injury_diff, psi_11_12, elev_info, kickoff_local_hour, game_league):
+    home_is_dog = vegas_home_spread > 0
+    dog_m = home_meta if home_is_dog else away_meta
+    fav_m = away_meta if home_is_dog else home_meta
+    n_scale = 25.0 if game_league == "NCAA" else 16.0
+    dog_streak = int(dog_m.get("streak", 0))
+    fav_streak = int(fav_m.get("streak", 0))
+    fav_poll = fav_m.get("poll_rank")
+    fav_epa_rk = fav_m.get("epa_rank")
+    if fav_poll is not None and fav_epa_rk is not None:
+        norm_div = max(-1.35, min(1.35, (float(fav_epa_rk) - float(fav_poll)) / n_scale))
+    else:
+        streak_diff = max(-4, min(5, dog_streak - fav_streak))
+        norm_div = max(-1.10, min(1.35, (0.22 * streak_diff) + (0.35 if home_is_dog else 0.0)))
+
+    dog_havoc = max(0.75, min(1.35, 1.0 - float(dog_m.get("rz_dvoa", 0.0)) + ((float(dog_m.get("close_pct", 0.5)) - 0.5) * 0.45)))
+    passive_damp = 0.35 if (dog_havoc < 0.85 and norm_div > 0 and dog_streak < 3) else 1.0
+    spot_scalar = 1.25 if int(kickoff_local_hour or 13) >= 19 else 1.0
+    delta_ctx = max(-1.618, min(1.618, norm_div * dog_havoc * passive_damp * spot_scalar))
+    if (not home_is_dog) and elev_info["hypoxic"] and delta_ctx > 0:
+        delta_ctx = 0.0
+
+    fn = 34.0 if abs(vegas_home_spread) <= 7.5 else 21.0
+    m_rise_delta = (GOLDEN_RATIO_PHI / math.pi) * (fn / 76.0) * delta_ctx
+    rise_home_adj = round((-1.0 if home_is_dog else 1.0) * (m_rise_delta * 3.5), 2)
+
+    fund_gap = max(-8.0, min(8.0, og_tip_home_spread - vegas_home_spread))
+    fund_pull = 0.20 * fund_gap
+    inj_overlay = 0.65 * injury_diff
+    eff_psi = psi_11_12 * (0.25 if (elev_info["hypoxic"] and psi_11_12 > 0) else 0.65)
+    raw_bd_delta = fund_pull + inj_overlay + eff_psi + elev_info["psi_elev"] + rise_home_adj
+    clamped_delta = max(-5.8, min(5.8, raw_bd_delta))
+    return round(vegas_home_spread + clamped_delta, 2)
+
+def calc_report_calibrated_bd_total(vegas_total, og_tip_total, env_weather, tz_shift, elev_info):
+    is_dome = bool(env_weather.get("is_dome", False))
+    temp_f = 72.0 if is_dome else float(env_weather.get("temperature_f", 59.0))
+    wind_mph = 0.0 if is_dome else float(env_weather.get("wind_mph", 0.0))
+    abs_tz = abs(int(tz_shift or 0))
+
+    cold_drag = 0.0 if is_dome else -max(0.0, (42.0 - temp_f) * 0.14)
+    wind_drag = 0.0 if is_dome else -max(0.0, (wind_mph - 10.0) * 0.30)
+    tz_drag = -1.65 if abs_tz >= 3 else (-0.75 if abs_tz == 2 else 0.0)
+    elev_tot_drag = float(elev_info.get("elev_tot_drag", 0.0))
+    eff_lean = 0.25 * max(-8.0, min(8.0, float(og_tip_total) - float(vegas_total)))
+    total_delta = max(-6.5, min(6.5, eff_lean + cold_drag + wind_drag + tz_drag + elev_tot_drag))
+    return round(float(vegas_total) + total_delta, 1)
 
 def calc_independent_total_tip(home_meta, away_meta, game_league, wind_mph):
     """
@@ -1080,8 +1172,122 @@ def fetch_live_odds_for_sport(sport_key, league_label):
         print(f"[Odds API Error - {league_label}] {e}")
         return []
 
+LEGACY_CODE_MAP = {
+    "TCHO": "TCU", "KAJA": "KAN", "KAST": "KSU", "IOST": "ISU", "WEVI": "WVU",
+    "BABE": "BAY", "TETE": "TTU", "BYCO": "BYU", "UTUT": "UTAH", "ARWI": "ARIZ",
+    "ARST": "ASU", "COBU": "COLO", "UCKN": "UCF", "CIBE": "CIN", "HOCO": "HOU",
+    "NECO": "NEB", "IOHA": "IOWA", "ILFI": "ILL", "NOWI": "NW", "WIBA": "WIS",
+    "MIGO": "MINN", "PUBO": "PUR", "INHO": "IND", "OHST": "OSU", "MIWO": "MICH",
+    "MIST": "MSU", "PEST": "PSU", "RUSC": "RUTG", "MATE": "MD", "ORDU": "ORE",
+    "WAHU": "WASH", "USTR": "USC", "UCBR": "UCLA", "ALCR": "ALA", "GEBU": "UGA",
+    "TELO": "TEX", "OKSO": "OU", "TEVO": "TENN", "OLMI": "MISS", "LSTI": "LSU",
+    "MITI": "MIZZ", "KEWI": "UK", "SOCA": "SCAR", "FLGA": "FLA", "AUTI": "AUB",
+    "ARRA": "ARK", "VACO": "VAN", "NODA": "NDSU", "MIHU": "MIA", "CLTI": "CLEM",
+    "SMMU": "SMU", "PIPA": "PITT", "LOCA": "LOU", "GETE": "GT", "WAFO": "WAKE",
+    "DUBL": "DUKE", "NOCA": "UNC", "VATE": "VT", "VICA": "UVA", "BOCO": "BC",
+    "SYOR": "SYR", "FLST": "FSU", "CAGO": "CAL", "STCA": "STAN", "UCHU": "CONN",
+    "UMMI": "MASS", "WOTE": "WOF", "CHMO": "UTC", "NEME": "UNM", "BOST": "BSU",
+    "UNRE": "UNLV", "COST": "CSU", "FRST": "FRES", "SADI": "SDSU", "SAJO": "SJSU",
+    "AIFO": "AFA", "UTST": "USU", "NEWO": "NEV", "HARA": "HAW", "WAST": "WSU",
+    "ARBL": "ARMY", "NAMI": "NAVY", "TUGR": "TULN", "METI": "MEM", "SOFL": "USF",
+    "EACA": "ECU", "UTRO": "UTSA", "LIFL": "LIB", "SABU": "SAM", "VITE": "VT",
+    "MI(O": "MIOH"
+}
+
+def _is_corrupted_live_entry(entry):
+    s_rec = entry.get("spread_record") or {}
+    t_rec = entry.get("total_record") or {}
+    s_odds = abs(int(s_rec.get("odds", -110) or -110))
+    t_odds = abs(int(t_rec.get("odds", -110) or -110))
+    return (s_odds >= 220 or t_odds >= 220)
+
+def deduplicate_ledger_entries(entries):
+    """Purges legacy duplicate keys (e.g. IND_HOU_2026 vs NFL_IND_HOU_2026, NCAA_ORE_MIST_2026 vs NCAA_ORE_MSU_2026)
+    so every matchup has exactly ONE canonical record and summary counts never double-tally.
+    """
+    grouped = {}
+    for gid, e in entries.items():
+        if not isinstance(e, dict):
+            continue
+        lg = e.get("league") or ("NCAA" if gid.startswith("NCAA_") else "NFL")
+        e["league"] = lg
+        a_clean = LEGACY_CODE_MAP.get(e.get("away_team", ""), e.get("away_team", ""))
+        h_clean = LEGACY_CODE_MAP.get(e.get("home_team", ""), e.get("home_team", ""))
+        # Distinguish teams with identical matchups in different weeks by week bucket (commence_time // 5 days)
+        wk_tag = ""
+        c_str = e.get("commence_time", "")
+        if c_str:
+            try:
+                dt = datetime.strptime(c_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                wk_tag = str(int(dt.timestamp() // (5 * 86400)))
+            except Exception:
+                pass
+        canon_key = (lg, a_clean, h_clean, wk_tag)
+        grouped.setdefault(canon_key, []).append((gid, e))
+
+    cleaned = {}
+    for canon_key, items in grouped.items():
+        if len(items) == 1:
+            gid, e = items[0]
+            cleaned[gid] = e
+            continue
+
+        def rank_candidate(pair):
+            gid, e = pair
+            score = 0
+            if gid.startswith("NFL_") or gid.startswith("NCAA_"):
+                score += 40
+            if not _is_corrupted_live_entry(e):
+                score += 30
+            if e.get("status") == "FINAL":
+                score += 20
+            if e.get("home_full_name") or e.get("away_full_name"):
+                score += 15
+            if (e.get("spread_record") or {}).get("result_tip", "PENDING") != "PENDING":
+                score += 10
+            return score
+
+        items.sort(key=rank_candidate, reverse=True)
+        best_gid, best_e = items[0]
+        best_e = dict(best_e)
+
+        # Merge best metadata across duplicates: preserve FINAL score, canonical names/codes, AND clean pre-game closing odds
+        for alt_gid, alt_e in items[1:]:
+            if not best_e.get("final_score") and alt_e.get("final_score"):
+                best_e["final_score"] = alt_e["final_score"]
+                best_e["status"] = "FINAL"
+                best_e["is_locked"] = True
+            if not best_e.get("home_full_name") and alt_e.get("home_full_name"):
+                best_e["home_full_name"] = alt_e["home_full_name"]
+            if not best_e.get("away_full_name") and alt_e.get("away_full_name"):
+                best_e["away_full_name"] = alt_e["away_full_name"]
+            if _is_corrupted_live_entry(best_e) and not _is_corrupted_live_entry(alt_e) and alt_e.get("spread_record"):
+                best_e["spread_record"] = dict(alt_e["spread_record"])
+                best_e["spread_record"]["result_tip"] = "PENDING"
+                best_e["spread_record"]["result_balls_deep"] = "PENDING"
+                best_e["spread_record"]["miss_by_pts"] = None
+                if alt_e.get("total_record"):
+                    best_e["total_record"] = dict(alt_e["total_record"])
+                    best_e["total_record"]["result_tip"] = "PENDING"
+                    best_e["total_record"]["result_balls_deep"] = "PENDING"
+                    best_e["total_record"]["miss_by_pts"] = None
+
+        # Normalize team codes on the surviving canonical key
+        a_norm = LEGACY_CODE_MAP.get(best_e.get("away_team", ""), best_e.get("away_team", ""))
+        h_norm = LEGACY_CODE_MAP.get(best_e.get("home_team", ""), best_e.get("home_team", ""))
+        best_e["away_team"] = a_norm
+        best_e["home_team"] = h_norm
+        best_e["matchup"] = f"{a_norm} @ {h_norm}"
+        if best_e.get("spread_record") and best_e["spread_record"].get("pick_team"):
+            pt = best_e["spread_record"]["pick_team"]
+            best_e["spread_record"]["pick_team"] = LEGACY_CODE_MAP.get(pt, pt)
+        canon_gid = f"{best_e['league']}_{a_norm}_{h_norm}_2026"
+        best_e["game_id"] = canon_gid
+        cleaned[canon_gid] = best_e
+    return cleaned
+
 def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by_gid=None):
-    entries = ledger.get("entries", {})
+    entries = deduplicate_ledger_entries(ledger.get("entries", {}))
     porkys_by_gid = porkys_by_gid or {}
 
     for g in games_slate:
@@ -1103,21 +1309,44 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
         best_spread = max(spread_props, key=lambda x: x.get("ev_pct", -100.0))
         best_total = total_props[0] if total_props else None
 
+        # Reject live in-game garbage juice (e.g. +430 / -1000 during a 45-7 blowout) from poisoning pre-game ledger snapshots!
+        has_live_garbage_odds = (
+            abs(int(best_spread.get("base_odds_over", -110) or -110)) >= 220 or
+            (best_total is not None and abs(int(best_total.get("base_odds_over", -110) or -110)) >= 220)
+        )
+
         existing = entries.get(gid)
         if not existing:
+            # NEVER create a brand-new closing-line ledger entry after kickoff with in-game live odds!
+            if is_past_kickoff or has_live_garbage_odds:
+                continue
             existing = {
                 "game_id": gid,
                 "league": g.get("league", "NFL"),
                 "matchup": f"{g['away_team']} @ {g['home_team']}",
                 "home_team": g["home_team"],
                 "away_team": g["away_team"],
+                "home_full_name": g.get("home_full_name", ""),
+                "away_full_name": g.get("away_full_name", ""),
                 "commence_time": commence_str,
-                "is_locked": is_past_kickoff,
-                "status": "IN_PLAY" if is_past_kickoff else "PRE_GAME",
+                "is_locked": False,
+                "status": "PRE_GAME",
                 "final_score": None,
                 "spread_record": None,
                 "total_record": None
             }
+        else:
+            if not existing.get("home_full_name") and g.get("home_full_name"):
+                existing["home_full_name"] = g.get("home_full_name", "")
+            if not existing.get("away_full_name") and g.get("away_full_name"):
+                existing["away_full_name"] = g.get("away_full_name", "")
+            # If the game already kicked off, lock the existing pre-game snapshot WITHOUT overwriting its closing odds!
+            if is_past_kickoff or has_live_garbage_odds:
+                existing["is_locked"] = True
+                if existing.get("status") == "PRE_GAME":
+                    existing["status"] = "IN_PLAY"
+                entries[gid] = existing
+                continue
 
         if not existing.get("is_locked", False):
             existing["commence_time"] = commence_str
@@ -1167,8 +1396,18 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
         entries[gid] = existing
 
     for gid, entry in entries.items():
-        match_key = f"{entry['away_team']}_{entry['home_team']}"
-        espn_info = espn_scores.get(match_key)
+        espn_info = None
+        a_fn = normalize_team_key(entry.get("away_full_name", ""))
+        h_fn = normalize_team_key(entry.get("home_full_name", ""))
+        if a_fn and h_fn:
+            espn_info = espn_scores.get(f"name:{a_fn}__{h_fn}")
+        if not espn_info:
+            match_key = f"{entry['away_team']}_{entry['home_team']}"
+            espn_info = espn_scores.get(match_key)
+        if not espn_info:
+            a_c = LEGACY_CODE_MAP.get(entry["away_team"], entry["away_team"])
+            h_c = LEGACY_CODE_MAP.get(entry["home_team"], entry["home_team"])
+            espn_info = espn_scores.get(f"{a_c}_{h_c}")
         if not espn_info:
             continue
 
@@ -1418,15 +1657,14 @@ def build_master_payload():
 
         hfa_base = NCAA_HFA_BASE if game_league == "NCAA" else PI_OVER_PHI_HFA
 
-        # PURE OG M1–M9 FAIR SPREAD (100% INDEPENDENT OF VEGAS — SYNCED 1:1 WITH onlinemath_engine.js v313)
+        # PURE UNTOUCHED OG M1–M9 FAIR SPREAD (v205 LOCKED — ZERO DELTA_RZ, ZERO INJURY, ZERO VEGAS, ZERO M11–M13)
         epa_diff = away_meta["epa"] - home_meta["epa"]
-        delta_rz = (home_meta["rz_dvoa"] - away_meta["rz_dvoa"]) * 4.0
         delta_to = away_meta["to_reg"] - home_meta["to_reg"]
         injury_diff = away_inj["qb_replacement_delta"] - home_inj["qb_replacement_delta"]
         psi_11_12 = calc_coupled_balls_deep_psi(home_meta, away_meta, env_weather)
+        elev_info = calc_ten_zone_elevation(env_weather, away_meta.get("elev_m", 150))
 
-        fair_home_tip = round((GOLDEN_PLAY_SCALER * epa_diff) + delta_rz + delta_to + injury_diff - hfa_base - phi_circ, 2)
-        fair_home_bd = round(fair_home_tip + psi_11_12, 2)
+        fair_home_tip = round((GOLDEN_PLAY_SCALER * epa_diff) + delta_to - hfa_base - phi_circ, 2)
 
         props_board = []
         book = next((b for b in game.get("bookmakers", []) if b["key"] == "fanduel"), None) or \
@@ -1436,6 +1674,18 @@ def build_master_payload():
         if book:
             spread_market = next((m for m in book.get("markets", []) if m["key"] == "spreads"), None)
             if spread_market:
+                vegas_home_sp = None
+                for o_chk in spread_market.get("outcomes", []):
+                    if o_chk.get("name") == home_full:
+                        vegas_home_sp = float(o_chk.get("point", 0.0))
+                    elif o_chk.get("name") == away_full and vegas_home_sp is None:
+                        vegas_home_sp = -float(o_chk.get("point", 0.0))
+                if vegas_home_sp is None:
+                    vegas_home_sp = fair_home_tip
+                fair_home_bd = calc_report_calibrated_bd_spread(
+                    fair_home_tip, vegas_home_sp, home_meta, away_meta,
+                    injury_diff, psi_11_12, elev_info, kickoff_local_hour, game_league
+                )
                 for out in spread_market.get("outcomes", []):
                     point = float(out.get("point", 0.0))
                     price = int(out.get("price", -110))
@@ -1487,10 +1737,12 @@ def build_master_payload():
                     u_price = int(under_out.get("price", -110))
 
                     proj_total_tip = calc_independent_total_tip(home_meta, away_meta, game_league, wind_mph)
-                    proj_total_bd = round(proj_total_tip + (psi_11_12 * 0.35), 1)
+                    proj_total_bd = calc_report_calibrated_bd_total(t_point, proj_total_tip, env_weather, tz_shift, elev_info)
 
                     is_under = proj_total_tip < t_point
+                    is_under_bd = proj_total_bd < t_point
                     active_price = u_price if is_under else o_price
+                    bd_price = u_price if is_under_bd else o_price
 
                     total_diff_tip = abs(proj_total_tip - t_point)
                     total_diff_bd = abs(proj_total_bd - t_point)
@@ -1499,7 +1751,7 @@ def build_master_payload():
                     calc_prob_bd = max(0.50, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * total_diff_bd))))
 
                     ev_tip = calc_ev_pct(calc_prob_tip, active_price)
-                    ev_bd = calc_ev_pct(calc_prob_bd, active_price)
+                    ev_bd = calc_ev_pct(calc_prob_bd, bd_price)
                     badge = "SMASH" if ev_tip >= SMASH_EV_THRESHOLD else ("PASS" if ev_tip <= -19.0 else "TOO_CLOSE")
 
                     props_board.append({
@@ -1591,12 +1843,54 @@ def build_master_payload():
             "props_board": props_board
         })
 
-    # Blended Top-5 Flagship Selection (Strict 1-pick-per-game, max 3 per market)
+    # Compute Tuesday 5:00 AM EST (10:00 UTC) post-MNF cutoff matching app_controller.js 1:1
+    # Only Pre-Kickoff, Current-Week, NFL or Ranked Top-25 NCAA games enter Flagship 5-Pack & Porky's 5-Pack!
+    def is_eligible_flagship_game(g):
+        if g["league"] == "NCAA":
+            ht = g.get("team_telemetry", {}).get("home", {})
+            at = g.get("team_telemetry", {}).get("away", {})
+            h_rk = ht.get("poll_rank")
+            a_rk = at.get("poll_rank")
+            if not ((h_rk and h_rk <= 25) or (a_rk and a_rk <= 25)):
+                return False
+        c_str = g.get("commence_time", "")
+        if c_str:
+            try:
+                dt_g = datetime.strptime(c_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                if dt_g <= now_utc:
+                    return False  # Exclude already-started / live in-game lines!
+            except Exception:
+                pass
+        return True
+
+    pre_kick_eligible = [g for g in games_slate if is_eligible_flagship_game(g)]
+    anchor_times = []
+    for g in pre_kick_eligible:
+        try:
+            anchor_times.append(datetime.strptime(g["commence_time"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc))
+        except Exception:
+            pass
+    anchor_dt = min(anchor_times) if anchor_times else now_utc
+    anchor_est = anchor_dt - timedelta(hours=5)
+    # Python weekday(): Mon=0, Tue=1, ..., Sun=6
+    days_to_tue = 7 if anchor_est.weekday() == 1 else ((1 - anchor_est.weekday()) % 7)
+    mnf_cutoff_utc = (anchor_est + timedelta(days=days_to_tue)).replace(hour=5, minute=0, second=0, microsecond=0) + timedelta(hours=5)
+
+    current_week_eligible = []
+    for g in pre_kick_eligible:
+        try:
+            dt_g = datetime.strptime(g["commence_time"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            if dt_g <= mnf_cutoff_utc:
+                current_week_eligible.append(g)
+        except Exception:
+            current_week_eligible.append(g)
+
+    # Blended Top-5 Flagship Selection (Strict 1-pick-per-game, max 3 per market, Current Week + Ranked NCAA/NFL ONLY)
     best_per_game = []
-    for g in games_slate:
+    for g in current_week_eligible:
         cands = []
-        g_spreads = [p for p in g["props_board"] if p["market_type"] == "spread" and abs(p["base_line"]) <= 28.5]
-        g_totals = [p for p in g["props_board"] if p["market_type"] == "total"]
+        g_spreads = [p for p in g["props_board"] if p["market_type"] == "spread" and abs(p["base_line"]) <= 28.5 and abs(int(p.get("base_odds_over", -110))) < 220]
+        g_totals = [p for p in g["props_board"] if p["market_type"] == "total" and abs(int(p.get("base_odds_over", -110))) < 220]
         if g_spreads:
             cands.append(max(g_spreads, key=lambda x: x["ev_pct"]))
         if g_totals:
@@ -1625,10 +1919,10 @@ def build_master_payload():
     for idx, p in enumerate(selected_five[3:5], start=4):
         p["flagship_slot"] = f"5-PACK FLEX #{idx}"
 
-    # Build Porky's 5-Pack (3 Core Day-Shift Traps + 2 Keep-It-In-Your-Pants Flex) for permanent Ledger audit
+    # Build Porky's 5-Pack (3 Core Day-Shift Traps + 2 Keep-It-In-Your-Pants Flex — Current Week + Ranked NCAA/NFL ONLY)
     porkys_candidates = []
-    for g in games_slate:
-        g_spreads = [p for p in g["props_board"] if p["market_type"] == "spread" and abs(p["base_line"]) <= 28.5]
+    for g in current_week_eligible:
+        g_spreads = [p for p in g["props_board"] if p["market_type"] == "spread" and abs(p["base_line"]) <= 28.5 and abs(int(p.get("base_odds_over", -110))) < 220]
         if len(g_spreads) >= 2:
             g_spreads_sorted = sorted(g_spreads, key=lambda x: x["ev_pct"], reverse=True)
             best_side = g_spreads_sorted[0]
@@ -1676,7 +1970,7 @@ def build_master_payload():
             "league": "NFL_NCAA",
             "week": 12,
             "last_updated": now_iso,
-            "telemetry_version": "v215_live_feeds",
+            "telemetry_version": "v218_live_feeds",
             "ranked_ncaa_teams": live_ranked_ncaa
         },
         "games": games_slate,
@@ -1691,7 +1985,7 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v215)")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v218)")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("=========================================================")
 
