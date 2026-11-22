@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v315 — BACK TO OUR ROOTS)
- * Pure OG M1–M9 + Verified ΔQB-Only Filter + Key-Number Alt Buys (MER > 1.15) + Regime Safe Totals (Synced 1:1 with scraper.py v221)
+ * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v316 — BACK TO OUR ROOTS + WONG LADDER)
+ * Pure OG M1–M9 + Verified ΔQB-Only Filter + Key-Number Alt Buys (MER > 1.15) + Regime Safe Totals (Synced 1:1 with scraper.py v223)
  *  - PURE OG MODULES 1–9 RESTORED: 100% Independent Fair Margin (ZERO Vegas-Spread Anchoring)
  *  - Live Roster/Injury Integration (qb_replacement_delta) + Fixed opp_rz_dvoa Sign
  *  - Strict M1–M9 Firewall in Just the Tip | Full M11–M13 Physics & Sacred Geometry in Balls Deep/DaVinci
@@ -665,74 +665,204 @@ function getVerifiedQbDelta(teamTel) {
 }
 
 // ==========================================
-// MODULE 3 UPGRADE: BACK-TO-OUR-ROOTS KEY-NUMBER ALT-BUY ENGINE (MER > 1.15)
-// Crosses Key Numbers 3, 7, 10, 14, 17, 21 onto lethal .5 hooks (-2.5, +3.5, -6.5, +7.5, -13.5, -14.5, -17.5)
+// MODULE 3 UPGRADE: FULL-BOARD KEY-NUMBER ALT-BUY + 1-DEV SAFER WONG TEASER ENGINE (v316)
+// Favorites (clear margin):  -2.5 (#3), -6.5 (#7), -9.5 (#10), -12.5 (#13/#14), -16.5 (#17), -20.5 (#21)
+// Underdogs (catch margin):  +3.5 (#3), +7.5 (#7), +10.5 (#10), +13.5/+14.5 (#13/#14), +17.5 (#17), +21.5 (#21)
+// Tier-2 (1-Dev Safer):      Evaluates exact 6-pt Wong Teasers (-7.5..-8.5 -> -1.5..-2.5; +1.5..+2.5 -> +7.5..+8.5)
+//                            and multi-key 6-pt/7-pt teaser jumps without paying -320 standalone alt juice!
 // ==========================================
+function _calcKeyMassBonus(lo, hi) {
+    const keyMasses = [
+        [3.0, 0.045], [-3.0, 0.045],
+        [7.0, 0.035], [-7.0, 0.035],
+        [10.0, 0.025], [-10.0, 0.025],
+        [13.0, 0.016], [-13.0, 0.016],
+        [14.0, 0.022], [-14.0, 0.022],
+        [17.0, 0.020], [-17.0, 0.020],
+        [21.0, 0.014], [-21.0, 0.014]
+    ];
+    let bonus = 0.0;
+    let count = 0;
+    for (let i = 0; i < keyMasses.length; i++) {
+        if (lo < keyMasses[i][0] && keyMasses[i][0] < hi) {
+            bonus += keyMasses[i][1];
+            count += 1;
+        }
+    }
+    return { bonus, count };
+}
+
 function calcKeyNumberAltSpread(baseLine, modelFairLine, baseOdds = -110) {
     const line = Number(baseLine || 0);
     const fair = Number(modelFairLine !== undefined ? modelFairLine : line);
+    const bo = Number(baseOdds || -110);
     const baseProb = calcPointGapWinProb(line - fair);
 
     let altLine = line;
-    let altOdds = Number(baseOdds || -110);
+    let altOdds = bo;
     let keyLabel = "Hold Base";
 
+    let tier2Line = null;
+    let tier2Mode = null; // "WONG_6PT" | "TEASER_6PT" | "TEASER_7PT"
+    let tier2Note = "";
+
     if (line < 0) {
-        // FAVORITE: buy DOWN across the next key number
         if (line >= -2.5) {
-            altLine = line; altOdds = Number(baseOdds || -110); keyLabel = "Hold Under Key #3";
+            altLine = line; altOdds = bo; keyLabel = "Hold Under Key #3";
         } else if (line >= -4.5) {
             altLine = -2.5; altOdds = (line >= -3.5) ? -145 : -165; keyLabel = "Key #3 Buy (-2.5)";
+        } else if (line >= -6.0) {
+            altLine = -2.5; altOdds = -175; keyLabel = "Key #3/#6 Buy (-2.5)";
         } else if (line >= -6.5) {
-            altLine = (line >= -5.5) ? -2.5 : -3.5; altOdds = -165; keyLabel = "Key #3/#6 Buy";
+            altLine = -6.5; altOdds = bo; keyLabel = "Hold Under Key #7";
+            tier2Line = -0.5; tier2Mode = "TEASER_6PT"; tier2Note = "1-Dev Safer (-0.5 via 6-pt Teaser)";
         } else if (line >= -9.5) {
-            altLine = -6.5; altOdds = (line >= -7.5) ? -135 : -160; keyLabel = "Key #7 Buy (-6.5)";
-        } else if (line >= -13.0) {
-            altLine = -9.5; altOdds = (line >= -11.5) ? -145 : -165; keyLabel = "Key #10 Buy (-9.5)";
-        } else if (line >= -16.5) {
-            altLine = (line <= -14.0) ? -13.5 : -10.5; altOdds = (line <= -15.5) ? -150 : -165; keyLabel = "Key #14 Buy (-13.5)";
+            altLine = -6.5;
+            altOdds = (line >= -7.5) ? -135 : ((line >= -8.5) ? -155 : -170);
+            keyLabel = "Key #7 Buy (-6.5)";
+            if (line >= -8.5 && line <= -7.5) {
+                tier2Line = Number((line + 6.0).toFixed(1));
+                tier2Mode = "WONG_6PT";
+                tier2Note = `Wong 6-pt Teaser (${tier2Line > 0 ? '+' : ''}${tier2Line.toFixed(1)} crosses 7 & 3)`;
+            } else {
+                tier2Line = Number((line + 7.0).toFixed(1));
+                tier2Mode = "TEASER_7PT";
+                tier2Note = `1-Dev Safer (${tier2Line > 0 ? '+' : ''}${tier2Line.toFixed(1)} via 7-pt Teaser)`;
+            }
+        } else if (line >= -12.5) {
+            altLine = -9.5;
+            altOdds = (line >= -10.5) ? -140 : ((line >= -11.5) ? -160 : -175);
+            keyLabel = "Key #10 Buy (-9.5)";
+            tier2Line = Number((line + 6.0).toFixed(1));
+            tier2Mode = "TEASER_6PT";
+            tier2Note = `1-Dev Safer (${tier2Line > 0 ? '+' : ''}${tier2Line.toFixed(1)} via 6-pt Teaser)`;
+        } else if (line >= -16.0) {
+            altLine = -12.5;
+            altOdds = (line >= -14.0) ? -145 : ((line >= -15.5) ? -165 : -175);
+            keyLabel = "Key #13/#14 Buy (-12.5)";
+            tier2Line = Number((line + 6.0).toFixed(1));
+            tier2Mode = "TEASER_6PT";
+            tier2Note = `1-Dev Safer (${tier2Line > 0 ? '+' : ''}${tier2Line.toFixed(1)} via 6-pt Teaser)`;
         } else if (line >= -19.5) {
-            altLine = -14.5; altOdds = -160; keyLabel = "Key #14.5/#17 Buy (-14.5)";
+            altLine = -16.5;
+            altOdds = (line === -16.5) ? bo : ((line >= -17.5) ? -145 : -165);
+            keyLabel = (line === -16.5) ? "Hold Under Key #17" : "Key #17 Buy (-16.5)";
+            tier2Line = Number((line + 6.0).toFixed(1));
+            tier2Mode = "TEASER_6PT";
+            tier2Note = `1-Dev Safer (${tier2Line > 0 ? '+' : ''}${tier2Line.toFixed(1)} via 6-pt Teaser)`;
+        } else if (line >= -24.0) {
+            altLine = (line >= -20.5) ? -16.5 : -20.5;
+            altOdds = (line >= -20.5) ? -170 : ((line >= -22.0) ? -145 : -165);
+            keyLabel = (altLine === -16.5) ? "Key #17 Buy (-16.5)" : "Key #21 Buy (-20.5)";
+            tier2Line = Number((line + 6.0).toFixed(1));
+            tier2Mode = "TEASER_6PT";
+            tier2Note = `1-Dev Safer (${tier2Line > 0 ? '+' : ''}${tier2Line.toFixed(1)} via 6-pt Teaser)`;
         } else {
-            altLine = (line >= -21.5) ? -17.5 : (Math.floor(line + 3.5) + 0.5);
-            altOdds = -155;
-            keyLabel = `Key #17.5 Blowout Buy (${altLine > 0 ? '+' : ''}${altLine.toFixed(1)})`;
+            altLine = Math.floor(line + 3.5) + 0.5;
+            altOdds = -160;
+            keyLabel = `Blowout Fav Buy (${altLine > 0 ? '+' : ''}${altLine.toFixed(1)})`;
+            tier2Line = Number((line + 6.0).toFixed(1));
+            tier2Mode = "TEASER_6PT";
+            tier2Note = `1-Dev Safer (${tier2Line > 0 ? '+' : ''}${tier2Line.toFixed(1)} via 6-pt Teaser)`;
         }
     } else {
-        // UNDERDOG (or PK): buy UP across the next key number
         if (line <= 3.0) {
-            altLine = 3.5; altOdds = (line >= 2.0) ? -135 : -160; keyLabel = "Key #3 Dog Buy (+3.5)";
-        } else if (line <= 5.0) {
-            altLine = (line <= 4.0) ? 6.5 : 7.5; altOdds = -155; keyLabel = "Key #7 Dog Buy";
+            altLine = 3.5;
+            altOdds = (line >= 2.0) ? -135 : -160;
+            keyLabel = "Key #3 Dog Buy (+3.5)";
+            if (line >= 1.5 && line <= 2.5) {
+                tier2Line = Number((line + 6.0).toFixed(1));
+                tier2Mode = "WONG_6PT";
+                tier2Note = `Wong 6-pt Teaser (+${tier2Line.toFixed(1)} crosses 3 & 7)`;
+            } else if (line >= 0.5 && line < 1.5) {
+                tier2Line = Number((line + 7.0).toFixed(1));
+                tier2Mode = "TEASER_7PT";
+                tier2Note = `1-Dev Safer (+${tier2Line.toFixed(1)} via 7-pt Teaser)`;
+            }
+        } else if (line <= 3.5) {
+            altLine = 3.5; altOdds = bo; keyLabel = "Hold Over Key #3";
+            tier2Line = 9.5; tier2Mode = "TEASER_6PT"; tier2Note = "1-Dev Safer (+9.5 via 6-pt Teaser)";
         } else if (line <= 6.5) {
-            altLine = 7.5; altOdds = -140; keyLabel = "Key #7 Dog Buy (+7.5)";
-        } else if (line <= 9.5) {
-            altLine = 10.5; altOdds = (line >= 8.0) ? -145 : -165; keyLabel = "Key #10 Dog Buy (+10.5)";
+            altLine = 7.5;
+            altOdds = (line >= 6.0) ? -140 : ((line >= 4.5) ? -155 : -170);
+            keyLabel = "Key #7 Dog Buy (+7.5)";
+            tier2Line = Number((line + 6.0).toFixed(1));
+            tier2Mode = "TEASER_6PT";
+            tier2Note = `1-Dev Safer (+${tier2Line.toFixed(1)} via 6-pt Teaser)`;
+        } else if (line <= 7.5) {
+            altLine = 7.5; altOdds = bo; keyLabel = "Hold Over Key #7";
+            tier2Line = 13.5; tier2Mode = "TEASER_6PT"; tier2Note = "1-Dev Safer (+13.5 via 6-pt Teaser)";
+        } else if (line <= 10.0) {
+            altLine = 10.5;
+            altOdds = (line >= 9.0) ? -140 : -160;
+            keyLabel = "Key #10 Dog Buy (+10.5)";
+            tier2Line = Number((line + 6.0).toFixed(1));
+            tier2Mode = "TEASER_6PT";
+            tier2Note = `1-Dev Safer (+${tier2Line.toFixed(1)} via 6-pt Teaser)`;
         } else if (line <= 13.0) {
-            altLine = (line <= 11.5) ? 13.5 : 14.5; altOdds = -150; keyLabel = "Key #14 Dog Buy (+13.5/+14.5)";
-        } else if (line <= 16.5) {
-            altLine = 17.5; altOdds = -155; keyLabel = "Key #17.5 Dog Buy (+17.5)";
+            altLine = 13.5;
+            altOdds = (line >= 12.0) ? -140 : -160;
+            keyLabel = "Key #13 Dog Buy (+13.5)";
+            tier2Line = Number((line + 6.0).toFixed(1));
+            tier2Mode = "TEASER_6PT";
+            tier2Note = `1-Dev Safer (+${tier2Line.toFixed(1)} via 6-pt Teaser)`;
+        } else if (line <= 13.5) {
+            altLine = 14.5; altOdds = -130; keyLabel = "Key #14 Dog Buy (+14.5)";
+            tier2Line = 19.5; tier2Mode = "TEASER_6PT"; tier2Note = "1-Dev Safer (+19.5 via 6-pt Teaser)";
+        } else if (line <= 17.0) {
+            altLine = 17.5;
+            altOdds = (line >= 16.0) ? -140 : -160;
+            keyLabel = "Key #17 Dog Buy (+17.5)";
+            tier2Line = Number((line + 6.0).toFixed(1));
+            tier2Mode = "TEASER_6PT";
+            tier2Note = `1-Dev Safer (+${tier2Line.toFixed(1)} via 6-pt Teaser)`;
+        } else if (line <= 20.5) {
+            altLine = 21.5;
+            altOdds = (line >= 19.0) ? -145 : -165;
+            keyLabel = "Key #21 Dog Buy (+21.5)";
+            tier2Line = Number((line + 6.0).toFixed(1));
+            tier2Mode = "TEASER_6PT";
+            tier2Note = `1-Dev Safer (+${tier2Line.toFixed(1)} via 6-pt Teaser)`;
         } else {
             altLine = Math.floor(line + 3.5) + 0.5;
             altOdds = -160;
             keyLabel = `Blowout Dog Floor (+${altLine.toFixed(1)})`;
+            tier2Line = Number((line + 6.0).toFixed(1));
+            tier2Mode = "TEASER_6PT";
+            tier2Note = `1-Dev Safer (+${tier2Line.toFixed(1)} via 6-pt Teaser)`;
         }
     }
 
-    const rawAltProb = calcPointGapWinProb(altLine - fair);
-    let crossedBonus = 0.0;
-    const lo = Math.min(line, altLine), hi = Math.max(line, altLine);
-    const keyMasses = [[3.0, 0.045], [-3.0, 0.045], [7.0, 0.035], [-7.0, 0.035], [10.0, 0.025], [-10.0, 0.025], [14.0, 0.025], [-14.0, 0.025], [17.0, 0.018], [-17.0, 0.018]];
-    for (let i = 0; i < keyMasses.length; i++) {
-        if (lo < keyMasses[i][0] && keyMasses[i][0] < hi) crossedBonus += keyMasses[i][1];
-    }
-    const altProb = Math.min(0.95, Math.max(0.05, rawAltProb + crossedBonus));
-    const beBase = calcImpliedProbability(Number(baseOdds || -110));
+    const km1 = _calcKeyMassBonus(Math.min(line, altLine), Math.max(line, altLine));
+    const altProb = Math.min(0.95, Math.max(0.05, calcPointGapWinProb(altLine - fair) + km1.bonus));
+    const beBase = calcImpliedProbability(bo);
     const beAlt = calcImpliedProbability(altOdds);
     const dTax = Math.max(0.01, beAlt - beBase);
     const merRatio = (altLine !== line) ? Number(((altProb - baseProb) / dTax).toFixed(2)) : 1.0;
     const evObj = calcExpectedValueAndKelly(altProb, altOdds);
     const fmtAlt = `${altLine > 0 ? '+' : ''}${altLine.toFixed(1)}`;
+
+    // Tier-2 (1-Deviation Safer / Wong 6-pt Teaser) Gate
+    let tier2ProbPct = null;
+    let tier2EvPct = null;
+    let tier2Approved = false;
+    let tier2Label = "";
+    if (tier2Line !== null) {
+        const km2 = _calcKeyMassBonus(Math.min(line, tier2Line), Math.max(line, tier2Line));
+        const t2Prob = Math.min(0.96, Math.max(0.05, calcPointGapWinProb(tier2Line - fair) + km2.bonus));
+        tier2ProbPct = Number((t2Prob * 100).toFixed(1));
+        const t2TicketDec = americanToDecimal(tier2Mode === "TEASER_7PT" ? -135 : -120);
+        tier2EvPct = Number((((t2Prob * t2Prob) * t2TicketDec - 1.0) * 100.0).toFixed(2));
+        const onModelSide = (line - fair) >= -0.25;
+        tier2Approved = Boolean(onModelSide && (
+            (tier2Mode === "WONG_6PT" && tier2EvPct > 0) ||
+            (km2.count >= 2 && tier2EvPct >= 8.0)
+        ));
+        const fmtT2 = `${tier2Line > 0 ? '+' : ''}${tier2Line.toFixed(1)}`;
+        tier2Label = (tier2Mode === "WONG_6PT")
+            ? `🎯 WONG TEASER (${fmtT2} via 6-pt • ${tier2ProbPct}% Win • ${tier2EvPct > 0 ? '+' : ''}${tier2EvPct}% 2L EV)`
+            : `🛡️ 1-DEV SAFER (${fmtT2} via ${tier2Mode === "TEASER_7PT" ? '7-pt' : '6-pt'} Teaser • ${tier2ProbPct}% Win • ${tier2EvPct > 0 ? '+' : ''}${tier2EvPct}% 2L EV)`;
+    }
 
     return {
         altLine: Number(altLine.toFixed(1)),
@@ -743,7 +873,14 @@ function calcKeyNumberAltSpread(baseLine, modelFairLine, baseOdds = -110) {
         isMerApproved: merRatio >= 1.15,
         altEvPct: Number(evObj.evPercentage.toFixed(2)),
         keyLabel,
-        altStr: `Alt ${fmtAlt} (${altOdds})`
+        altStr: `Alt ${fmtAlt} (${altOdds})`,
+        tier2Line,
+        tier2Mode,
+        tier2Note,
+        tier2ProbPct,
+        tier2EvPct,
+        tier2Approved,
+        tier2Label
     };
 }
 
@@ -1004,4 +1141,4 @@ function calcMasterFibonacciAggregate(moduleScores, fibLookupFn = 13, intensityS
         liveAdjustedProb: Number((pAgg * 100).toFixed(2))
     };
 }
-// === END OF ONLINEMATH_ENGINE.JS (v315) ===
+// === END OF MATH_ENGINE.JS (v316) ===
