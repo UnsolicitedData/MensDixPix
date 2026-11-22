@@ -2,7 +2,7 @@
   "slate_info": {
     "league": "NFL_NCAA",
     "week": 12,
-    "last_updated": "2026-11-22T04:49:17Z",
+    "last_updated": "2026-11-22T08:41:12Z",
     "telemetry_version": "v218_live_feeds",
     "ranked_ncaa_teams": [
       "Georgia Bulldogs",
@@ -3674,8 +3674,8 @@
         "away_team": "UTAH",
         "commence_time": "2026-11-22T02:00:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "UTAH 38 - TCU 17",
         "spread_record": {
           "pick_label": "TCU Spread (+8.5) (TCU vs UTAH)",
           "pick_team": "TCU",
@@ -3689,8 +3689,9 @@
           "balls_deep_ev_pct": 1.35,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "MISS",
+          "miss_by_pts": 12.5
         },
         "total_record": {
           "pick_label": "UTAH@TCU Total (U 46.5) (UTAH @ TCU)",
@@ -3706,8 +3707,9 @@
           "balls_deep_ev_pct": 0.98,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "MISS",
+          "miss_by_pts": 8.5
         },
         "home_full_name": "TCU Horned Frogs",
         "away_full_name": "Utah Utes"
@@ -3720,8 +3722,8 @@
         "away_team": "SDSU",
         "commence_time": "2026-11-22T02:30:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "SDSU 22 - BSU 20",
         "spread_record": {
           "pick_label": "BSU Spread (-20.5) (BSU vs SDSU)",
           "pick_team": "BSU",
@@ -3735,8 +3737,9 @@
           "balls_deep_ev_pct": 9.61,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "MISS",
+          "miss_by_pts": 22.5
         },
         "total_record": {
           "pick_label": "SDSU@BSU Total (U 61.5) (SDSU @ BSU)",
@@ -3752,8 +3755,9 @@
           "balls_deep_ev_pct": 18.35,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 0.0
         },
         "home_full_name": "Boise State Broncos",
         "away_full_name": "San Diego State Aztecs"
@@ -3766,8 +3770,8 @@
         "away_team": "OKST",
         "commence_time": "2026-11-22T03:15:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "OKST 30 - ASU 27",
         "spread_record": {
           "pick_label": "OKST Spread (-2.5) (OKST @ ASU)",
           "pick_team": "OKST",
@@ -3781,8 +3785,9 @@
           "balls_deep_ev_pct": -5.04,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "MISS",
+          "miss_by_pts": 0.0
         },
         "total_record": {
           "pick_label": "OKST@ASU Total (U 59.5) (OKST @ ASU)",
@@ -3798,8 +3803,9 @@
           "balls_deep_ev_pct": 7.07,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 0.0
         },
         "home_full_name": "Arizona State Sun Devils",
         "away_full_name": "Oklahoma State Cowboys"
@@ -3812,8 +3818,8 @@
         "away_team": "HAW",
         "commence_time": "2026-11-22T03:30:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "HAW 8 - NEV 16",
         "spread_record": {
           "pick_label": "HAW Spread (+6.5) (HAW @ NEV)",
           "pick_team": "HAW",
@@ -3827,8 +3833,9 @@
           "balls_deep_ev_pct": -15.64,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "BLUE_BALLS",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 1.5
         },
         "total_record": {
           "pick_label": "HAW@NEV Total (O 40.5) (HAW @ NEV)",
@@ -3844,8 +3851,9 @@
           "balls_deep_ev_pct": 18.93,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 16.5
         },
         "home_full_name": "Nevada Wolf Pack",
         "away_full_name": "Hawaii Rainbow Warriors"
@@ -3858,8 +3866,8 @@
         "away_team": "USU",
         "commence_time": "2026-11-22T03:30:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "USU 24 - ORST 31",
         "spread_record": {
           "pick_label": "ORST Spread (-7.5) (ORST vs USU)",
           "pick_team": "ORST",
@@ -3873,8 +3881,9 @@
           "balls_deep_ev_pct": 8.35,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "BLUE_BALLS",
+          "result_balls_deep": "BLUE_BALLS",
+          "miss_by_pts": 0.5
         },
         "total_record": {
           "pick_label": "USU@ORST Total (U 51.5) (USU @ ORST)",
@@ -3890,8 +3899,9 @@
           "balls_deep_ev_pct": -0.61,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "MISS",
+          "miss_by_pts": 3.5
         },
         "home_full_name": "Oregon State Beavers",
         "away_full_name": "Utah State Aggies"
@@ -5650,22 +5660,22 @@
     },
     "summary": {
       "overall_smash": {
-        "hits": 41,
-        "total": 73,
-        "fraction": "41 / 73",
-        "win_pct": 56.2
+        "hits": 44,
+        "total": 78,
+        "fraction": "44 / 78",
+        "win_pct": 56.4
       },
       "spread_smash": {
-        "hits": 15,
-        "total": 29,
-        "fraction": "15 / 29",
-        "win_pct": 51.7
+        "hits": 16,
+        "total": 31,
+        "fraction": "16 / 31",
+        "win_pct": 51.6
       },
       "total_smash": {
-        "hits": 26,
-        "total": 44,
-        "fraction": "26 / 44",
-        "win_pct": 59.1
+        "hits": 28,
+        "total": 47,
+        "fraction": "28 / 47",
+        "win_pct": 59.6
       },
       "flagship_5pack": {
         "hits": 3,
@@ -5681,21 +5691,21 @@
       },
       "pass_audit": {
         "hits": 22,
-        "total": 45,
-        "fraction": "22 / 45",
-        "win_pct": 48.9
+        "total": 50,
+        "fraction": "22 / 50",
+        "win_pct": 44.0
       },
       "tip_all": {
-        "hits": 63,
-        "total": 118,
-        "fraction": "63 / 118",
-        "win_pct": 53.4
+        "hits": 66,
+        "total": 128,
+        "fraction": "66 / 128",
+        "win_pct": 51.6
       },
       "balls_deep_all": {
-        "hits": 64,
-        "total": 118,
-        "fraction": "64 / 118",
-        "win_pct": 54.2
+        "hits": 68,
+        "total": 128,
+        "fraction": "68 / 128",
+        "win_pct": 53.1
       }
     }
   }
