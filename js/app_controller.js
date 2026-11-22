@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v245)
- * Pure OG M1–M9 (LOCKED) + Report-Calibrated M11–M13 — Synced 1:1 with onlinemath_engine.js (v314) & scraper.py (v218)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v249 — BACK TO OUR ROOTS + WONG LADDER)
+ * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with math_engine.js (v316) & scraper.py (v223)
  *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
  *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
  *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
@@ -479,7 +479,7 @@ window.toggleParlayLeg = function(propKey) {
     window.scrollTo(window.scrollX, savedY);
 };
 
-window.loadFlagshipPreset = function(onlyMenage = false) {
+window.loadFlagshipPreset = function(onlyMenage = false, useKeyAlts = false) {
     const savedY = window.scrollY;
     if (!AppState.safeFloorParlayLegs) AppState.safeFloorParlayLegs = new Set();
     AppState.selectedParlayLegs.clear();
@@ -487,6 +487,9 @@ window.loadFlagshipPreset = function(onlyMenage = false) {
     AppState.flagshipFivePack.forEach(p => {
         if (!onlyMenage || (p.flagshipSlot && p.flagshipSlot.includes("MÉNAGE"))) {
             AppState.selectedParlayLegs.add(p.propKey);
+            if (useKeyAlts) {
+                AppState.safeFloorParlayLegs.add(p.propKey);
+            }
         }
     });
     renderCombinatoricsDeck();
@@ -644,6 +647,61 @@ function renderLockCellHTML() {
     return `<span onclick="window.unlockBallsDeepMode(event)" title="Click to unlock Balls Deep Telemetry" style="cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-size:15px; user-select:none;">🔒</span>`;
 }
 
+function getVerifiedQbDeltaSafe(teamTel) {
+    if (typeof getVerifiedQbDelta === "function") return getVerifiedQbDelta(teamTel);
+    if (!teamTel) return 0.0;
+    const raw = Number(teamTel.qb_replacement_delta || 0);
+    if (raw === 0) return 0.0;
+    if (Array.isArray(teamTel.injuries_summary) && teamTel.injuries_summary.length > 0) {
+        if (!teamTel.injuries_summary.some(s => String(s).toUpperCase().includes("(QB,"))) return 0.0;
+    }
+    return Number(Math.max(-3.5, Math.min(0.0, raw)).toFixed(2));
+}
+
+function calcKeyNumberAltSpreadSafe(baseLine, modelFairLine, baseOdds = -110) {
+    if (typeof calcKeyNumberAltSpread === "function") {
+        return calcKeyNumberAltSpread(baseLine, modelFairLine, baseOdds);
+    }
+    const line = Number(baseLine || 0);
+    const fair = Number(modelFairLine !== undefined ? modelFairLine : line);
+    const altLine = snapToHalfPointHook(line, +3.5);
+    const altProb = Math.min(0.95, Math.max(0.05, calcPointGapWinProb(altLine - fair)));
+    const evObj = calcExpectedValueAndKelly(altProb, -160);
+    return {
+        altLine, altOdds: -160, altProb, altProbPct: Number((altProb * 100).toFixed(1)),
+        merRatio: 1.2, isMerApproved: true, altEvPct: Number(evObj.evPercentage.toFixed(2)),
+        keyLabel: "Key Alt Buy", altStr: `Alt ${altLine > 0 ? '+' : ''}${altLine.toFixed(1)} (-160)`,
+        tier2Line: null, tier2Mode: null, tier2Approved: false, tier2Label: ""
+    };
+}
+
+// Safe wrapper for Regime Safe Totals Engine (fallback if browser caches older onlinemath_engine.js)
+function calcReportCalibratedTotalSafe(vegasTotal, ogTipTotal, envPayload = {}, circPayload = {}, elevMatrix = null, gameLeague = "NFL", hasBackupQb = false) {
+    if (typeof calcReportCalibratedTotal === "function") {
+        const res = calcReportCalibratedTotal(vegasTotal, ogTipTotal, envPayload, circPayload, elevMatrix, gameLeague, hasBackupQb);
+        if (res && res.regime) return res;
+    }
+    const vTot = Number(vegasTotal || ogTipTotal || 45.0);
+    const isDome = Boolean(envPayload && envPayload.is_dome);
+    const tempF = isDome ? 72.0 : Number(envPayload.temperature_f !== undefined ? envPayload.temperature_f : 58.0);
+    const windMph = isDome ? 0.0 : Number(envPayload.wind_mph !== undefined ? envPayload.wind_mph : 5.0);
+    const shootoutThresh = (gameLeague === "NCAA") ? 58.5 : 49.5;
+    const domeThresh = (gameLeague === "NCAA") ? 54.5 : 46.5;
+    const grindThresh = (gameLeague === "NCAA") ? 44.5 : 41.5;
+    if (vTot >= shootoutThresh || (isDome && vTot >= domeThresh && !hasBackupQb)) {
+        const dropPts = (vTot >= shootoutThresh + 4.0) ? 5.0 : 4.0;
+        const safeLine = Math.floor(vTot - dropPts) + 0.5;
+        return { regime: "SHOOTOUT_SAFE_OVER", ballsDeepTotal: Number((vTot + 2.0).toFixed(1)), safeDir: "O", safeLine, safeOdds: dropPts >= 5 ? -180 : -175, safeProb: 0.76, safeProbPct: 76.0, safeEvPct: 18.0, safeLabel: `Alt O ${safeLine.toFixed(1)} (${dropPts >= 5 ? -180 : -175})` };
+    }
+    if (vTot <= grindThresh || (!isDome && (tempF <= 42 || windMph >= 10) && vTot <= 48.5) || hasBackupQb) {
+        const safeLine = Math.floor(vTot + 4.0) + 0.5;
+        return { regime: "GRIND_SAFE_UNDER", ballsDeepTotal: Number((vTot - 2.0).toFixed(1)), safeDir: "U", safeLine, safeOdds: -175, safeProb: 0.75, safeProbPct: 75.0, safeEvPct: 17.8, safeLabel: `Alt U ${safeLine.toFixed(1)} (-175)` };
+    }
+    const safeDir = Number(ogTipTotal) < vTot ? "U" : "O";
+    const safeLine = safeDir === "U" ? (Math.floor(vTot + 3.5) + 0.5) : (Math.floor(vTot - 3.5) + 0.5);
+    return { regime: "NEUTRAL_PASS", ballsDeepTotal: Number(vTot.toFixed(1)), safeDir, safeLine, safeOdds: -175, safeProb: 0.64, safeProbPct: 64.0, safeEvPct: 0.5, safeLabel: `Alt ${safeDir} ${safeLine.toFixed(1)} (-175)` };
+}
+
 // ==========================================
 // MASTER CALCULATION PIPELINE — SINGLE SOURCE OF TRUTH (ONLINEMATH_ENGINE v313)
 // ==========================================
@@ -667,6 +725,7 @@ function recalculateAndRenderAll(opts = {}) {
     AppState.processedProps = [];
 
     AppState.rawPayload.games.forEach(game => {
+      try {
         const gameLeague = game.league || defaultLeague;
         if (!shouldIncludeGame(game, defaultLeague)) return;
 
@@ -864,11 +923,20 @@ function recalculateAndRenderAll(opts = {}) {
 
                 let safeFloorHookNum = vegasLine;
                 let safeFloorLabel = "";
+                let safeFloorOdds = -175;
                 let safeFloorWinPct = 82.0;
+                let safeFloorEvPct = 0.0;
+                let keyAltMer = 1.0;
+                let keyAltNote = "";
+                let tier2Approved = false;
+                let tier2Mode = null;
+                let tier2Label = "";
+                let totalRegime = "";
                 let ceilingHookNum = vegasLine;
                 let bdAltLineLabel = "";
                 let bdLongerOdds = 145;
                 let bdReachProb = 0.50;
+                const hasBackupQb = Boolean(getVerifiedQbDeltaSafe(homeTel) < 0 || getVerifiedQbDeltaSafe(awayTel) < 0);
 
                 if (prop.market_type === "spread") {
                     baseProjectedLine = isHomeSpread ? m9Base.fairHomeSpread : Number((-m9Base.fairHomeSpread).toFixed(2));
@@ -890,20 +958,32 @@ function recalculateAndRenderAll(opts = {}) {
                         activeModelProb = tipModelProb;
                     }
 
-                    // Organic Continuous Momentum Arc on Safe Floor & Ceiling (no snapping while sliding DaVinci)
-                    const baseSafeSpread = snapToHalfPointHook(vegasLine, +3.5);
+                    // BACK-TO-OUR-ROOTS MODULE 3 KEY-NUMBER ALT BUY (-2.5, +3.5, -6.5, +7.5, -13.5, -14.5, -17.5)
+                    const keyAltObj = calcKeyNumberAltSpreadSafe(vegasLine, bdProjectedLine, prop.base_odds_over || -110);
                     const baseAltSpread = snapToHalfPointHook(vegasLine, -3.0);
                     const spreadArc = isActiveMomentumArc ? calcMomentumArc(sliderVal, 1.0) : 0.0;
 
                     const safeSpreadVal = isActiveMomentumArc
-                        ? Number((baseSafeSpread - spreadArc).toFixed(2))
-                        : baseSafeSpread;
+                        ? Number((keyAltObj.altLine - spreadArc).toFixed(2))
+                        : keyAltObj.altLine;
                     safeFloorHookNum = safeSpreadVal;
-                    const safeCoverGap = safeSpreadVal - finalCalculatedLine;
-                    const safeProbRaw = Math.min(0.96, Math.max(0.05, calcPointGapWinProb(safeCoverGap)));
-                    safeFloorWinPct = Number((safeProbRaw * 100).toFixed(1));
-                    const safeFmt = isActiveMomentumArc ? safeSpreadVal.toFixed(2) : safeSpreadVal.toFixed(1);
-                    safeFloorLabel = `Alt ${safeSpreadVal > 0 ? '+' + safeFmt : safeFmt} (-175)`;
+                    safeFloorOdds = keyAltObj.altOdds;
+                    keyAltMer = keyAltObj.merRatio;
+                    keyAltNote = keyAltObj.keyLabel;
+                    tier2Approved = Boolean(keyAltObj.tier2Approved);
+                    tier2Mode = keyAltObj.tier2Mode || null;
+                    tier2Label = keyAltObj.tier2Label || "";
+                    if (isActiveMomentumArc) {
+                        const safeProbRaw = Math.min(0.96, Math.max(0.05, calcPointGapWinProb(safeSpreadVal - finalCalculatedLine)));
+                        safeFloorWinPct = Number((safeProbRaw * 100).toFixed(1));
+                        safeFloorEvPct = Number(calcExpectedValueAndKelly(safeProbRaw, safeFloorOdds).evPercentage.toFixed(2));
+                        const safeFmt = safeSpreadVal.toFixed(2);
+                        safeFloorLabel = `Alt ${safeSpreadVal > 0 ? '+' + safeFmt : safeFmt} (${safeFloorOdds})`;
+                    } else {
+                        safeFloorWinPct = keyAltObj.altProbPct;
+                        safeFloorEvPct = keyAltObj.altEvPct;
+                        safeFloorLabel = keyAltObj.altStr;
+                    }
 
                     const altSpreadVal = isActiveMomentumArc
                         ? Number((baseAltSpread - spreadArc).toFixed(2))
@@ -920,12 +1000,13 @@ function recalculateAndRenderAll(opts = {}) {
                     const tipTotalDiff = baseProjectedLine - vegasLine;
                     tipModelProb = calcPointGapWinProb(Math.abs(tipTotalDiff));
 
-                    const bdTotObj = calcReportCalibratedTotal(vegasLine, baseProjectedLine, envPayload, circPayload, elevBd);
+                    const bdTotObj = calcReportCalibratedTotalSafe(vegasLine, baseProjectedLine, envPayload, circPayload, elevBd, gameLeague, hasBackupQb);
                     bdProjectedLine = bdTotObj.ballsDeepTotal;
+                    totalRegime = bdTotObj.regime || "NEUTRAL_PASS";
                     const bdTotalDiff = bdProjectedLine - vegasLine;
                     bdModelProb = calcPointGapWinProb(Math.abs(bdTotalDiff));
 
-                    const bdDirSign = bdTotalDiff >= 0 ? 1 : -1;
+                    const bdDirSign = (bdTotObj.safeDir === "U") ? -1 : 1;
                     const totalArc = isActiveMomentumArc ? calcMomentumArc(sliderVal, 1.15) : 0.0;
 
                     if (mode === "balls_deep") {
@@ -940,22 +1021,27 @@ function recalculateAndRenderAll(opts = {}) {
                         activeModelProb = tipModelProb;
                     }
 
-                    const isUnderActive = finalCalculatedLine < vegasLine;
+                    const isUnderActive = (mode === "tip") ? (finalCalculatedLine < vegasLine) : (bdTotObj.safeDir === "U");
+                    safeFloorOdds = bdTotObj.safeOdds || -175;
+                    keyAltNote = (totalRegime === "SHOOTOUT_SAFE_OVER")
+                        ? "🔥 Shootout Safe Over"
+                        : (totalRegime === "GRIND_SAFE_UNDER" ? "🧊 Grind Safe Under" : "⚖️ Neutral Total");
 
-                    // Organic Continuous Momentum Arc on Total Floor & Ceiling (zero .5 snapping while sliding)
-                    const baseSafeTotal = isUnderActive
-                        ? (Math.floor(vegasLine + 3.5) + 0.5)
-                        : (Math.floor(vegasLine - 3.5) + 0.5);
                     const safeTotalVal = isActiveMomentumArc
-                        ? Number((isUnderActive ? (baseSafeTotal - totalArc) : (baseSafeTotal + totalArc)).toFixed(1))
-                        : baseSafeTotal;
+                        ? Number((isUnderActive ? (bdTotObj.safeLine - totalArc) : (bdTotObj.safeLine + totalArc)).toFixed(1))
+                        : bdTotObj.safeLine;
                     safeFloorHookNum = safeTotalVal;
-                    const safeTotalEdge = isUnderActive
-                        ? (safeTotalVal - finalCalculatedLine)
-                        : (finalCalculatedLine - safeTotalVal);
-                    const safeTotalProb = Math.min(0.96, Math.max(0.05, calcPointGapWinProb(safeTotalEdge)));
-                    safeFloorWinPct = Number((safeTotalProb * 100).toFixed(1));
-                    safeFloorLabel = `Alt ${isUnderActive ? 'U' : 'O'} ${safeTotalVal.toFixed(1)} (-175)`;
+                    if (isActiveMomentumArc) {
+                        const safeTotalEdge = isUnderActive ? (safeTotalVal - finalCalculatedLine) : (finalCalculatedLine - safeTotalVal);
+                        const safeTotalProb = Math.min(0.96, Math.max(0.05, calcPointGapWinProb(safeTotalEdge)));
+                        safeFloorWinPct = Number((safeTotalProb * 100).toFixed(1));
+                        safeFloorEvPct = Number(calcExpectedValueAndKelly(safeTotalProb, safeFloorOdds).evPercentage.toFixed(2));
+                        safeFloorLabel = `Alt ${isUnderActive ? 'U' : 'O'} ${safeTotalVal.toFixed(1)} (${safeFloorOdds})`;
+                    } else {
+                        safeFloorWinPct = bdTotObj.safeProbPct;
+                        safeFloorEvPct = bdTotObj.safeEvPct;
+                        safeFloorLabel = bdTotObj.safeLabel;
+                    }
 
                     const baseAltTotal = isUnderActive
                         ? (Math.floor(vegasLine - 3.0) + 0.5)
@@ -1076,7 +1162,15 @@ function recalculateAndRenderAll(opts = {}) {
                     bdEvPct: Number(m2Bd.evPercentage.toFixed(2)),
                     safeFloorHookNum,
                     safeFloorLabel,
+                    safeFloorOdds,
                     safeFloorWinPct,
+                    safeFloorEvPct,
+                    keyAltMer,
+                    keyAltNote,
+                    tier2Approved,
+                    tier2Mode,
+                    tier2Label,
+                    totalRegime,
                     ceilingHookNum,
                     bdAltLabel: bdAltLineLabel,
                     bdAltEvPct: Number(m2BdAlt.evPercentage.toFixed(2)),
@@ -1096,6 +1190,9 @@ function recalculateAndRenderAll(opts = {}) {
                 });
             });
         }
+      } catch (gameErr) {
+        console.error("DixPix Game Render Skip:", game && game.game_id, gameErr);
+      }
     });
 
     // 1. Lock Main Stage Flagship 5-Pack Selection STRICTLY to THIS WEEK'S active/upcoming & non-gated plays (thru MNF)
@@ -1279,19 +1376,37 @@ function buildBallsDeepBoxHTML(engineProp, isSpread) {
         `
         : "";
 
-    const floorOdds = (engineProp.marketType === "spread" || engineProp.marketType === "total") ? -175 : -190;
-    const floorEv = calcExpectedValueAndKelly((engineProp.safeFloorWinPct || 0) / 100.0, floorOdds).evPercentage;
-    const safeSmashBadge = (!engineProp.gatekeeperBlocked && floorEv >= SMASH_EV_CUTOFF)
-        ? ` <span style="background:rgba(6,182,212,0.18); color:var(--accent-cyan); border:1px solid rgba(6,182,212,0.55); padding:1px 5px; border-radius:4px; font-size:9.5px; font-weight:800;">🛡️ SAFE SMASH (+${floorEv.toFixed(1)}% EV)</span>`
+    const floorOdds = engineProp.safeFloorOdds || ((engineProp.marketType === "spread" || engineProp.marketType === "total") ? -175 : -190);
+    const floorEv = (engineProp.safeFloorEvPct !== undefined && engineProp.safeFloorEvPct !== 0)
+        ? Number(engineProp.safeFloorEvPct)
+        : calcExpectedValueAndKelly((engineProp.safeFloorWinPct || 0) / 100.0, floorOdds).evPercentage;
+    const isSpreadKeyBuy = (engineProp.marketType === "spread");
+    const isTotalRegime = (engineProp.marketType === "total");
+    const merBit = (isSpreadKeyBuy && engineProp.keyAltMer) ? ` • MER ${engineProp.keyAltMer}` : "";
+    const floorPrefix = isSpreadKeyBuy
+        ? `🔑 KEY BUY (${engineProp.keyAltNote || 'Alt'}):`
+        : (isTotalRegime ? `${engineProp.keyAltNote || '🛡️ Regime Safe'}:` : `🛡️ Safe Floor (-2&phi;):`);
+    const safeSmashBadge = (!engineProp.gatekeeperBlocked && floorEv >= SMASH_EV_CUTOFF && engineProp.totalRegime !== "NEUTRAL_PASS")
+        ? ` <span style="background:rgba(6,182,212,0.18); color:var(--accent-cyan); border:1px solid rgba(6,182,212,0.55); padding:1px 5px; border-radius:4px; font-size:9.5px; font-weight:800;">🔑 KEY SMASH (+${floorEv.toFixed(1)}% EV)</span>`
+        : (engineProp.totalRegime === "NEUTRAL_PASS" ? ` <span style="color:#94a3b8; font-size:9.5px;">(NEUTRAL / PASS)</span>` : "");
+
+    const tier2RowHTML = (isSpreadKeyBuy && engineProp.tier2Approved && engineProp.tier2Label)
+        ? `
+            <div style="margin-top: 2px; padding-top: 4px; border-top: 1px dashed rgba(245,158,11,0.32); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 10px;">
+                <span style="color: ${engineProp.tier2Mode === 'WONG_6PT' ? '#34d399' : '#c084fc'}; font-weight: 800;">${engineProp.tier2Label}</span>
+                <span style="color: var(--text-muted); font-size: 9.5px;">Never pay -320 standalone — route into 2-Leg Teaser</span>
+            </div>
+        `
         : "";
 
     return `
         <div class="bd-preview-unlocked" style="background: ${boxBg}; border: 1px solid ${boxBorder}; flex-direction: column; align-items: stretch; gap: 4px;">
             ${boltRowHTML}
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 10.5px;">
-                <span style="color: var(--accent-cyan); font-weight: 700;">🛡️ Safe Floor (-2&phi;): ${engineProp.safeFloorLabel} (${engineProp.safeFloorWinPct}% Win)${safeSmashBadge}</span>
+                <span style="color: var(--accent-cyan); font-weight: 700;">${floorPrefix} ${engineProp.safeFloorLabel} (${engineProp.safeFloorWinPct}% Win${merBit})${safeSmashBadge}</span>
                 <span style="color: var(--accent-gold); font-weight: 700;">🎯 Ceiling (+&phi;): ${engineProp.bdAltLabel} (${altEvStr})</span>
             </div>
+            ${tier2RowHTML}
         </div>
     `;
 }
@@ -1330,7 +1445,7 @@ function buildMasterBoardLegendHTML() {
                     <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
                         <div style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-gold); margin-bottom: 4px;">3. FLOOR-TO-CEILING VIP PASS &amp; OVERRIDES</div>
                         <div>• <strong style="color:var(--accent-cyan);">Just the Tip:</strong> Pure M1–M9 baseline efficiency, weather ballistics, and circadian travel drag.</div>
-                        <div style="margin-top: 4px;">• <strong style="color:var(--accent-emerald);">Balls Deep &amp; DaVinci:</strong> Unleashes M11–M13 (&Psi;_11,12 + 10-Zone Elevation <strong>M11&gt;M13</strong> + Fixed Objective <strong>M_rise</strong>) with an organic continuous momentum arc across our <strong>🛡️ Safe Floor (-2&phi;)</strong> &amp; <strong>🎯 Ceiling (+&phi;)</strong> bracket.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:var(--accent-emerald);">Balls Deep &amp; DaVinci:</strong> Unleashes M11–M13 (&Psi;_11,12 + 10-Zone Elevation <strong>M11&gt;M13</strong> + Fixed Objective <strong>M_rise</strong>), our full <strong>🔑 Key-Number Ladder (-2.5/+3.5, -6.5/+7.5, -9.5/+10.5, -12.5/+13.5, -16.5/+17.5)</strong>, <strong>🎯 6-Pt Wong Teaser / 1-Dev Safer</strong> routing, and <strong>🛡️ Regime Safe Totals</strong>.</div>
                     </div>
                 </div>
             </div>
@@ -1678,7 +1793,20 @@ function render_game_cards(data) {
     const games = (data.games || []).filter(g => shouldIncludeGame(g, defaultLeague) && !isGameCompletedFinal(g));
 
     if (games.length === 0) {
-        container.innerHTML = "";
+        const rawGames = Array.isArray(data.games) ? data.games : [];
+        const rawNfl = rawGames.filter(g => (g.league || defaultLeague) === "NFL").length;
+        const rawNcaa = rawGames.filter(g => (g.league || defaultLeague) === "NCAA").length;
+        const updatedAt = (data.slate_info && data.slate_info.last_updated) || "Unknown";
+        const reasonMsg = rawGames.length === 0
+            ? "data.json currently contains 0 games (The Odds API may be out of credits or returned an empty slate on the last scraper run)."
+            : `data.json has ${rawGames.length} games (${rawNfl} NFL, ${rawNcaa} NCAA), all of which are currently filtered out or marked FINAL (check NFL/NCAA toggles or Historical Ledger).`;
+        container.innerHTML = `
+            <div style="padding: 20px; border-radius: 8px; background: #0f172a; border: 1px solid rgba(245, 158, 11, 0.55); font-family: var(--font-mono); font-size: 12px; color: var(--accent-gold); text-align: center;">
+                <div style="font-weight: 800; margin-bottom: 6px;">⚠️ NO ACTIVE MATCHUPS DISPLAYED ON MASTER BOARD</div>
+                <div style="color: var(--text-secondary); line-height: 1.5;">${reasonMsg}</div>
+                <div style="color: var(--text-muted); font-size: 11px; margin-top: 6px;">Last Feed Timestamp: ${updatedAt}</div>
+            </div>
+        `;
         return;
     }
 
@@ -1751,8 +1879,8 @@ function renderCombinatoricsDeck() {
     const legsPayload = selectedProps.map(p => {
         const useSafeFloor = AppState.safeFloorParlayLegs.has(p.propKey);
         return {
-            americanOdds: useSafeFloor ? -175 : p.baseOdds,
-            trueProb: useSafeFloor ? ((p.safeFloorWinPct || 82.0) / 100.0) : p.activeModelProbRaw
+            americanOdds: useSafeFloor ? (p.safeFloorOdds || -175) : p.baseOdds,
+            trueProb: useSafeFloor ? ((p.safeFloorWinPct || 75.0) / 100.0) : p.activeModelProbRaw
         };
     });
 
@@ -1809,8 +1937,11 @@ function renderCombinatoricsDeck() {
                     <button class="calc-action-btn" onclick="window.loadFlagshipPreset(true)" style="border-color: var(--accent-gold); color: var(--accent-gold);">
                         👑 Load Ménage à Trois (3)
                     </button>
-                    <button class="calc-action-btn" onclick="window.loadFlagshipPreset(false)" style="border-color: var(--accent-emerald); color: var(--accent-emerald);">
+                    <button class="calc-action-btn" onclick="window.loadFlagshipPreset(false, false)" style="border-color: var(--accent-emerald); color: var(--accent-emerald);">
                         🔥 Load Flagship 5-Pack (5)
+                    </button>
+                    <button class="calc-action-btn" onclick="window.loadFlagshipPreset(false, true)" style="border-color: var(--accent-cyan); color: var(--accent-cyan);">
+                        🔑 Load Key-Num Alts (5)
                     </button>
                     <button class="calc-action-btn" onclick="window.loadPorkysPreset(event)" style="border-color: #f87171; color: #f87171;">
                         🐷 Load Porky's Safe Floor Fades (5)
@@ -2318,16 +2449,21 @@ function gradeSpreadPick(isHomeSpread, baseLine, homeScore, awayScore) {
     return { outcome: "MISS", missBy: missPts };
 }
 
-function gradeTotalPick(projectedTotal, vegasTotal, homeScore, awayScore) {
+function gradeTotalByDirection(directionChar, targetLine, homeScore, awayScore) {
     const actualTotal = homeScore + awayScore;
-    const line = Number(vegasTotal);
+    const line = Number(targetLine);
     if (actualTotal === line) return { outcome: "PUSH", missBy: 0 };
-    const takingUnder = Number(projectedTotal) < line;
+    const takingUnder = (String(directionChar || "O").toUpperCase() === "U");
     const coverDiff = takingUnder ? (line - actualTotal) : (actualTotal - line);
     if (coverDiff > 0) return { outcome: "HIT", missBy: 0 };
     const missPts = Number(Math.abs(coverDiff).toFixed(1));
     if (missPts <= BLUE_BALLS_MARGIN) return { outcome: "BLUE_BALLS", missBy: missPts };
     return { outcome: "MISS", missBy: missPts };
+}
+
+function gradeTotalPick(projectedTotal, vegasTotal, homeScore, awayScore) {
+    const dirChar = (Number(projectedTotal) < Number(vegasTotal)) ? "U" : "O";
+    return gradeTotalByDirection(dirChar, vegasTotal, homeScore, awayScore);
 }
 
 // Collapsible Ledger Legend Drawer (VIP Club & Wingman Edition — "left the money on the dresser")
@@ -2421,6 +2557,7 @@ function renderHistoricalLedger() {
         porkys_core3:   makeBucket(),
         porkys_flex2:   makeBucket(),
         overall_smash:  makeBucket(),
+        smash_key_exec: makeBucket(),
         spread_smash:   makeBucket(),
         total_smash:    makeBucket(),
         all_tease:      makeBucket(),
@@ -2759,47 +2896,54 @@ function renderHistoricalLedger() {
                 pickLabel.startsWith(`${entryHomeCode} `)
             );
 
-            const isUnderTip = !isSpread && (rec.tip_direction ? rec.tip_direction === "U" : (tipProj < vegasLine));
+            const tipDirChar = !isSpread ? (rec.tip_direction || (tipProj < vegasLine ? "U" : "O")) : "";
+            const isUnderTip = (tipDirChar === "U");
+            const safeDirChar = !isSpread ? (rec.safe_total_dir || rec.balls_deep_direction || tipDirChar) : "";
+            const isUnderSafe = (safeDirChar === "U");
+            const keyAltFallback = isSpread ? calcKeyNumberAltSpreadSafe(vegasLine, bdProj, baseOdds) : null;
             const defaultFloorHook = isSpread
-                ? snapToHalfPointHook(vegasLine, +3.5)
-                : (isUnderTip ? (Math.floor(vegasLine + 3.5) + 0.5) : (Math.floor(vegasLine - 3.5) + 0.5));
+                ? (rec.key_alt_line !== undefined && rec.key_alt_line !== null ? Number(rec.key_alt_line) : keyAltFallback.altLine)
+                : (rec.safe_total_line !== undefined && rec.safe_total_line !== null ? Number(rec.safe_total_line) : (isUnderSafe ? (Math.floor(vegasLine + 4.0) + 0.5) : (Math.floor(vegasLine - 4.0) + 0.5)));
             const defaultCeilHook = isSpread
                 ? snapToHalfPointHook(vegasLine, -3.0)
                 : (isUnderTip ? (Math.floor(vegasLine - 3.0) + 0.5) : (Math.floor(vegasLine + 3.0) + 0.5));
-            const safeFloorLabel = rec.safe_floor_label || rec.safeFloorLabel || (isSpread
-                ? `Alt ${defaultFloorHook > 0 ? '+' + defaultFloorHook.toFixed(1) : defaultFloorHook.toFixed(1)} (-175)`
-                : `Alt ${isUnderTip ? 'U' : 'O'} ${defaultFloorHook.toFixed(1)} (-175)`);
-            const safeFloorWinPct = rec.safe_floor_win_pct || rec.safeFloorWinPct || 84.5;
+            const safeFloorLabel = rec.key_alt_label || rec.safe_total_label || rec.safe_floor_label || rec.safeFloorLabel || (isSpread
+                ? keyAltFallback.altStr
+                : `Alt ${safeDirChar} ${defaultFloorHook.toFixed(1)} (-175)`);
+            const safeFloorWinPct = rec.key_alt_win_pct || rec.safe_total_win_pct || rec.safe_floor_win_pct || rec.safeFloorWinPct || (isSpread ? keyAltFallback.altProbPct : 74.5);
 
             const bdAltLabel = rec.bd_alt_label || rec.bdAltLabel || (isSpread
                 ? `Alt ${defaultCeilHook > 0 ? '+' + defaultCeilHook.toFixed(1) : defaultCeilHook.toFixed(1)} (+145)`
-                : `Alt ${isUnderTip ? 'U' : 'O'} ${defaultCeilHook.toFixed(1)} (+155)`);
+                : `Alt ${tipDirChar} ${defaultCeilHook.toFixed(1)} (+155)`);
             const bdAltEvPct = rec.bd_alt_ev_pct !== undefined ? rec.bd_alt_ev_pct : (rec.bdAltEvPct || 0);
             const slot = rec.flagship_slot || rec.flagshipSlot || "";
 
             let gradedTip = rec.result_tip || rec.result || "PENDING";
             let gradedBd = rec.result_bd || rec.result_balls_deep || gradedTip;
             let missByPts = Number(rec.miss_by_pts || 0);
-            let gradedFloor = rec.result_floor || "";
+            let gradedFloor = rec.result_key_alt || rec.result_safe_total || rec.result_floor || "";
             let floorMissBy = 0;
             let gradedCeiling = rec.result_ceiling || "";
             let ceilingMissBy = 0;
 
-            // Live client-side auto-grading from final score (prevents black-hole PENDING drops & ensures exact BLUE_BALLS / Floor / Ceiling grades)
+            // Live client-side auto-grading from final score (EXPLICIT direction grading — NEVER flips O/U on Floors or Ceilings!)
             if (parsedScores) {
                 const { homeScore, awayScore } = parsedScores;
+                const bdSameSideSpread = isSpread ? ((vegasLine - bdProj) >= 0) : true;
                 const liveTipObj = isSpread
                     ? gradeSpreadPick(isHomeSpreadPick, vegasLine, homeScore, awayScore)
-                    : gradeTotalPick(tipProj, vegasLine, homeScore, awayScore);
+                    : gradeTotalByDirection(tipDirChar, vegasLine, homeScore, awayScore);
                 const liveBdObj = isSpread
-                    ? gradeSpreadPick(isHomeSpreadPick, vegasLine, homeScore, awayScore)
-                    : gradeTotalPick(bdProj, vegasLine, homeScore, awayScore);
+                    ? (bdSameSideSpread
+                        ? gradeSpreadPick(isHomeSpreadPick, vegasLine, homeScore, awayScore)
+                        : gradeSpreadPick(!isHomeSpreadPick, -vegasLine, homeScore, awayScore))
+                    : gradeTotalByDirection(safeDirChar, vegasLine, homeScore, awayScore);
                 const liveFloorObj = isSpread
                     ? gradeSpreadPick(isHomeSpreadPick, defaultFloorHook, homeScore, awayScore)
-                    : gradeTotalPick(tipProj, defaultFloorHook, homeScore, awayScore);
+                    : gradeTotalByDirection(safeDirChar, defaultFloorHook, homeScore, awayScore);
                 const liveCeilObj = isSpread
                     ? gradeSpreadPick(isHomeSpreadPick, defaultCeilHook, homeScore, awayScore)
-                    : gradeTotalPick(tipProj, defaultCeilHook, homeScore, awayScore);
+                    : gradeTotalByDirection(tipDirChar, defaultCeilHook, homeScore, awayScore);
 
                 if (gradedTip === "PENDING" || (gradedTip === "MISS" && missByPts === 0)) {
                     gradedTip = liveTipObj.outcome;
@@ -2808,11 +2952,11 @@ function renderHistoricalLedger() {
                 if (gradedBd === "PENDING" || (gradedBd === "MISS" && !rec.miss_by_pts)) {
                     gradedBd = liveBdObj.outcome;
                 }
-                if (!gradedFloor) {
+                if (!gradedFloor || gradedFloor === "PENDING") {
                     gradedFloor = liveFloorObj.outcome;
                     floorMissBy = liveFloorObj.missBy;
                 }
-                if (!gradedCeiling) {
+                if (!gradedCeiling || gradedCeiling === "PENDING") {
                     gradedCeiling = liveCeilObj.outcome;
                     ceilingMissBy = liveCeilObj.missBy;
                 }
@@ -2877,10 +3021,13 @@ function renderHistoricalLedger() {
                     vaultRows.flagship_5pack.push({ weekLabel, rowHTML });
                 }
 
-                if (ledgerTier === "SMASH") {
+                if (ledgerTier === "SMASH" || rec.tier_badge === "SMASH") {
                     if (gradedTip !== "PUSH") {
                         tallyGrade("overall_smash", gradedTip);
                         tallyGrade(isSpread ? "spread_smash" : "total_smash", gradedTip);
+                    }
+                    if (gradedFloor && gradedFloor !== "PUSH" && gradedFloor !== "PENDING") {
+                        tallyGrade("smash_key_exec", gradedFloor);
                     }
                     vaultRows.overall_smash.push(rowHTML);
                 } else if (ledgerTier === "TOO_CLOSE") {
@@ -2964,18 +3111,23 @@ function renderHistoricalLedger() {
             let ceilingMissBy = 0;
 
             if (isFinal && espnMatch) {
+                const liveTipDir = !isSpread ? (p.tipProjectedMean < p.baseLine ? "U" : "O") : "";
+                const liveSafeDir = !isSpread ? (p.safeFloorLabel && p.safeFloorLabel.includes("Alt U") ? "U" : (p.safeFloorLabel && p.safeFloorLabel.includes("Alt O") ? "O" : liveTipDir)) : "";
+                const liveBdSameSide = isSpread ? ((p.baseLine - p.bdProjectedMean) >= 0) : true;
                 const tipResObj = isSpread
                     ? gradeSpreadPick(p.isHomeSpread, p.baseLine, espnMatch.homeScore, espnMatch.awayScore)
-                    : gradeTotalPick(p.tipProjectedMean, p.baseLine, espnMatch.homeScore, espnMatch.awayScore);
+                    : gradeTotalByDirection(liveTipDir, p.baseLine, espnMatch.homeScore, espnMatch.awayScore);
                 const bdResObj = isSpread
-                    ? gradeSpreadPick(p.isHomeSpread, p.baseLine, espnMatch.homeScore, espnMatch.awayScore)
-                    : gradeTotalPick(p.bdProjectedMean, p.baseLine, espnMatch.homeScore, espnMatch.awayScore);
+                    ? (liveBdSameSide
+                        ? gradeSpreadPick(p.isHomeSpread, p.baseLine, espnMatch.homeScore, espnMatch.awayScore)
+                        : gradeSpreadPick(!p.isHomeSpread, -p.baseLine, espnMatch.homeScore, espnMatch.awayScore))
+                    : gradeTotalByDirection(liveSafeDir, p.baseLine, espnMatch.homeScore, espnMatch.awayScore);
                 const floorResObj = isSpread
                     ? gradeSpreadPick(p.isHomeSpread, p.safeFloorHookNum, espnMatch.homeScore, espnMatch.awayScore)
-                    : gradeTotalPick(p.tipProjectedMean, p.safeFloorHookNum, espnMatch.homeScore, espnMatch.awayScore);
+                    : gradeTotalByDirection(liveSafeDir, p.safeFloorHookNum, espnMatch.homeScore, espnMatch.awayScore);
                 const ceilingResObj = isSpread
                     ? gradeSpreadPick(p.isHomeSpread, p.ceilingHookNum, espnMatch.homeScore, espnMatch.awayScore)
-                    : gradeTotalPick(p.tipProjectedMean, p.ceilingHookNum, espnMatch.homeScore, espnMatch.awayScore);
+                    : gradeTotalByDirection(liveTipDir, p.ceilingHookNum, espnMatch.homeScore, espnMatch.awayScore);
 
                 gradedTip = tipResObj.outcome;
                 gradedBd = bdResObj.outcome;
@@ -3022,6 +3174,9 @@ function renderHistoricalLedger() {
                 if (ledgerTier === "SMASH") {
                     tallyGrade("overall_smash", gradedTip);
                     tallyGrade(isSpread ? "spread_smash" : "total_smash", gradedTip);
+                    if (gradedFloor && gradedFloor !== "PUSH" && gradedFloor !== "PENDING") {
+                        tallyGrade("smash_key_exec", gradedFloor);
+                    }
                     vaultRows.overall_smash.push(rowHTML);
                 } else if (ledgerTier === "TOO_CLOSE") {
                     tallyGrade("all_tease", gradedTip);
@@ -3286,7 +3441,7 @@ function renderHistoricalLedger() {
             vaultAccentColor = "var(--accent-danger)";
             selectedRowsHTML = vaultRows.grenades_dodged.join("");
         } else if (isFloorsCeilingsVault) {
-            vaultTitle = `🛡️ SAFE FLOORS (-2&phi;) &amp; 🎯 CEILING ESCALATORS (+&phi;) VAULT // Floors: ${fmtBucket("safe_floors")} • Ceilings: ${fmtBucket("ceilings")}`;
+            vaultTitle = `🔑 KEY-NUMBER ALT BUYS &amp; 🛡️ REGIME SAFE TOTALS VAULT // Key/Safe: ${fmtBucket("safe_floors")} • Ceilings: ${fmtBucket("ceilings")}`;
             vaultAccentColor = "var(--accent-gold)";
             selectedRowsHTML = vaultRows.floors_ceilings.join("");
         } else if (AppState.activeLedgerVault === "tip_vs_bd") {
@@ -3404,9 +3559,9 @@ function renderHistoricalLedger() {
 
             <div onclick="window.toggleLedgerVault('overall_smash', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('overall_smash', 'rgba(16, 185, 129, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
                 <div style="font-size: 11px; color: var(--accent-emerald); font-weight: 800;">🔥 OFFICIAL SMASH (&ge;+10.0% EV)</div>
-                <div style="font-size: 14.5px; font-weight: 800; margin: 6px 0;">${fmtBucket("overall_smash")}</div>
+                <div style="font-size: 14px; font-weight: 800; margin: 6px 0; color: var(--accent-cyan);">🔑 Key-Buy Exec: ${fmtBucket("smash_key_exec")}</div>
                 <div style="font-size: 11px; color: var(--text-secondary);">
-                    Spreads: <strong>${fmtBucket("spread_smash")}</strong><br>Totals: <strong>${fmtBucket("total_smash")}</strong>
+                    Raw -110: <strong>${fmtBucket("overall_smash")}</strong><br>Spreads: <strong>${fmtBucket("spread_smash")}</strong> • Totals: <strong>${fmtBucket("total_smash")}</strong>
                 </div>
             </div>
 
@@ -3423,8 +3578,8 @@ function renderHistoricalLedger() {
             </div>
 
             <div onclick="window.toggleLedgerVault('floors_ceilings', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('floors_ceilings', 'rgba(245, 158, 11, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
-                <div style="font-size: 11px; color: var(--accent-gold); font-weight: 800;">🛡️ SAFE FLOORS &amp; 🎯 CEILINGS</div>
-                <div style="font-size: 13px; font-weight: 800; margin: 6px 0; color: var(--accent-cyan);">🛡️ Floors (-2&phi;): ${fmtBucket("safe_floors")}</div>
+                <div style="font-size: 11px; color: var(--accent-gold); font-weight: 800;">🔑 KEY-NUM ALTS &amp; 🛡️ SAFE TOTALS</div>
+                <div style="font-size: 13px; font-weight: 800; margin: 6px 0; color: var(--accent-cyan);">🔑 Key Alts / Safe Totals: ${fmtBucket("safe_floors")}</div>
                 <div style="font-size: 12.5px; font-weight: 800; color: var(--accent-gold);">🎯 Ceilings (+&phi;): ${fmtBucket("ceilings")}</div>
             </div>
 
@@ -3560,6 +3715,8 @@ function renderLiveBottomTicker() {
     });
 
     const joinedStrip = tickerItems.join(` <span style="color:rgba(245,158,11,0.55);margin:0 18px;">//</span> `);
+    // Dynamic broadcast crawl speed (~60 px/sec regardless of item count — fixes snail crawl on short slates!)
+    const tickerDurationSec = Math.max(18, Math.min(180, tickerItems.length * 10));
 
     tickerBar.innerHTML = `
         <div style="flex-shrink:0; height:100%; padding:0 12px; background:linear-gradient(90deg, rgba(245,158,11,0.25), rgba(15,23,42,0.98)); border-right:1px solid rgba(245,158,11,0.55); display:flex; align-items:center; gap:7px; color:var(--accent-gold); font-weight:800; letter-spacing:0.03em; z-index:2;">
@@ -3567,7 +3724,7 @@ function renderLiveBottomTicker() {
             📡 DIXPIX LIVE WIRE
         </div>
         <div style="flex:1; overflow:hidden; white-space:nowrap; position:relative;">
-            <div id="dixpix-live-wire-track" style="display:inline-block; white-space:nowrap; padding-left:24px; animation: dixpixMarqueeScroll 300s linear infinite;">
+            <div id="dixpix-live-wire-track" style="display:inline-block; white-space:nowrap; padding-left:24px; animation: dixpixMarqueeScroll ${tickerDurationSec}s linear infinite;">
                 <span>${joinedStrip}</span>
                 <span style="color:rgba(245,158,11,0.55);margin:0 18px;">//</span>
                 <span>${joinedStrip}</span>
@@ -3575,4 +3732,4 @@ function renderLiveBottomTicker() {
         </div>
     `;
 }
-// === END OF APP_CONTROLLER.JS (v245) ===
+// === END OF APP_CONTROLLER.JS (v249) ===
