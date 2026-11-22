@@ -1,5 +1,5 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v221 — BACK TO OUR ROOTS)
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v223 — BACK TO OUR ROOTS + WONG LADDER)
 Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
   1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
   2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
@@ -975,9 +975,42 @@ def fetch_espn_scores():
 
     return score_lookup
 
+def _f(val, default=0.0):
+    if val is None or val == "":
+        return float(default)
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return float(default)
+
+def _i(val, default=0):
+    if val is None or val == "":
+        return int(default)
+    try:
+        return int(round(float(val)))
+    except (ValueError, TypeError):
+        return int(default)
+
+def _parse_final_score_str(score_str):
+    """Parses 'AWAY 16 - HOME 19' into (away_pts, home_pts) so archived FINAL games always grade cleanly."""
+    if not score_str or not isinstance(score_str, str):
+        return None
+    m = re.search(r"\s(\d+)\s*-\s*[A-Za-z0-9().&]+\s+(\d+)", score_str)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    return None
+
+def _find_registry_meta_by_code(code, league="NFL"):
+    c = LEGACY_CODE_MAP.get(str(code or "").upper(), str(code or "").upper())
+    reg = NFL_TEAM_REGISTRY if league == "NFL" else NCAA_TEAM_REGISTRY
+    for name, meta in reg.items():
+        if meta.get("code") == c:
+            return meta
+    return None
+
 def calc_ten_zone_elevation(env_weather, away_elev_m):
-    h_venue_m = float(env_weather.get("elevation_m", 0))
-    h_away_m = float(away_elev_m if away_elev_m is not None else 150)
+    h_venue_m = _f(env_weather.get("elevation_m"), 0.0)
+    h_away_m = _f(away_elev_m, 150.0)
     delta_ft = (h_venue_m - h_away_m) * 3.28084
     venue_ft = h_venue_m * 3.28084
     abs_ft = abs(delta_ft)
@@ -1014,15 +1047,15 @@ def calc_ten_zone_elevation(env_weather, away_elev_m):
     }
 
 def calc_coupled_balls_deep_psi(home_meta, away_meta, env_weather):
-    h = float(env_weather.get("elevation_m", 0))
+    h = _f(env_weather.get("elevation_m"), 0.0)
     re = 6371000.0
     g_sea = 9.80665
     g_alt = g_sea * ((re / (re + h)) ** 2)
     delta_g = g_alt - g_sea
 
-    temp_f = float(env_weather.get("temperature_f", 72.0))
+    temp_f = _f(env_weather.get("temperature_f"), 72.0)
     temp_k = ((temp_f - 32.0) * 5.0 / 9.0) + 273.15
-    p_pa = float(env_weather.get("pressure_hpa", 1013.25)) * 100.0
+    p_pa = _f(env_weather.get("pressure_hpa"), 1013.25) * 100.0
     pv_pa = 1000.0
     pd_pa = max(0.0, p_pa - pv_pa)
     rho_air = 1.204 if env_weather.get("is_dome") else ((pd_pa / (287.058 * temp_k)) + (pv_pa / (461.495 * temp_k)))
@@ -1104,58 +1137,185 @@ def _implied_prob_am(odds):
     o = float(odds or -110)
     return (abs(o) / (abs(o) + 100.0)) if o < 0 else (100.0 / (o + 100.0))
 
+def _calc_key_mass_bonus(lo, hi):
+    masses = (
+        (3.0, 0.045), (-3.0, 0.045),
+        (7.0, 0.035), (-7.0, 0.035),
+        (10.0, 0.025), (-10.0, 0.025),
+        (13.0, 0.016), (-13.0, 0.016),
+        (14.0, 0.022), (-14.0, 0.022),
+        (17.0, 0.020), (-17.0, 0.020),
+        (21.0, 0.014), (-21.0, 0.014),
+    )
+    bonus = 0.0
+    cnt = 0
+    for kn, w in masses:
+        if lo < kn < hi:
+            bonus += w
+            cnt += 1
+    return bonus, cnt
+
 def calc_key_number_alt_spread(base_line, model_fair_line, base_odds=-110):
-    """MODULE 3 BACK-TO-OUR-ROOTS KEY-NUMBER ALT-BUY ENGINE (1:1 parity with onlinemath_engine.js v315)."""
-    line = float(base_line or 0.0)
-    fair = float(model_fair_line if model_fair_line is not None else line)
+    """MODULE 3 FULL-BOARD KEY-NUMBER ALT-BUY + 1-DEV SAFER WONG ENGINE (1:1 parity with math_engine.js v316)."""
+    line = _f(base_line, 0.0)
+    fair = _f(model_fair_line if model_fair_line is not None else line, line)
+    bo = _i(base_odds, -110)
+    if bo == 0:
+        bo = -110
     base_prob = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * (line - fair)))))
+
+    tier2_line = None
+    tier2_mode = None
+    tier2_note = ""
 
     if line < 0:
         if line >= -2.5:
-            alt_line, alt_odds, key_lbl = line, int(base_odds or -110), "Hold Under Key #3"
+            alt_line, alt_odds, key_lbl = line, bo, "Hold Under Key #3"
         elif line >= -4.5:
             alt_line, alt_odds, key_lbl = -2.5, (-145 if line >= -3.5 else -165), "Key #3 Buy (-2.5)"
+        elif line >= -6.0:
+            alt_line, alt_odds, key_lbl = -2.5, -175, "Key #3/#6 Buy (-2.5)"
         elif line >= -6.5:
-            alt_line, alt_odds, key_lbl = (-2.5 if line >= -5.5 else -3.5), -165, "Key #3/#6 Buy"
+            alt_line, alt_odds, key_lbl = -6.5, bo, "Hold Under Key #7"
+            tier2_line, tier2_mode, tier2_note = -0.5, "TEASER_6PT", "1-Dev Safer (-0.5 via 6-pt Teaser)"
         elif line >= -9.5:
-            alt_line, alt_odds, key_lbl = -6.5, (-135 if line >= -7.5 else -160), "Key #7 Buy (-6.5)"
-        elif line >= -13.0:
-            alt_line, alt_odds, key_lbl = -9.5, (-145 if line >= -11.5 else -165), "Key #10 Buy (-9.5)"
-        elif line >= -16.5:
-            alt_line, alt_odds, key_lbl = (-13.5 if line <= -14.0 else -10.5), (-150 if line <= -15.5 else -165), "Key #14 Buy (-13.5)"
+            alt_line = -6.5
+            alt_odds = -135 if line >= -7.5 else (-155 if line >= -8.5 else -170)
+            key_lbl = "Key #7 Buy (-6.5)"
+            if -8.5 <= line <= -7.5:
+                tier2_line = round(line + 6.0, 1)
+                tier2_mode = "WONG_6PT"
+                tier2_note = f"Wong 6-pt Teaser ({'+' if tier2_line > 0 else ''}{tier2_line:.1f} crosses 7 & 3)"
+            else:
+                tier2_line = round(line + 7.0, 1)
+                tier2_mode = "TEASER_7PT"
+                tier2_note = f"1-Dev Safer ({'+' if tier2_line > 0 else ''}{tier2_line:.1f} via 7-pt Teaser)"
+        elif line >= -12.5:
+            alt_line = -9.5
+            alt_odds = -140 if line >= -10.5 else (-160 if line >= -11.5 else -175)
+            key_lbl = "Key #10 Buy (-9.5)"
+            tier2_line = round(line + 6.0, 1)
+            tier2_mode = "TEASER_6PT"
+            tier2_note = f"1-Dev Safer ({'+' if tier2_line > 0 else ''}{tier2_line:.1f} via 6-pt Teaser)"
+        elif line >= -16.0:
+            alt_line = -12.5
+            alt_odds = -145 if line >= -14.0 else (-165 if line >= -15.5 else -175)
+            key_lbl = "Key #13/#14 Buy (-12.5)"
+            tier2_line = round(line + 6.0, 1)
+            tier2_mode = "TEASER_6PT"
+            tier2_note = f"1-Dev Safer ({'+' if tier2_line > 0 else ''}{tier2_line:.1f} via 6-pt Teaser)"
         elif line >= -19.5:
-            alt_line, alt_odds, key_lbl = -14.5, -160, "Key #14.5/#17 Buy (-14.5)"
+            alt_line = -16.5
+            alt_odds = bo if line == -16.5 else (-145 if line >= -17.5 else -165)
+            key_lbl = "Hold Under Key #17" if line == -16.5 else "Key #17 Buy (-16.5)"
+            tier2_line = round(line + 6.0, 1)
+            tier2_mode = "TEASER_6PT"
+            tier2_note = f"1-Dev Safer ({'+' if tier2_line > 0 else ''}{tier2_line:.1f} via 6-pt Teaser)"
+        elif line >= -24.0:
+            alt_line = -16.5 if line >= -20.5 else -20.5
+            alt_odds = -170 if line >= -20.5 else (-145 if line >= -22.0 else -165)
+            key_lbl = "Key #17 Buy (-16.5)" if alt_line == -16.5 else "Key #21 Buy (-20.5)"
+            tier2_line = round(line + 6.0, 1)
+            tier2_mode = "TEASER_6PT"
+            tier2_note = f"1-Dev Safer ({'+' if tier2_line > 0 else ''}{tier2_line:.1f} via 6-pt Teaser)"
         else:
-            alt_line = -17.5 if line >= -21.5 else (math.floor(line + 3.5) + 0.5)
-            alt_odds, key_lbl = -155, f"Key #17.5 Blowout Buy ({'+' if alt_line > 0 else ''}{alt_line:.1f})"
+            alt_line = math.floor(line + 3.5) + 0.5
+            alt_odds, key_lbl = -160, f"Blowout Fav Buy ({'+' if alt_line > 0 else ''}{alt_line:.1f})"
+            tier2_line = round(line + 6.0, 1)
+            tier2_mode = "TEASER_6PT"
+            tier2_note = f"1-Dev Safer ({'+' if tier2_line > 0 else ''}{tier2_line:.1f} via 6-pt Teaser)"
     else:
         if line <= 3.0:
-            alt_line, alt_odds, key_lbl = 3.5, (-135 if line >= 2.0 else -160), "Key #3 Dog Buy (+3.5)"
-        elif line <= 5.0:
-            alt_line, alt_odds, key_lbl = (6.5 if line <= 4.0 else 7.5), -155, "Key #7 Dog Buy"
+            alt_line = 3.5
+            alt_odds = -135 if line >= 2.0 else -160
+            key_lbl = "Key #3 Dog Buy (+3.5)"
+            if 1.5 <= line <= 2.5:
+                tier2_line = round(line + 6.0, 1)
+                tier2_mode = "WONG_6PT"
+                tier2_note = f"Wong 6-pt Teaser (+{tier2_line:.1f} crosses 3 & 7)"
+            elif 0.5 <= line < 1.5:
+                tier2_line = round(line + 7.0, 1)
+                tier2_mode = "TEASER_7PT"
+                tier2_note = f"1-Dev Safer (+{tier2_line:.1f} via 7-pt Teaser)"
+        elif line <= 3.5:
+            alt_line, alt_odds, key_lbl = 3.5, bo, "Hold Over Key #3"
+            tier2_line, tier2_mode, tier2_note = 9.5, "TEASER_6PT", "1-Dev Safer (+9.5 via 6-pt Teaser)"
         elif line <= 6.5:
-            alt_line, alt_odds, key_lbl = 7.5, -140, "Key #7 Dog Buy (+7.5)"
-        elif line <= 9.5:
-            alt_line, alt_odds, key_lbl = 10.5, (-145 if line >= 8.0 else -165), "Key #10 Dog Buy (+10.5)"
+            alt_line = 7.5
+            alt_odds = -140 if line >= 6.0 else (-155 if line >= 4.5 else -170)
+            key_lbl = "Key #7 Dog Buy (+7.5)"
+            tier2_line = round(line + 6.0, 1)
+            tier2_mode = "TEASER_6PT"
+            tier2_note = f"1-Dev Safer (+{tier2_line:.1f} via 6-pt Teaser)"
+        elif line <= 7.5:
+            alt_line, alt_odds, key_lbl = 7.5, bo, "Hold Over Key #7"
+            tier2_line, tier2_mode, tier2_note = 13.5, "TEASER_6PT", "1-Dev Safer (+13.5 via 6-pt Teaser)"
+        elif line <= 10.0:
+            alt_line = 10.5
+            alt_odds = -140 if line >= 9.0 else -160
+            key_lbl = "Key #10 Dog Buy (+10.5)"
+            tier2_line = round(line + 6.0, 1)
+            tier2_mode = "TEASER_6PT"
+            tier2_note = f"1-Dev Safer (+{tier2_line:.1f} via 6-pt Teaser)"
         elif line <= 13.0:
-            alt_line, alt_odds, key_lbl = (13.5 if line <= 11.5 else 14.5), -150, "Key #14 Dog Buy (+13.5/+14.5)"
-        elif line <= 16.5:
-            alt_line, alt_odds, key_lbl = 17.5, -155, "Key #17.5 Dog Buy (+17.5)"
+            alt_line = 13.5
+            alt_odds = -140 if line >= 12.0 else -160
+            key_lbl = "Key #13 Dog Buy (+13.5)"
+            tier2_line = round(line + 6.0, 1)
+            tier2_mode = "TEASER_6PT"
+            tier2_note = f"1-Dev Safer (+{tier2_line:.1f} via 6-pt Teaser)"
+        elif line <= 13.5:
+            alt_line, alt_odds, key_lbl = 14.5, -130, "Key #14 Dog Buy (+14.5)"
+            tier2_line, tier2_mode, tier2_note = 19.5, "TEASER_6PT", "1-Dev Safer (+19.5 via 6-pt Teaser)"
+        elif line <= 17.0:
+            alt_line = 17.5
+            alt_odds = -140 if line >= 16.0 else -160
+            key_lbl = "Key #17 Dog Buy (+17.5)"
+            tier2_line = round(line + 6.0, 1)
+            tier2_mode = "TEASER_6PT"
+            tier2_note = f"1-Dev Safer (+{tier2_line:.1f} via 6-pt Teaser)"
+        elif line <= 20.5:
+            alt_line = 21.5
+            alt_odds = -145 if line >= 19.0 else -165
+            key_lbl = "Key #21 Dog Buy (+21.5)"
+            tier2_line = round(line + 6.0, 1)
+            tier2_mode = "TEASER_6PT"
+            tier2_note = f"1-Dev Safer (+{tier2_line:.1f} via 6-pt Teaser)"
         else:
             alt_line = math.floor(line + 3.5) + 0.5
             alt_odds, key_lbl = -160, f"Blowout Dog Floor (+{alt_line:.1f})"
+            tier2_line = round(line + 6.0, 1)
+            tier2_mode = "TEASER_6PT"
+            tier2_note = f"1-Dev Safer (+{tier2_line:.1f} via 6-pt Teaser)"
 
     raw_alt_p = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * (alt_line - fair)))))
-    lo, hi = min(line, alt_line), max(line, alt_line)
-    bonus = 0.0
-    for kn, b_val in ((3.0, 0.045), (-3.0, 0.045), (7.0, 0.035), (-7.0, 0.035), (10.0, 0.025), (-10.0, 0.025), (14.0, 0.025), (-14.0, 0.025), (17.0, 0.018), (-17.0, 0.018)):
-        if lo < kn < hi:
-            bonus += b_val
-    alt_prob = min(0.95, max(0.05, raw_alt_p + bonus))
-    d_tax = max(0.01, _implied_prob_am(alt_odds) - _implied_prob_am(base_odds))
+    bonus1, _ = _calc_key_mass_bonus(min(line, alt_line), max(line, alt_line))
+    alt_prob = min(0.95, max(0.05, raw_alt_p + bonus1))
+    d_tax = max(0.01, _implied_prob_am(alt_odds) - _implied_prob_am(bo))
     mer = round((alt_prob - base_prob) / d_tax, 2) if alt_line != line else 1.0
     alt_ev = calc_ev_pct(alt_prob, alt_odds)
     fmt_alt = f"{'+' if alt_line > 0 else ''}{alt_line:.1f}"
+
+    tier2_prob_pct = None
+    tier2_ev_pct = None
+    tier2_approved = False
+    tier2_label = ""
+    if tier2_line is not None:
+        raw_t2 = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * (tier2_line - fair)))))
+        bonus2, cnt2 = _calc_key_mass_bonus(min(line, tier2_line), max(line, tier2_line))
+        t2_prob = min(0.96, max(0.05, raw_t2 + bonus2))
+        tier2_prob_pct = round(t2_prob * 100.0, 1)
+        t2_dec = (100.0 / 135.0) + 1.0 if tier2_mode == "TEASER_7PT" else (100.0 / 120.0) + 1.0
+        tier2_ev_pct = round(((t2_prob * t2_prob) * t2_dec - 1.0) * 100.0, 2)
+        on_model_side = (line - fair) >= -0.25
+        tier2_approved = bool(on_model_side and ((tier2_mode == "WONG_6PT" and tier2_ev_pct > 0) or (cnt2 >= 2 and tier2_ev_pct >= 8.0)))
+        fmt_t2 = f"{'+' if tier2_line > 0 else ''}{tier2_line:.1f}"
+        if tier2_mode == "WONG_6PT":
+            tier2_label = f"🎯 WONG TEASER ({fmt_t2} via 6-pt • {tier2_prob_pct}% Win • {'+' if tier2_ev_pct > 0 else ''}{tier2_ev_pct}% 2L EV)"
+        else:
+            t_pts = "7-pt" if tier2_mode == "TEASER_7PT" else "6-pt"
+            tier2_label = f"🛡️ 1-DEV SAFER ({fmt_t2} via {t_pts} Teaser • {tier2_prob_pct}% Win • {'+' if tier2_ev_pct > 0 else ''}{tier2_ev_pct}% 2L EV)"
+
     return {
         "alt_line": round(alt_line, 1),
         "alt_odds": int(alt_odds),
@@ -1164,21 +1324,28 @@ def calc_key_number_alt_spread(base_line, model_fair_line, base_odds=-110):
         "mer": mer,
         "alt_ev_pct": alt_ev,
         "key_label": key_lbl,
-        "alt_str": f"Alt {fmt_alt} ({alt_odds})"
+        "alt_str": f"Alt {fmt_alt} ({alt_odds})",
+        "tier2_line": tier2_line,
+        "tier2_mode": tier2_mode,
+        "tier2_note": tier2_note,
+        "tier2_prob_pct": tier2_prob_pct,
+        "tier2_ev_pct": tier2_ev_pct,
+        "tier2_approved": tier2_approved,
+        "tier2_label": tier2_label
     }
 
 def calc_regime_safe_total_obj(vegas_total, og_tip_total, env_weather, tz_shift, elev_info, game_league="NFL", has_backup_qb=False):
     """BACK-TO-OUR-ROOTS REGIME SAFE TOTALS ENGINE (1:1 parity with onlinemath_engine.js v315)."""
-    v_tot = float(vegas_total or og_tip_total or 45.0)
+    v_tot = _f(vegas_total if vegas_total is not None else og_tip_total, 45.0)
     is_dome = bool(env_weather.get("is_dome", False))
-    temp_f = 72.0 if is_dome else float(env_weather.get("temperature_f", 58.0))
-    wind_mph = 0.0 if is_dome else float(env_weather.get("wind_mph", 5.0))
-    abs_tz = abs(int(tz_shift or 0))
-    elev_zone = int(elev_info.get("zone", 1) or 1)
-    elev_tot_drag = float(elev_info.get("elev_tot_drag", 0.0) or 0.0)
+    temp_f = 72.0 if is_dome else _f(env_weather.get("temperature_f"), 58.0)
+    wind_mph = 0.0 if is_dome else _f(env_weather.get("wind_mph"), 5.0)
+    abs_tz = abs(_i(tz_shift, 0))
+    elev_zone = _i(elev_info.get("zone"), 1)
+    elev_tot_drag = _f(elev_info.get("elev_tot_drag"), 0.0)
 
     temp_k = ((temp_f - 32.0) * 5.0 / 9.0) + 273.15
-    p_pa = float(env_weather.get("pressure_hpa", 1013.25)) * 100.0
+    p_pa = _f(env_weather.get("pressure_hpa"), 1013.25) * 100.0
     rho = 1.204 if is_dome else ((max(0.0, p_pa - 1000.0) / (287.058 * temp_k)) + (1000.0 / (461.495 * temp_k)))
 
     cold_drag = 0.0 if is_dome else -max(0.0, (44.0 - temp_f) * 0.14)
@@ -1697,7 +1864,7 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                 "result_balls_deep": "PENDING",
                 "result_key_alt": "PENDING"
             }
-            existing["engine_version"] = "v221_roots"
+            existing["engine_version"] = "v223_roots"
             if best_total:
                 existing["total_record"] = {
                     "pick_label": best_total["player"],
@@ -1733,128 +1900,173 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
 
         entries[gid] = existing
 
-    # ONE-TIME v221_roots MIGRATION: Upgrade pre-v221 entries (removes old IR double-count & 42.986 totals inversion)
+    # ONE-TIME v223_roots MIGRATION (NULL-PROOF):
+    # Upgrades ALL pre-v222 entries (both games still in data.json AND older archived FINAL entries)
+    # to clean ΔQB-only spreads, Key-Number Alt Buys, and Regime Safe Totals, then re-grades against actual scores!
     for gid, entry in entries.items():
-        if entry.get("engine_version") == "v221_roots" or gid == "nfl_mnf_lac_bal_2026_w10":
+        if entry.get("engine_version") == "v223_roots" or gid == "nfl_mnf_lac_bal_2026_w10":
             continue
-        src_g = game_lookup_by_gid.get(gid)
-        if src_g:
-            lg = src_g.get("league", entry.get("league", "NFL"))
-            env = src_g.get("environmental_payload") or {}
-            circ = src_g.get("circadian_payload") or {}
-            h_tel = (src_g.get("team_telemetry") or {}).get("home") or {}
-            a_tel = (src_g.get("team_telemetry") or {}).get("away") or {}
-            hfa = float(src_g.get("hfa_base", NCAA_HFA_BASE if lg == "NCAA" else PI_OVER_PHI_HFA))
-            tz_s = int(circ.get("away_tz_shift", 0) or 0)
-            abs_tz = abs(tz_s)
-            omega_d = 1.35 if tz_s > 0 else (0.85 if tz_s < 0 else 1.0)
-            body_c = int(src_g.get("kickoff_local_hour", 13) or 13) - tz_s
-            phi_c = round(0.45 * (abs_tz * omega_d * math.exp(-0.35)) + (0.30 * max(0.0, 13.0 - body_c)), 3)
+        try:
+            src_g = game_lookup_by_gid.get(gid)
+            lg = (src_g.get("league") if src_g else None) or entry.get("league") or "NFL"
+            if src_g:
+                env = src_g.get("environmental_payload") or {}
+                circ = src_g.get("circadian_payload") or {}
+                h_tel = (src_g.get("team_telemetry") or {}).get("home") or {}
+                a_tel = (src_g.get("team_telemetry") or {}).get("away") or {}
+                hfa = _f(src_g.get("hfa_base"), NCAA_HFA_BASE if lg == "NCAA" else PI_OVER_PHI_HFA)
+                tz_s = _i(circ.get("away_tz_shift"), 0)
+                abs_tz = abs(tz_s)
+                omega_d = 1.35 if tz_s > 0 else (0.85 if tz_s < 0 else 1.0)
+                body_c = _i(src_g.get("kickoff_local_hour"), 13) - tz_s
+                phi_c = round(0.45 * (abs_tz * omega_d * math.exp(-0.35)) + (0.30 * max(0.0, 13.0 - body_c)), 3)
 
-            h_m = {
-                "epa": float(h_tel.get("net_epa_per_play", 0.0)), "to_reg": float(h_tel.get("turnover_reg_delta", 0.0)),
-                "close_pct": float(h_tel.get("closing_rank_pct", 0.5)), "streak": int(h_tel.get("active_win_streak", 0)),
-                "rz_dvoa": float(h_tel.get("opp_rz_dvoa", 0.0)), "poll_rank": h_tel.get("poll_rank"), "epa_rank": h_tel.get("epa_rank"),
-                "off_eff": h_tel.get("off_eff"), "def_eff": h_tel.get("def_eff"),
-                "off_epa_per_play": h_tel.get("off_epa_per_play"), "def_epa_per_play": h_tel.get("def_epa_per_play")
-            }
-            a_m = {
-                "epa": float(a_tel.get("net_epa_per_play", 0.0)), "to_reg": float(a_tel.get("turnover_reg_delta", 0.0)),
-                "close_pct": float(a_tel.get("closing_rank_pct", 0.5)), "streak": int(a_tel.get("active_win_streak", 0)),
-                "rz_dvoa": float(a_tel.get("opp_rz_dvoa", 0.0)), "poll_rank": a_tel.get("poll_rank"), "epa_rank": a_tel.get("epa_rank"),
-                "off_eff": a_tel.get("off_eff"), "def_eff": a_tel.get("def_eff"),
-                "off_epa_per_play": a_tel.get("off_epa_per_play"), "def_epa_per_play": a_tel.get("def_epa_per_play")
-            }
-            h_qb = get_verified_qb_delta(h_tel)
-            a_qb = get_verified_qb_delta(a_tel)
-            inj_diff = a_qb - h_qb
-            psi_val = calc_coupled_balls_deep_psi(h_m, a_m, env)
-            elev_i = calc_ten_zone_elevation(env, circ.get("away_elev_m", 150))
-            fair_h_tip = round((GOLDEN_PLAY_SCALER * (a_m["epa"] - h_m["epa"])) + (a_m["to_reg"] - h_m["to_reg"]) - hfa - phi_c, 2)
+                h_m = {
+                    "epa": _f(h_tel.get("net_epa_per_play"), 0.0), "to_reg": _f(h_tel.get("turnover_reg_delta"), 0.0),
+                    "close_pct": _f(h_tel.get("closing_rank_pct"), 0.5), "streak": _i(h_tel.get("active_win_streak"), 0),
+                    "rz_dvoa": _f(h_tel.get("opp_rz_dvoa"), 0.0), "poll_rank": h_tel.get("poll_rank"), "epa_rank": h_tel.get("epa_rank"),
+                    "off_eff": h_tel.get("off_eff"), "def_eff": h_tel.get("def_eff"),
+                    "off_epa_per_play": h_tel.get("off_epa_per_play"), "def_epa_per_play": h_tel.get("def_epa_per_play")
+                }
+                a_m = {
+                    "epa": _f(a_tel.get("net_epa_per_play"), 0.0), "to_reg": _f(a_tel.get("turnover_reg_delta"), 0.0),
+                    "close_pct": _f(a_tel.get("closing_rank_pct"), 0.5), "streak": _i(a_tel.get("active_win_streak"), 0),
+                    "rz_dvoa": _f(a_tel.get("opp_rz_dvoa"), 0.0), "poll_rank": a_tel.get("poll_rank"), "epa_rank": a_tel.get("epa_rank"),
+                    "off_eff": a_tel.get("off_eff"), "def_eff": a_tel.get("def_eff"),
+                    "off_epa_per_play": a_tel.get("off_epa_per_play"), "def_epa_per_play": a_tel.get("def_epa_per_play")
+                }
+                h_qb = get_verified_qb_delta(h_tel)
+                a_qb = get_verified_qb_delta(a_tel)
+                inj_diff = a_qb - h_qb
+                psi_val = calc_coupled_balls_deep_psi(h_m, a_m, env)
+                elev_i = calc_ten_zone_elevation(env, circ.get("away_elev_m", 150))
+                fair_h_tip = round((GOLDEN_PLAY_SCALER * (a_m["epa"] - h_m["epa"])) + (a_m["to_reg"] - h_m["to_reg"]) - hfa - phi_c, 2)
 
-            s_rec = entry.get("spread_record")
-            if s_rec and s_rec.get("vegas_closing_line") is not None:
-                orig_line = float(s_rec["vegas_closing_line"])
-                orig_is_home = (s_rec.get("pick_team") == entry.get("home_team"))
-                vegas_h = orig_line if orig_is_home else -orig_line
-                fair_h_bd = calc_report_calibrated_bd_spread(fair_h_tip, vegas_h, h_m, a_m, inj_diff, psi_val, elev_i, src_g.get("kickoff_local_hour", 13), lg)
-                # Choose side favored by clean Balls Deep (zero IR double-count)
-                pick_home = (vegas_h - fair_h_bd) >= 0
-                pick_team = entry["home_team"] if pick_home else entry["away_team"]
-                opp_team = entry["away_team"] if pick_home else entry["home_team"]
-                pick_line = round(vegas_h if pick_home else -vegas_h, 1)
-                pick_tip_proj = round(fair_h_tip if pick_home else -fair_h_tip, 2)
-                pick_bd_proj = round(fair_h_bd if pick_home else -fair_h_bd, 2)
-                odds_use = int(s_rec.get("odds", -110) or -110)
-                if abs(odds_use) >= 220:
-                    odds_use = -110
-                p_tip = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * (pick_line - pick_tip_proj)))))
-                p_bd = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * (pick_line - pick_bd_proj)))))
-                ev_t = calc_ev_pct(p_tip, odds_use)
-                ev_b = calc_ev_pct(p_bd, odds_use)
-                k_alt = calc_key_number_alt_spread(pick_line, pick_bd_proj, odds_use)
-                pfx = "vs" if pick_home else "@"
-                s_rec.update({
-                    "pick_label": f"{pick_team} Spread ({'+' if pick_line > 0 else ''}{pick_line}) ({pick_team} {pfx} {opp_team})",
-                    "pick_team": pick_team,
-                    "vegas_closing_line": pick_line,
-                    "odds": odds_use,
-                    "tip_proj": pick_tip_proj,
-                    "tip_win_pct": round(p_tip * 100.0, 2),
-                    "tip_ev_pct": ev_t,
-                    "balls_deep_proj": pick_bd_proj,
-                    "balls_deep_win_pct": round(p_bd * 100.0, 2),
-                    "balls_deep_ev_pct": ev_b,
-                    "key_alt_line": k_alt["alt_line"],
-                    "key_alt_odds": k_alt["alt_odds"],
-                    "key_alt_label": k_alt["alt_str"],
-                    "key_alt_mer": k_alt["mer"],
-                    "key_alt_win_pct": k_alt["alt_win_pct"],
-                    "key_alt_ev_pct": k_alt["alt_ev_pct"],
-                    "tier_badge": "SMASH" if (ev_t >= SMASH_EV_THRESHOLD or k_alt["alt_ev_pct"] >= SMASH_EV_THRESHOLD) else ("PASS" if ev_t <= -19.0 else "TOO_CLOSE"),
-                    "result_tip": "PENDING",
-                    "result_balls_deep": "PENDING",
-                    "result_key_alt": "PENDING",
-                    "miss_by_pts": None
-                })
+                s_rec = entry.get("spread_record")
+                if s_rec and s_rec.get("vegas_closing_line") is not None:
+                    orig_line = _f(s_rec.get("vegas_closing_line"), 0.0)
+                    orig_is_home = (s_rec.get("pick_team") == entry.get("home_team"))
+                    vegas_h = orig_line if orig_is_home else -orig_line
+                    fair_h_bd = calc_report_calibrated_bd_spread(fair_h_tip, vegas_h, h_m, a_m, inj_diff, psi_val, elev_i, _i(src_g.get("kickoff_local_hour"), 13), lg)
+                    pick_home = (vegas_h - fair_h_bd) >= 0
+                    pick_team = entry["home_team"] if pick_home else entry["away_team"]
+                    opp_team = entry["away_team"] if pick_home else entry["home_team"]
+                    pick_line = round(vegas_h if pick_home else -vegas_h, 1)
+                    pick_tip_proj = round(fair_h_tip if pick_home else -fair_h_tip, 2)
+                    pick_bd_proj = round(fair_h_bd if pick_home else -fair_h_bd, 2)
+                    odds_use = _i(s_rec.get("odds"), -110)
+                    if abs(odds_use) >= 220 or odds_use == 0:
+                        odds_use = -110
+                    p_tip = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * (pick_line - pick_tip_proj)))))
+                    p_bd = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * (pick_line - pick_bd_proj)))))
+                    ev_t = calc_ev_pct(p_tip, odds_use)
+                    ev_b = calc_ev_pct(p_bd, odds_use)
+                    k_alt = calc_key_number_alt_spread(pick_line, pick_bd_proj, odds_use)
+                    pfx = "vs" if pick_home else "@"
+                    s_rec.update({
+                        "pick_label": f"{pick_team} Spread ({'+' if pick_line > 0 else ''}{pick_line}) ({pick_team} {pfx} {opp_team})",
+                        "pick_team": pick_team,
+                        "vegas_closing_line": pick_line,
+                        "odds": odds_use,
+                        "tip_proj": pick_tip_proj,
+                        "tip_win_pct": round(p_tip * 100.0, 2),
+                        "tip_ev_pct": ev_t,
+                        "balls_deep_proj": pick_bd_proj,
+                        "balls_deep_win_pct": round(p_bd * 100.0, 2),
+                        "balls_deep_ev_pct": ev_b,
+                        "key_alt_line": k_alt["alt_line"],
+                        "key_alt_odds": k_alt["alt_odds"],
+                        "key_alt_label": k_alt["alt_str"],
+                        "key_alt_mer": k_alt["mer"],
+                        "key_alt_win_pct": k_alt["alt_win_pct"],
+                        "key_alt_ev_pct": k_alt["alt_ev_pct"],
+                        "tier_badge": "SMASH" if (ev_t >= SMASH_EV_THRESHOLD or k_alt["alt_ev_pct"] >= SMASH_EV_THRESHOLD) else ("PASS" if ev_t <= -19.0 else "TOO_CLOSE"),
+                        "result_tip": "PENDING",
+                        "result_balls_deep": "PENDING",
+                        "result_key_alt": "PENDING",
+                        "miss_by_pts": None
+                    })
 
-            t_rec = entry.get("total_record")
-            if t_rec and t_rec.get("vegas_closing_line") is not None:
-                v_tot = float(t_rec["vegas_closing_line"])
-                w_mph = 0.0 if env.get("is_dome") else float(env.get("wind_mph", 0.0))
-                tip_t = calc_independent_total_tip(h_m, a_m, lg, w_mph)
-                reg_t = calc_regime_safe_total_obj(v_tot, tip_t, env, tz_s, elev_i, lg, bool(h_qb < 0 or a_qb < 0))
-                bd_t = reg_t["balls_deep_total"]
-                t_dir = reg_t["safe_dir"] if reg_t["regime"] != "NEUTRAL_PASS" else ("U" if tip_t < v_tot else "O")
-                p_tip_t = max(0.50, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * abs(tip_t - v_tot)))))
-                p_bd_t = max(0.50, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * abs(bd_t - v_tot)))))
-                ev_t_tot = calc_ev_pct(p_tip_t, -110)
-                ev_b_tot = calc_ev_pct(p_bd_t, -110)
-                t_rec.update({
-                    "pick_label": f"{entry['away_team']}@{entry['home_team']} Total ({t_dir} {v_tot}) ({entry['away_team']} @ {entry['home_team']})",
-                    "odds": -110,
-                    "tip_proj": tip_t,
-                    "tip_direction": t_dir,
-                    "tip_win_pct": round(p_tip_t * 100.0, 2),
-                    "tip_ev_pct": ev_t_tot,
-                    "balls_deep_proj": bd_t,
-                    "balls_deep_direction": reg_t["safe_dir"],
-                    "balls_deep_win_pct": round(p_bd_t * 100.0, 2),
-                    "balls_deep_ev_pct": ev_b_tot,
-                    "total_regime": reg_t["regime"],
-                    "safe_total_line": reg_t["safe_line"],
-                    "safe_total_dir": reg_t["safe_dir"],
-                    "safe_total_odds": reg_t["safe_odds"],
-                    "safe_total_label": reg_t["safe_label"],
-                    "safe_total_win_pct": reg_t["safe_win_pct"],
-                    "safe_total_ev_pct": reg_t["safe_ev_pct"],
-                    "tier_badge": "SMASH" if (reg_t["regime"] != "NEUTRAL_PASS" and reg_t["safe_ev_pct"] >= SMASH_EV_THRESHOLD) else "TOO_CLOSE",
-                    "result_tip": "PENDING",
-                    "result_balls_deep": "PENDING",
-                    "result_safe_total": "PENDING",
-                    "miss_by_pts": None
-                })
-            entry["engine_version"] = "v221_roots"
+                t_rec = entry.get("total_record")
+                if t_rec and t_rec.get("vegas_closing_line") is not None:
+                    v_tot = _f(t_rec.get("vegas_closing_line"), 45.0)
+                    w_mph = 0.0 if env.get("is_dome") else _f(env.get("wind_mph"), 0.0)
+                    tip_t = calc_independent_total_tip(h_m, a_m, lg, w_mph)
+                    reg_t = calc_regime_safe_total_obj(v_tot, tip_t, env, tz_s, elev_i, lg, bool(h_qb < 0 or a_qb < 0))
+                    bd_t = reg_t["balls_deep_total"]
+                    t_dir = reg_t["safe_dir"] if reg_t["regime"] != "NEUTRAL_PASS" else ("U" if tip_t < v_tot else "O")
+                    p_tip_t = max(0.50, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * abs(tip_t - v_tot)))))
+                    p_bd_t = max(0.50, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * abs(bd_t - v_tot)))))
+                    ev_t_tot = calc_ev_pct(p_tip_t, -110)
+                    ev_b_tot = calc_ev_pct(p_bd_t, -110)
+                    t_rec.update({
+                        "pick_label": f"{entry['away_team']}@{entry['home_team']} Total ({t_dir} {v_tot}) ({entry['away_team']} @ {entry['home_team']})",
+                        "odds": -110,
+                        "tip_proj": tip_t,
+                        "tip_direction": t_dir,
+                        "tip_win_pct": round(p_tip_t * 100.0, 2),
+                        "tip_ev_pct": ev_t_tot,
+                        "balls_deep_proj": bd_t,
+                        "balls_deep_direction": reg_t["safe_dir"],
+                        "balls_deep_win_pct": round(p_bd_t * 100.0, 2),
+                        "balls_deep_ev_pct": ev_b_tot,
+                        "total_regime": reg_t["regime"],
+                        "safe_total_line": reg_t["safe_line"],
+                        "safe_total_dir": reg_t["safe_dir"],
+                        "safe_total_odds": reg_t["safe_odds"],
+                        "safe_total_label": reg_t["safe_label"],
+                        "safe_total_win_pct": reg_t["safe_win_pct"],
+                        "safe_total_ev_pct": reg_t["safe_ev_pct"],
+                        "tier_badge": "SMASH" if (reg_t["regime"] != "NEUTRAL_PASS" and reg_t["safe_ev_pct"] >= SMASH_EV_THRESHOLD) else "TOO_CLOSE",
+                        "result_tip": "PENDING",
+                        "result_balls_deep": "PENDING",
+                        "result_safe_total": "PENDING",
+                        "miss_by_pts": None
+                    })
+            else:
+                # Archived entry whose game card rotated out of games[]: still attach Key-Number Alt & Regime Safe Total!
+                s_rec = entry.get("spread_record")
+                if s_rec and s_rec.get("vegas_closing_line") is not None:
+                    pick_line = _f(s_rec.get("vegas_closing_line"), 0.0)
+                    bd_p = _f(s_rec.get("balls_deep_proj", s_rec.get("tip_proj")), pick_line)
+                    odds_use = _i(s_rec.get("odds"), -110)
+                    if abs(odds_use) >= 220 or odds_use == 0:
+                        odds_use = -110
+                    k_alt = calc_key_number_alt_spread(pick_line, bd_p, odds_use)
+                    s_rec.update({
+                        "key_alt_line": k_alt["alt_line"],
+                        "key_alt_odds": k_alt["alt_odds"],
+                        "key_alt_label": k_alt["alt_str"],
+                        "key_alt_mer": k_alt["mer"],
+                        "key_alt_win_pct": k_alt["alt_win_pct"],
+                        "key_alt_ev_pct": k_alt["alt_ev_pct"],
+                        "result_key_alt": "PENDING"
+                    })
+                t_rec = entry.get("total_record")
+                if t_rec and t_rec.get("vegas_closing_line") is not None:
+                    v_tot = _f(t_rec.get("vegas_closing_line"), 45.0)
+                    tip_t = _f(t_rec.get("tip_proj"), v_tot)
+                    h_reg = _find_registry_meta_by_code(entry.get("home_team"), lg) or {}
+                    a_reg = _find_registry_meta_by_code(entry.get("away_team"), lg) or {}
+                    env_arch = {"is_dome": bool(h_reg.get("is_dome", False)), "elevation_m": _f(h_reg.get("elev_m"), 150.0), "temperature_f": 72.0 if h_reg.get("is_dome") else 52.0, "wind_mph": 0.0 if h_reg.get("is_dome") else 7.0, "pressure_hpa": 1013.25}
+                    tz_arch = _i(h_reg.get("tz"), -6) - _i(a_reg.get("tz"), -6)
+                    elev_arch = calc_ten_zone_elevation(env_arch, _f(a_reg.get("elev_m"), 150.0))
+                    reg_t = calc_regime_safe_total_obj(v_tot, tip_t, env_arch, tz_arch, elev_arch, lg, False)
+                    t_rec.update({
+                        "balls_deep_proj": reg_t["balls_deep_total"],
+                        "balls_deep_direction": reg_t["safe_dir"],
+                        "total_regime": reg_t["regime"],
+                        "safe_total_line": reg_t["safe_line"],
+                        "safe_total_dir": reg_t["safe_dir"],
+                        "safe_total_odds": reg_t["safe_odds"],
+                        "safe_total_label": reg_t["safe_label"],
+                        "safe_total_win_pct": reg_t["safe_win_pct"],
+                        "safe_total_ev_pct": reg_t["safe_ev_pct"],
+                        "result_safe_total": "PENDING"
+                    })
+            entry["engine_version"] = "v223_roots"
+        except Exception as mig_err:
+            print(f"[v223 Migration Skip {gid}] {mig_err}")
 
     for gid, entry in entries.items():
         espn_info = None
@@ -1869,22 +2081,32 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
             a_c = LEGACY_CODE_MAP.get(entry["away_team"], entry["away_team"])
             h_c = LEGACY_CODE_MAP.get(entry["home_team"], entry["home_team"])
             espn_info = espn_scores.get(f"{a_c}_{h_c}")
-        if not espn_info:
-            continue
 
-        if espn_info["state"] == "in" and entry["status"] == "PRE_GAME":
-            entry["is_locked"] = True
-            entry["status"] = "IN_PLAY"
+        is_final_game = False
+        h_pts = a_pts = None
 
-        if espn_info["completed"] or espn_info["state"] == "post":
-            h_pts = espn_info["home_score"]
-            a_pts = espn_info["away_score"]
+        if espn_info:
+            if espn_info["state"] == "in" and entry["status"] == "PRE_GAME":
+                entry["is_locked"] = True
+                entry["status"] = "IN_PLAY"
+            if espn_info["completed"] or espn_info["state"] == "post":
+                h_pts = espn_info["home_score"]
+                a_pts = espn_info["away_score"]
+                is_final_game = True
+        elif entry.get("status") == "FINAL" and entry.get("final_score"):
+            parsed_pair = _parse_final_score_str(entry.get("final_score"))
+            if parsed_pair:
+                a_pts, h_pts = parsed_pair
+                is_final_game = True
+
+        if is_final_game and h_pts is not None and a_pts is not None:
             entry["is_locked"] = True
             entry["status"] = "FINAL"
-            entry["final_score"] = f"{entry['away_team']} {a_pts} - {entry['home_team']} {h_pts}"
+            if not entry.get("final_score") or espn_info:
+                entry["final_score"] = f"{entry['away_team']} {a_pts} - {entry['home_team']} {h_pts}"
 
             s_rec = entry.get("spread_record")
-            if s_rec and (s_rec.get("result_tip") == "PENDING" or s_rec.get("miss_by_pts") is None):
+            if s_rec and (s_rec.get("result_tip") == "PENDING" or s_rec.get("result_key_alt") in (None, "", "PENDING") or s_rec.get("miss_by_pts") is None):
                 pick_team = s_rec["pick_team"]
                 line = float(s_rec["vegas_closing_line"])
                 team_margin = (h_pts - a_pts) if pick_team == entry["home_team"] else (a_pts - h_pts)
@@ -1921,7 +2143,7 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                 s_rec["result_key_alt"] = "HIT" if ka_diff > 0 else ("PUSH" if ka_diff == 0 else ("BLUE_BALLS" if ka_miss <= 3.0 else "MISS"))
 
             t_rec = entry.get("total_record")
-            if t_rec and (t_rec.get("result_tip") == "PENDING" or t_rec.get("miss_by_pts") is None):
+            if t_rec and (t_rec.get("result_tip") == "PENDING" or t_rec.get("result_safe_total") in (None, "", "PENDING") or t_rec.get("miss_by_pts") is None):
                 total_pts = h_pts + a_pts
                 t_line = float(t_rec["vegas_closing_line"])
                 for mode_key, dir_key in [("result_tip", "tip_direction"), ("result_balls_deep", "balls_deep_direction")]:
@@ -2204,6 +2426,10 @@ def build_master_payload():
                         "key_alt_mer": key_alt["mer"],
                         "key_alt_win_pct": key_alt["alt_win_pct"],
                         "key_alt_ev_pct": key_alt["alt_ev_pct"],
+                        "tier2_line": key_alt["tier2_line"],
+                        "tier2_mode": key_alt["tier2_mode"],
+                        "tier2_label": key_alt["tier2_label"],
+                        "tier2_approved": key_alt["tier2_approved"],
                         "tier_badge": badge,
                         "flagship_slot": "",
                         "projected_variance_sigma2": 0,
@@ -2496,7 +2722,7 @@ def build_master_payload():
             "league": "NFL_NCAA",
             "week": 12,
             "last_updated": now_iso,
-            "telemetry_version": "v221_roots_live",
+            "telemetry_version": "v223_roots_live",
             "ranked_ncaa_teams": live_ranked_ncaa
         },
         "games": games_slate,
@@ -2511,7 +2737,7 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v221 — BACK TO OUR ROOTS)")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v223 — BACK TO OUR ROOTS + WONG LADDER)")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("=========================================================")
 
