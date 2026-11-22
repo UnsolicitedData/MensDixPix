@@ -2,7 +2,7 @@
   "slate_info": {
     "league": "NFL_NCAA",
     "week": 12,
-    "last_updated": "2026-11-22T20:35:37Z",
+    "last_updated": "2026-11-22T21:29:03Z",
     "telemetry_version": "v219_live_feeds",
     "ranked_ncaa_teams": [
       "Georgia Bulldogs",
@@ -12104,8 +12104,8 @@
         "away_team": "ARI",
         "commence_time": "2026-11-22T18:00:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "ARI 7 - KC 34",
         "spread_record": {
           "pick_label": "KC Spread (-16.5) (KC vs ARI)",
           "pick_team": "KC",
@@ -12119,8 +12119,9 @@
           "balls_deep_ev_pct": 15.45,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 0.0
         },
         "total_record": {
           "pick_label": "ARI@KC Total (O 40.5) (ARI @ KC)",
@@ -12136,8 +12137,9 @@
           "balls_deep_ev_pct": 10.09,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 0.0
         },
         "home_full_name": "Kansas City Chiefs",
         "away_full_name": "Arizona Cardinals"
@@ -12150,8 +12152,8 @@
         "away_team": "BAL",
         "commence_time": "2026-11-22T18:00:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "BAL 33 - CAR 35",
         "spread_record": {
           "pick_label": "CAR Spread (-2.5) (CAR vs BAL)",
           "pick_team": "CAR",
@@ -12165,8 +12167,9 @@
           "balls_deep_ev_pct": 23.26,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "BLUE_BALLS",
+          "result_balls_deep": "BLUE_BALLS",
+          "miss_by_pts": 0.5
         },
         "total_record": {
           "pick_label": "BAL@CAR Total (O 43.5) (BAL @ CAR)",
@@ -12182,8 +12185,9 @@
           "balls_deep_ev_pct": 2.2,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 0.0
         },
         "home_full_name": "Carolina Panthers",
         "away_full_name": "Baltimore Ravens"
@@ -12196,8 +12200,8 @@
         "away_team": "MIA",
         "commence_time": "2026-11-22T18:00:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "MIA 9 - BUF 26",
         "spread_record": {
           "pick_label": "MIA Spread (+16.5) (MIA @ BUF)",
           "pick_team": "MIA",
@@ -12211,8 +12215,9 @@
           "balls_deep_ev_pct": 15.14,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "BLUE_BALLS",
+          "result_balls_deep": "BLUE_BALLS",
+          "miss_by_pts": 0.5
         },
         "total_record": {
           "pick_label": "MIA@BUF Total (O 44.5) (MIA @ BUF)",
@@ -12228,8 +12233,9 @@
           "balls_deep_ev_pct": -1.71,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "MISS",
+          "miss_by_pts": 9.5
         },
         "home_full_name": "Buffalo Bills",
         "away_full_name": "Miami Dolphins"
@@ -12242,8 +12248,8 @@
         "away_team": "NO",
         "commence_time": "2026-11-22T18:00:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "NO 13 - CHI 21",
         "spread_record": {
           "pick_label": "NO Spread (+11.5) (NO @ CHI)",
           "pick_team": "NO",
@@ -12257,8 +12263,9 @@
           "balls_deep_ev_pct": 14.02,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 0.0
         },
         "total_record": {
           "pick_label": "NO@CHI Total (U 48.5) (NO @ CHI)",
@@ -12274,8 +12281,9 @@
           "balls_deep_ev_pct": 25.72,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 0.0
         },
         "home_full_name": "Chicago Bears",
         "away_full_name": "New Orleans Saints"
@@ -12288,8 +12296,8 @@
         "away_team": "TEN",
         "commence_time": "2026-11-22T18:00:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "TEN 30 - DAL 51",
         "spread_record": {
           "pick_label": "TEN Spread (+7.5) (TEN @ DAL)",
           "pick_team": "TEN",
@@ -12303,8 +12311,9 @@
           "balls_deep_ev_pct": 8.88,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "MISS",
+          "miss_by_pts": 13.5
         },
         "total_record": {
           "pick_label": "TEN@DAL Total (U 54.5) (TEN @ DAL)",
@@ -12320,8 +12329,9 @@
           "balls_deep_ev_pct": 40.11,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "MISS",
+          "miss_by_pts": 26.5
         },
         "home_full_name": "Dallas Cowboys",
         "away_full_name": "Tennessee Titans"
@@ -12334,8 +12344,8 @@
         "away_team": "TB",
         "commence_time": "2026-11-22T18:00:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "TB 21 - DET 31",
         "spread_record": {
           "pick_label": "TB Spread (+4.5) (TB @ DET)",
           "pick_team": "TB",
@@ -12349,8 +12359,9 @@
           "balls_deep_ev_pct": 5.08,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "MISS",
+          "miss_by_pts": 5.5
         },
         "total_record": {
           "pick_label": "TB@DET Total (U 46.5) (TB @ DET)",
@@ -12366,8 +12377,9 @@
           "balls_deep_ev_pct": 22.08,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "MISS",
+          "miss_by_pts": 5.5
         },
         "home_full_name": "Detroit Lions",
         "away_full_name": "Tampa Bay Buccaneers"
@@ -12380,8 +12392,8 @@
         "away_team": "PIT",
         "commence_time": "2026-11-22T18:00:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "PIT 16 - PHI 19",
         "spread_record": {
           "pick_label": "PIT Spread (-4.5) (PIT @ PHI)",
           "pick_team": "PIT",
@@ -12395,8 +12407,9 @@
           "balls_deep_ev_pct": 21.73,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "MISS",
+          "miss_by_pts": 7.5
         },
         "total_record": {
           "pick_label": "PIT@PHI Total (O 37.5) (PIT @ PHI)",
@@ -12412,8 +12425,9 @@
           "balls_deep_ev_pct": 21.79,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "BLUE_BALLS",
+          "result_balls_deep": "BLUE_BALLS",
+          "miss_by_pts": 2.5
         },
         "home_full_name": "Philadelphia Eagles",
         "away_full_name": "Pittsburgh Steelers"
@@ -12425,8 +12439,8 @@
         "home_team": "LAC",
         "away_team": "NYJ",
         "commence_time": "2026-11-22T21:05:00Z",
-        "is_locked": false,
-        "status": "PRE_GAME",
+        "is_locked": true,
+        "status": "IN_PLAY",
         "final_score": null,
         "spread_record": {
           "pick_label": "NYJ Spread (+3.0) (NYJ @ LAC)",
@@ -12471,8 +12485,8 @@
         "home_team": "DEN",
         "away_team": "LV",
         "commence_time": "2026-11-22T21:25:00Z",
-        "is_locked": false,
-        "status": "PRE_GAME",
+        "is_locked": true,
+        "status": "IN_PLAY",
         "final_score": null,
         "spread_record": {
           "pick_label": "LV Spread (+9.5) (LV @ DEN)",
@@ -12517,8 +12531,8 @@
         "home_team": "NYG",
         "away_team": "JAX",
         "commence_time": "2026-11-22T21:25:00Z",
-        "is_locked": false,
-        "status": "PRE_GAME",
+        "is_locked": true,
+        "status": "IN_PLAY",
         "final_score": null,
         "spread_record": {
           "pick_label": "JAX Spread (-5.5) (JAX @ NYG)",
@@ -17556,22 +17570,22 @@
     },
     "summary": {
       "overall_smash": {
-        "hits": 53,
-        "total": 92,
-        "fraction": "53 / 92",
-        "win_pct": 57.6
+        "hits": 57,
+        "total": 103,
+        "fraction": "57 / 103",
+        "win_pct": 55.3
       },
       "spread_smash": {
-        "hits": 24,
-        "total": 42,
-        "fraction": "24 / 42",
-        "win_pct": 57.1
+        "hits": 26,
+        "total": 48,
+        "fraction": "26 / 48",
+        "win_pct": 54.2
       },
       "total_smash": {
-        "hits": 29,
-        "total": 50,
-        "fraction": "29 / 50",
-        "win_pct": 58.0
+        "hits": 31,
+        "total": 55,
+        "fraction": "31 / 55",
+        "win_pct": 56.4
       },
       "flagship_5pack": {
         "hits": 5,
@@ -17586,22 +17600,22 @@
         "win_pct": 60.0
       },
       "pass_audit": {
-        "hits": 21,
-        "total": 36,
-        "fraction": "21 / 36",
-        "win_pct": 58.3
+        "hits": 22,
+        "total": 39,
+        "fraction": "22 / 39",
+        "win_pct": 56.4
       },
       "tip_all": {
-        "hits": 74,
-        "total": 128,
-        "fraction": "74 / 128",
-        "win_pct": 57.8
+        "hits": 79,
+        "total": 142,
+        "fraction": "79 / 142",
+        "win_pct": 55.6
       },
       "balls_deep_all": {
-        "hits": 72,
-        "total": 128,
-        "fraction": "72 / 128",
-        "win_pct": 56.2
+        "hits": 77,
+        "total": 142,
+        "fraction": "77 / 142",
+        "win_pct": 54.2
       }
     }
   }
