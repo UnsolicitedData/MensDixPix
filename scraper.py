@@ -1,5 +1,5 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v219)
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v221 — BACK TO OUR ROOTS)
 Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
   1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
   2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
@@ -693,18 +693,19 @@ def fetch_espn_game_injuries(event_id, league="NFL"):
                 pos_obj = athlete.get("position") or {}
                 pos = (pos_obj.get("abbreviation") or "").upper()
 
-                weight = POS_WEIGHTS.get(pos, 0.25) * status_mult
-                # Only count meaningful active-roster outs (skip deep practice-squad/unknown)
+                # BACK-TO-OUR-ROOTS ΔQB-ONLY GUARDRAIL:
+                # Non-QB IR/Out players are ALREADY priced into season EPA; NEVER sum OL/WR/DB/LB into qb_replacement_delta!
                 if pos in ("OT", "LT", "RT", "T"):
                     pass_pro_compromised = True
                 if pos == "QB":
                     qb_out_count += 1
-                total_impact += weight
+                    qb_weight = (2.75 if status in ("injured reserve", "ir") else 3.50) * status_mult
+                    total_impact = max(total_impact, qb_weight)
                 if pos in ("QB", "OT", "LT", "RT", "T", "CB", "WR", "RB", "DE", "EDGE", "LB") and len(key_outs) < 5:
                     key_outs.append(f"{pname} ({pos}, {status.upper()})")
 
-            # Cap total team injury impact cleanly at -5.5 pts so deep IR lists never blow up spreads
-            capped_delta = round(-min(5.5, total_impact), 2)
+            # Strictly QB replacement shock only (capped at -3.5 pts; 0.0 when starting QB is healthy!)
+            capped_delta = round(-min(3.5, total_impact), 2)
             out_by_abbr[abbr] = {
                 "qb_replacement_delta": capped_delta,
                 "lt_or_rb_pass_pro_out": pass_pro_compromised,
@@ -1087,19 +1088,152 @@ def calc_report_calibrated_bd_spread(og_tip_home_spread, vegas_home_spread, home
     clamped_delta = max(-5.8, min(5.8, raw_bd_delta))
     return round(vegas_home_spread + clamped_delta, 2)
 
-def calc_report_calibrated_bd_total(vegas_total, og_tip_total, env_weather, tz_shift, elev_info):
-    is_dome = bool(env_weather.get("is_dome", False))
-    temp_f = 72.0 if is_dome else float(env_weather.get("temperature_f", 59.0))
-    wind_mph = 0.0 if is_dome else float(env_weather.get("wind_mph", 0.0))
-    abs_tz = abs(int(tz_shift or 0))
+def get_verified_qb_delta(team_tel):
+    if not isinstance(team_tel, dict):
+        return 0.0
+    raw = float(team_tel.get("qb_replacement_delta", 0.0) or 0.0)
+    if raw == 0.0:
+        return 0.0
+    injs = team_tel.get("injuries_summary")
+    if isinstance(injs, list) and len(injs) > 0:
+        if not any("(QB," in str(s).upper() for s in injs):
+            return 0.0
+    return round(max(-3.5, min(0.0, raw)), 2)
 
-    cold_drag = 0.0 if is_dome else -max(0.0, (42.0 - temp_f) * 0.14)
-    wind_drag = 0.0 if is_dome else -max(0.0, (wind_mph - 10.0) * 0.30)
-    tz_drag = -1.65 if abs_tz >= 3 else (-0.75 if abs_tz == 2 else 0.0)
-    elev_tot_drag = float(elev_info.get("elev_tot_drag", 0.0))
-    eff_lean = 0.25 * max(-8.0, min(8.0, float(og_tip_total) - float(vegas_total)))
-    total_delta = max(-6.5, min(6.5, eff_lean + cold_drag + wind_drag + tz_drag + elev_tot_drag))
-    return round(float(vegas_total) + total_delta, 1)
+def _implied_prob_am(odds):
+    o = float(odds or -110)
+    return (abs(o) / (abs(o) + 100.0)) if o < 0 else (100.0 / (o + 100.0))
+
+def calc_key_number_alt_spread(base_line, model_fair_line, base_odds=-110):
+    """MODULE 3 BACK-TO-OUR-ROOTS KEY-NUMBER ALT-BUY ENGINE (1:1 parity with onlinemath_engine.js v315)."""
+    line = float(base_line or 0.0)
+    fair = float(model_fair_line if model_fair_line is not None else line)
+    base_prob = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * (line - fair)))))
+
+    if line < 0:
+        if line >= -2.5:
+            alt_line, alt_odds, key_lbl = line, int(base_odds or -110), "Hold Under Key #3"
+        elif line >= -4.5:
+            alt_line, alt_odds, key_lbl = -2.5, (-145 if line >= -3.5 else -165), "Key #3 Buy (-2.5)"
+        elif line >= -6.5:
+            alt_line, alt_odds, key_lbl = (-2.5 if line >= -5.5 else -3.5), -165, "Key #3/#6 Buy"
+        elif line >= -9.5:
+            alt_line, alt_odds, key_lbl = -6.5, (-135 if line >= -7.5 else -160), "Key #7 Buy (-6.5)"
+        elif line >= -13.0:
+            alt_line, alt_odds, key_lbl = -9.5, (-145 if line >= -11.5 else -165), "Key #10 Buy (-9.5)"
+        elif line >= -16.5:
+            alt_line, alt_odds, key_lbl = (-13.5 if line <= -14.0 else -10.5), (-150 if line <= -15.5 else -165), "Key #14 Buy (-13.5)"
+        elif line >= -19.5:
+            alt_line, alt_odds, key_lbl = -14.5, -160, "Key #14.5/#17 Buy (-14.5)"
+        else:
+            alt_line = -17.5 if line >= -21.5 else (math.floor(line + 3.5) + 0.5)
+            alt_odds, key_lbl = -155, f"Key #17.5 Blowout Buy ({'+' if alt_line > 0 else ''}{alt_line:.1f})"
+    else:
+        if line <= 3.0:
+            alt_line, alt_odds, key_lbl = 3.5, (-135 if line >= 2.0 else -160), "Key #3 Dog Buy (+3.5)"
+        elif line <= 5.0:
+            alt_line, alt_odds, key_lbl = (6.5 if line <= 4.0 else 7.5), -155, "Key #7 Dog Buy"
+        elif line <= 6.5:
+            alt_line, alt_odds, key_lbl = 7.5, -140, "Key #7 Dog Buy (+7.5)"
+        elif line <= 9.5:
+            alt_line, alt_odds, key_lbl = 10.5, (-145 if line >= 8.0 else -165), "Key #10 Dog Buy (+10.5)"
+        elif line <= 13.0:
+            alt_line, alt_odds, key_lbl = (13.5 if line <= 11.5 else 14.5), -150, "Key #14 Dog Buy (+13.5/+14.5)"
+        elif line <= 16.5:
+            alt_line, alt_odds, key_lbl = 17.5, -155, "Key #17.5 Dog Buy (+17.5)"
+        else:
+            alt_line = math.floor(line + 3.5) + 0.5
+            alt_odds, key_lbl = -160, f"Blowout Dog Floor (+{alt_line:.1f})"
+
+    raw_alt_p = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * (alt_line - fair)))))
+    lo, hi = min(line, alt_line), max(line, alt_line)
+    bonus = 0.0
+    for kn, b_val in ((3.0, 0.045), (-3.0, 0.045), (7.0, 0.035), (-7.0, 0.035), (10.0, 0.025), (-10.0, 0.025), (14.0, 0.025), (-14.0, 0.025), (17.0, 0.018), (-17.0, 0.018)):
+        if lo < kn < hi:
+            bonus += b_val
+    alt_prob = min(0.95, max(0.05, raw_alt_p + bonus))
+    d_tax = max(0.01, _implied_prob_am(alt_odds) - _implied_prob_am(base_odds))
+    mer = round((alt_prob - base_prob) / d_tax, 2) if alt_line != line else 1.0
+    alt_ev = calc_ev_pct(alt_prob, alt_odds)
+    fmt_alt = f"{'+' if alt_line > 0 else ''}{alt_line:.1f}"
+    return {
+        "alt_line": round(alt_line, 1),
+        "alt_odds": int(alt_odds),
+        "alt_prob": round(alt_prob, 4),
+        "alt_win_pct": round(alt_prob * 100.0, 1),
+        "mer": mer,
+        "alt_ev_pct": alt_ev,
+        "key_label": key_lbl,
+        "alt_str": f"Alt {fmt_alt} ({alt_odds})"
+    }
+
+def calc_regime_safe_total_obj(vegas_total, og_tip_total, env_weather, tz_shift, elev_info, game_league="NFL", has_backup_qb=False):
+    """BACK-TO-OUR-ROOTS REGIME SAFE TOTALS ENGINE (1:1 parity with onlinemath_engine.js v315)."""
+    v_tot = float(vegas_total or og_tip_total or 45.0)
+    is_dome = bool(env_weather.get("is_dome", False))
+    temp_f = 72.0 if is_dome else float(env_weather.get("temperature_f", 58.0))
+    wind_mph = 0.0 if is_dome else float(env_weather.get("wind_mph", 5.0))
+    abs_tz = abs(int(tz_shift or 0))
+    elev_zone = int(elev_info.get("zone", 1) or 1)
+    elev_tot_drag = float(elev_info.get("elev_tot_drag", 0.0) or 0.0)
+
+    temp_k = ((temp_f - 32.0) * 5.0 / 9.0) + 273.15
+    p_pa = float(env_weather.get("pressure_hpa", 1013.25)) * 100.0
+    rho = 1.204 if is_dome else ((max(0.0, p_pa - 1000.0) / (287.058 * temp_k)) + (1000.0 / (461.495 * temp_k)))
+
+    cold_drag = 0.0 if is_dome else -max(0.0, (44.0 - temp_f) * 0.14)
+    wind_drag = 0.0 if is_dome else -max(0.0, (wind_mph - 10.0) * 0.28)
+    tz_drag = -1.50 if abs_tz >= 3 else (-0.65 if abs_tz == 2 else 0.0)
+    qb_drag = -2.75 if has_backup_qb else 0.0
+    env_drag = cold_drag + wind_drag + tz_drag + elev_tot_drag + qb_drag
+    pace_pull = 0.15 * max(-6.0, min(6.0, float(og_tip_total) - v_tot))
+
+    shootout_thresh = 58.5 if game_league == "NCAA" else 49.5
+    dome_shootout_thresh = 54.5 if game_league == "NCAA" else 46.5
+    grind_thresh = 44.5 if game_league == "NCAA" else 41.5
+    weather_grind_thresh = 52.5 if game_league == "NCAA" else 48.5
+    heavy_grind_env = (not is_dome and (temp_f <= 42.0 or wind_mph >= 10.0 or rho >= 1.250 or elev_zone >= 7)) or bool(has_backup_qb)
+
+    if v_tot >= shootout_thresh or (is_dome and v_tot >= dome_shootout_thresh and not has_backup_qb):
+        regime = "SHOOTOUT_SAFE_OVER"
+        fair_tot = v_tot + max(0.8, 1.5 + (0.20 * max(0.0, v_tot - dome_shootout_thresh)) + (0.4 if is_dome else 0.0) + max(-0.5, pace_pull))
+        drop_pts = 5.0 if v_tot >= (shootout_thresh + 4.0) else 4.0
+        safe_line = math.floor(v_tot - drop_pts) + 0.5
+        safe_odds = -180 if drop_pts >= 5.0 else -175
+        safe_dir = "O"
+        raw_p = 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * (fair_tot - safe_line)))
+        safe_prob = min(0.92, max(0.55, raw_p + 0.04))
+    elif v_tot <= grind_thresh or (v_tot <= weather_grind_thresh and heavy_grind_env):
+        regime = "GRIND_SAFE_UNDER"
+        fair_tot = v_tot + min(-1.0, env_drag + min(0.0, pace_pull) - 0.8)
+        safe_line = math.floor(v_tot + 4.0) + 0.5
+        safe_odds = -175
+        safe_dir = "U"
+        raw_p = 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * (safe_line - fair_tot)))
+        safe_prob = min(0.92, max(0.55, raw_p + 0.04))
+    else:
+        regime = "NEUTRAL_PASS"
+        fair_tot = v_tot + env_drag + pace_pull
+        safe_dir = "U" if fair_tot < v_tot else "O"
+        safe_line = (math.floor(v_tot + 3.5) + 0.5) if safe_dir == "U" else (math.floor(v_tot - 3.5) + 0.5)
+        safe_odds = -175
+        edge = (safe_line - fair_tot) if safe_dir == "U" else (fair_tot - safe_line)
+        safe_prob = min(0.82, max(0.50, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * edge))))
+
+    return {
+        "regime": regime,
+        "balls_deep_total": round(fair_tot, 1),
+        "safe_dir": safe_dir,
+        "safe_line": round(safe_line, 1),
+        "safe_odds": int(safe_odds),
+        "safe_prob": round(safe_prob, 4),
+        "safe_win_pct": round(safe_prob * 100.0, 1),
+        "safe_ev_pct": calc_ev_pct(safe_prob, safe_odds),
+        "safe_label": f"Alt {safe_dir} {safe_line:.1f} ({safe_odds})"
+    }
+
+def calc_report_calibrated_bd_total(vegas_total, og_tip_total, env_weather, tz_shift, elev_info, game_league="NFL", has_backup_qb=False):
+    return calc_regime_safe_total_obj(vegas_total, og_tip_total, env_weather, tz_shift, elev_info, game_league, has_backup_qb)["balls_deep_total"]
 
 def calc_independent_total_tip(home_meta, away_meta, game_league, wind_mph):
     """
@@ -1157,26 +1291,201 @@ def load_existing_ledger():
         return old_data["historical_ledger"]
     return {"entries": {}, "summary": {}}
 
-def fetch_live_odds_for_sport(sport_key, league_label):
-    if not ODDS_API_KEY or ODDS_API_KEY == "PASTE_YOUR_API_KEY_HERE":
-        print("[Notice] No valid ODDS_API_KEY set.")
-        return []
-    url = (
-        f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/"
-        f"?apiKey={ODDS_API_KEY}&regions=us&markets=spreads,totals&oddsFormat=american"
-    )
+def _parse_espn_american_odds(val, default=-110):
+    if val is None or val == "":
+        return default
     try:
-        req = urllib.request.Request(url, headers=HEADERS)
-        with urllib.request.urlopen(req, timeout=12) as resp:
-            remaining = resp.headers.get("x-requests-remaining", "Unknown")
-            data = json.loads(resp.read().decode("utf-8"))
-            print(f"[Odds API - {league_label}] Pulled {len(data)} matchups | Credits Remaining: {remaining}")
-            for item in data:
-                item["_league"] = league_label
-            return data
-    except Exception as e:
-        print(f"[Odds API Error - {league_label}] {e}")
-        return []
+        if isinstance(val, str):
+            s = val.strip().upper()
+            if s in ("EVEN", "EV"):
+                return 100
+            return int(round(float(s.replace("+", ""))))
+        return int(round(float(val)))
+    except Exception:
+        return default
+
+def _normalize_espn_iso_utc(date_str):
+    if not date_str:
+        return ""
+    s = str(date_str).strip()
+    # ESPN often emits "2026-11-22T18:00Z" (missing seconds) -> normalize to "%Y-%m-%dT%H:%M:%SZ"
+    if re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$", s):
+        return s[:-1] + ":00Z"
+    if re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z$", s):
+        return s.split(".")[0] + "Z"
+    return s
+
+def fetch_espn_free_odds(league_label):
+    """
+    ZERO-CREDIT / $0 FALLBACK: Pulls real live sportsbook spreads & totals directly from ESPN's
+    public scoreboard JSON whenever The Odds API returns empty or hits 0 monthly credits.
+    Emits the exact same schema as The Odds API so downstream math, ledger & UI work 1:1.
+    """
+    now_utc = datetime.now(timezone.utc)
+    start_str = now_utc.strftime("%Y%m%d")
+    end_str = (now_utc + timedelta(days=8)).strftime("%Y%m%d")
+
+    if league_label == "NFL":
+        urls = [
+            "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard",
+            f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=100&dates={start_str}-{end_str}"
+        ]
+    else:
+        urls = [
+            "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?groups=80&limit=150",
+            f"https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?groups=80&limit=200&dates={start_str}-{end_str}"
+        ]
+
+    out_games = []
+    seen_ids = set()
+
+    for url in urls:
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=12)
+            if resp.status_code != 200:
+                continue
+            events = resp.json().get("events", [])
+            for ev in events:
+                ev_id = str(ev.get("id") or "")
+                if ev_id and ev_id in seen_ids:
+                    continue
+                comps = ev.get("competitions", [])
+                if not comps:
+                    continue
+                comp = comps[0]
+                status_type = comp.get("status", {}).get("type", {})
+                if status_type.get("completed") or status_type.get("state") == "post":
+                    continue
+
+                competitors = comp.get("competitors", [])
+                home_c = next((c for c in competitors if c.get("homeAway") == "home"), None)
+                away_c = next((c for c in competitors if c.get("homeAway") == "away"), None)
+                if not home_c or not away_c:
+                    continue
+
+                h_team = home_c.get("team", {})
+                a_team = away_c.get("team", {})
+                home_full = h_team.get("displayName") or h_team.get("name") or ""
+                away_full = a_team.get("displayName") or a_team.get("name") or ""
+                if not home_full or not away_full:
+                    continue
+
+                h_abbr_raw = (h_team.get("abbreviation") or "").upper()
+                a_abbr_raw = (a_team.get("abbreviation") or "").upper()
+                h_abbr = ESPN_CODE_MAP.get(h_abbr_raw, h_abbr_raw)
+                a_abbr = ESPN_CODE_MAP.get(a_abbr_raw, a_abbr_raw)
+
+                odds_list = comp.get("odds") or []
+                if not odds_list:
+                    continue
+                odds_obj = odds_list[0] if isinstance(odds_list[0], dict) else {}
+
+                # Determine Home Spread with 3-layer sign verification (homeTeamOdds/awayTeamOdds -> details -> raw spread)
+                home_sp = None
+                raw_spread = odds_obj.get("spread")
+                h_odds_blk = odds_obj.get("homeTeamOdds") or {}
+                a_odds_blk = odds_obj.get("awayTeamOdds") or {}
+                details_str = str(odds_obj.get("details") or "").strip()
+
+                if raw_spread is not None:
+                    try:
+                        abs_sp = abs(float(raw_spread))
+                        if h_odds_blk.get("favorite") is True:
+                            home_sp = -abs_sp
+                        elif a_odds_blk.get("favorite") is True:
+                            home_sp = abs_sp
+                        else:
+                            home_sp = float(raw_spread)
+                    except (ValueError, TypeError):
+                        home_sp = None
+
+                if details_str:
+                    up_det = details_str.upper()
+                    if up_det in ("EVEN", "PK", "PICK"):
+                        home_sp = 0.0
+                    else:
+                        m = re.match(r"^([A-Z0-9&]+)\s+([+-]?\d+(?:\.\d+)?)$", up_det)
+                        if m:
+                            fav_tok, val_tok = m.group(1), abs(float(m.group(2)))
+                            if fav_tok in (h_abbr_raw, h_abbr):
+                                home_sp = -val_tok
+                            elif fav_tok in (a_abbr_raw, a_abbr):
+                                home_sp = val_tok
+
+                over_under = odds_obj.get("overUnder")
+                try:
+                    ou_val = float(over_under) if over_under is not None else None
+                except (ValueError, TypeError):
+                    ou_val = None
+
+                if home_sp is None and ou_val is None:
+                    continue
+
+                h_sp_price = _parse_espn_american_odds(h_odds_blk.get("spreadOdds"), -110)
+                a_sp_price = _parse_espn_american_odds(a_odds_blk.get("spreadOdds"), -110)
+                o_price = _parse_espn_american_odds(odds_obj.get("overOdds"), -110)
+                u_price = _parse_espn_american_odds(odds_obj.get("underOdds"), -110)
+
+                markets = []
+                if home_sp is not None:
+                    markets.append({
+                        "key": "spreads",
+                        "outcomes": [
+                            {"name": home_full, "point": round(home_sp, 1), "price": h_sp_price},
+                            {"name": away_full, "point": round(-home_sp, 1), "price": a_sp_price}
+                        ]
+                    })
+                if ou_val is not None:
+                    markets.append({
+                        "key": "totals",
+                        "outcomes": [
+                            {"name": "Over", "point": round(ou_val, 1), "price": o_price},
+                            {"name": "Under", "point": round(ou_val, 1), "price": u_price}
+                        ]
+                    })
+
+                if not markets:
+                    continue
+
+                if ev_id:
+                    seen_ids.add(ev_id)
+                out_games.append({
+                    "id": f"espn_{ev_id}",
+                    "_league": league_label,
+                    "_odds_source": "espn_free_fallback",
+                    "commence_time": _normalize_espn_iso_utc(ev.get("date") or comp.get("date") or ""),
+                    "home_team": home_full,
+                    "away_team": away_full,
+                    "bookmakers": [{"key": "fanduel", "title": "ESPN Live Odds", "markets": markets}]
+                })
+        except Exception as e:
+            print(f"[ESPN Free Odds {league_label} Notice] {e}")
+
+    print(f"[ESPN Free Odds Fallback - {league_label}] Pulled {len(out_games)} live matchups (0 API credits used).")
+    return out_games
+
+def fetch_live_odds_for_sport(sport_key, league_label):
+    if ODDS_API_KEY and ODDS_API_KEY != "PASTE_YOUR_API_KEY_HERE":
+        url = (
+            f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/"
+            f"?apiKey={ODDS_API_KEY}&regions=us&markets=spreads,totals&oddsFormat=american"
+        )
+        try:
+            req = urllib.request.Request(url, headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                remaining = resp.headers.get("x-requests-remaining", "Unknown")
+                data = json.loads(resp.read().decode("utf-8"))
+                if data:
+                    print(f"[Odds API - {league_label}] Pulled {len(data)} matchups | Credits Remaining: {remaining}")
+                    for item in data:
+                        item["_league"] = league_label
+                    return data
+                print(f"[Odds API - {league_label}] Returned 0 matchups — engaging $0 ESPN Free Odds Fallback.")
+        except Exception as e:
+            print(f"[Odds API Error - {league_label}] {e} — engaging $0 ESPN Free Odds Fallback.")
+    else:
+        print(f"[Notice] No ODDS_API_KEY set — engaging $0 ESPN Free Odds Fallback for {league_label}.")
+    return fetch_espn_free_odds(league_label)
 
 LEGACY_CODE_MAP = {
     "TCHO": "TCU", "KAJA": "KAN", "KAST": "KSU", "IOST": "ISU", "WEVI": "WVU",
@@ -1292,9 +1601,16 @@ def deduplicate_ledger_entries(entries):
         cleaned[canon_gid] = best_e
     return cleaned
 
-def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by_gid=None):
+def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by_gid=None, old_games=None):
     entries = deduplicate_ledger_entries(ledger.get("entries", {}))
     porkys_by_gid = porkys_by_gid or {}
+    game_lookup_by_gid = {}
+    for og in (old_games or []):
+        if isinstance(og, dict) and og.get("game_id"):
+            game_lookup_by_gid[og["game_id"]] = og
+    for ng in (games_slate or []):
+        if isinstance(ng, dict) and ng.get("game_id"):
+            game_lookup_by_gid[ng["game_id"]] = ng
 
     for g in games_slate:
         gid = g["game_id"]
@@ -1369,11 +1685,19 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                 "balls_deep_proj": best_spread.get("balls_deep_proj", best_spread["projected_mean_mu"]),
                 "balls_deep_win_pct": round(best_spread.get("balls_deep_win_prob", best_spread["model_win_prob"]) * 100, 2),
                 "balls_deep_ev_pct": best_spread.get("balls_deep_ev_pct", best_spread.get("ev_pct", 0.0)),
+                "key_alt_line": best_spread.get("key_alt_line"),
+                "key_alt_odds": best_spread.get("key_alt_odds", -150),
+                "key_alt_label": best_spread.get("key_alt_label", ""),
+                "key_alt_mer": best_spread.get("key_alt_mer", 1.0),
+                "key_alt_win_pct": best_spread.get("key_alt_win_pct", 70.0),
+                "key_alt_ev_pct": best_spread.get("key_alt_ev_pct", 0.0),
                 "tier_badge": best_spread.get("tier_badge", "PASS"),
                 "flagship_slot": best_spread.get("flagship_slot", ""),
                 "result_tip": "PENDING",
-                "result_balls_deep": "PENDING"
+                "result_balls_deep": "PENDING",
+                "result_key_alt": "PENDING"
             }
+            existing["engine_version"] = "v221_roots"
             if best_total:
                 existing["total_record"] = {
                     "pick_label": best_total["player"],
@@ -1384,13 +1708,21 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                     "tip_win_pct": round(best_total["model_win_prob"] * 100, 2),
                     "tip_ev_pct": best_total.get("ev_pct", 0.0),
                     "balls_deep_proj": best_total.get("balls_deep_proj", best_total["projected_mean_mu"]),
-                    "balls_deep_direction": "U" if best_total.get("balls_deep_proj", best_total["projected_mean_mu"]) < best_total["base_line"] else "O",
+                    "balls_deep_direction": best_total.get("key_alt_dir") or ("U" if best_total.get("balls_deep_proj", best_total["projected_mean_mu"]) < best_total["base_line"] else "O"),
                     "balls_deep_win_pct": round(best_total.get("balls_deep_win_prob", best_total["model_win_prob"]) * 100, 2),
                     "balls_deep_ev_pct": best_total.get("balls_deep_ev_pct", best_total.get("ev_pct", 0.0)),
+                    "total_regime": best_total.get("total_regime", "NEUTRAL_PASS"),
+                    "safe_total_line": best_total.get("key_alt_line"),
+                    "safe_total_dir": best_total.get("key_alt_dir", "O"),
+                    "safe_total_odds": best_total.get("key_alt_odds", -175),
+                    "safe_total_label": best_total.get("key_alt_label", ""),
+                    "safe_total_win_pct": best_total.get("key_alt_win_pct", 72.0),
+                    "safe_total_ev_pct": best_total.get("key_alt_ev_pct", 0.0),
                     "tier_badge": best_total.get("tier_badge", "PASS"),
                     "flagship_slot": best_total.get("flagship_slot", ""),
                     "result_tip": "PENDING",
-                    "result_balls_deep": "PENDING"
+                    "result_balls_deep": "PENDING",
+                    "result_safe_total": "PENDING"
                 }
 
         if not existing.get("is_locked", False):
@@ -1400,6 +1732,129 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                 existing.pop("porkys_record", None)
 
         entries[gid] = existing
+
+    # ONE-TIME v221_roots MIGRATION: Upgrade pre-v221 entries (removes old IR double-count & 42.986 totals inversion)
+    for gid, entry in entries.items():
+        if entry.get("engine_version") == "v221_roots" or gid == "nfl_mnf_lac_bal_2026_w10":
+            continue
+        src_g = game_lookup_by_gid.get(gid)
+        if src_g:
+            lg = src_g.get("league", entry.get("league", "NFL"))
+            env = src_g.get("environmental_payload") or {}
+            circ = src_g.get("circadian_payload") or {}
+            h_tel = (src_g.get("team_telemetry") or {}).get("home") or {}
+            a_tel = (src_g.get("team_telemetry") or {}).get("away") or {}
+            hfa = float(src_g.get("hfa_base", NCAA_HFA_BASE if lg == "NCAA" else PI_OVER_PHI_HFA))
+            tz_s = int(circ.get("away_tz_shift", 0) or 0)
+            abs_tz = abs(tz_s)
+            omega_d = 1.35 if tz_s > 0 else (0.85 if tz_s < 0 else 1.0)
+            body_c = int(src_g.get("kickoff_local_hour", 13) or 13) - tz_s
+            phi_c = round(0.45 * (abs_tz * omega_d * math.exp(-0.35)) + (0.30 * max(0.0, 13.0 - body_c)), 3)
+
+            h_m = {
+                "epa": float(h_tel.get("net_epa_per_play", 0.0)), "to_reg": float(h_tel.get("turnover_reg_delta", 0.0)),
+                "close_pct": float(h_tel.get("closing_rank_pct", 0.5)), "streak": int(h_tel.get("active_win_streak", 0)),
+                "rz_dvoa": float(h_tel.get("opp_rz_dvoa", 0.0)), "poll_rank": h_tel.get("poll_rank"), "epa_rank": h_tel.get("epa_rank"),
+                "off_eff": h_tel.get("off_eff"), "def_eff": h_tel.get("def_eff"),
+                "off_epa_per_play": h_tel.get("off_epa_per_play"), "def_epa_per_play": h_tel.get("def_epa_per_play")
+            }
+            a_m = {
+                "epa": float(a_tel.get("net_epa_per_play", 0.0)), "to_reg": float(a_tel.get("turnover_reg_delta", 0.0)),
+                "close_pct": float(a_tel.get("closing_rank_pct", 0.5)), "streak": int(a_tel.get("active_win_streak", 0)),
+                "rz_dvoa": float(a_tel.get("opp_rz_dvoa", 0.0)), "poll_rank": a_tel.get("poll_rank"), "epa_rank": a_tel.get("epa_rank"),
+                "off_eff": a_tel.get("off_eff"), "def_eff": a_tel.get("def_eff"),
+                "off_epa_per_play": a_tel.get("off_epa_per_play"), "def_epa_per_play": a_tel.get("def_epa_per_play")
+            }
+            h_qb = get_verified_qb_delta(h_tel)
+            a_qb = get_verified_qb_delta(a_tel)
+            inj_diff = a_qb - h_qb
+            psi_val = calc_coupled_balls_deep_psi(h_m, a_m, env)
+            elev_i = calc_ten_zone_elevation(env, circ.get("away_elev_m", 150))
+            fair_h_tip = round((GOLDEN_PLAY_SCALER * (a_m["epa"] - h_m["epa"])) + (a_m["to_reg"] - h_m["to_reg"]) - hfa - phi_c, 2)
+
+            s_rec = entry.get("spread_record")
+            if s_rec and s_rec.get("vegas_closing_line") is not None:
+                orig_line = float(s_rec["vegas_closing_line"])
+                orig_is_home = (s_rec.get("pick_team") == entry.get("home_team"))
+                vegas_h = orig_line if orig_is_home else -orig_line
+                fair_h_bd = calc_report_calibrated_bd_spread(fair_h_tip, vegas_h, h_m, a_m, inj_diff, psi_val, elev_i, src_g.get("kickoff_local_hour", 13), lg)
+                # Choose side favored by clean Balls Deep (zero IR double-count)
+                pick_home = (vegas_h - fair_h_bd) >= 0
+                pick_team = entry["home_team"] if pick_home else entry["away_team"]
+                opp_team = entry["away_team"] if pick_home else entry["home_team"]
+                pick_line = round(vegas_h if pick_home else -vegas_h, 1)
+                pick_tip_proj = round(fair_h_tip if pick_home else -fair_h_tip, 2)
+                pick_bd_proj = round(fair_h_bd if pick_home else -fair_h_bd, 2)
+                odds_use = int(s_rec.get("odds", -110) or -110)
+                if abs(odds_use) >= 220:
+                    odds_use = -110
+                p_tip = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * (pick_line - pick_tip_proj)))))
+                p_bd = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * (pick_line - pick_bd_proj)))))
+                ev_t = calc_ev_pct(p_tip, odds_use)
+                ev_b = calc_ev_pct(p_bd, odds_use)
+                k_alt = calc_key_number_alt_spread(pick_line, pick_bd_proj, odds_use)
+                pfx = "vs" if pick_home else "@"
+                s_rec.update({
+                    "pick_label": f"{pick_team} Spread ({'+' if pick_line > 0 else ''}{pick_line}) ({pick_team} {pfx} {opp_team})",
+                    "pick_team": pick_team,
+                    "vegas_closing_line": pick_line,
+                    "odds": odds_use,
+                    "tip_proj": pick_tip_proj,
+                    "tip_win_pct": round(p_tip * 100.0, 2),
+                    "tip_ev_pct": ev_t,
+                    "balls_deep_proj": pick_bd_proj,
+                    "balls_deep_win_pct": round(p_bd * 100.0, 2),
+                    "balls_deep_ev_pct": ev_b,
+                    "key_alt_line": k_alt["alt_line"],
+                    "key_alt_odds": k_alt["alt_odds"],
+                    "key_alt_label": k_alt["alt_str"],
+                    "key_alt_mer": k_alt["mer"],
+                    "key_alt_win_pct": k_alt["alt_win_pct"],
+                    "key_alt_ev_pct": k_alt["alt_ev_pct"],
+                    "tier_badge": "SMASH" if (ev_t >= SMASH_EV_THRESHOLD or k_alt["alt_ev_pct"] >= SMASH_EV_THRESHOLD) else ("PASS" if ev_t <= -19.0 else "TOO_CLOSE"),
+                    "result_tip": "PENDING",
+                    "result_balls_deep": "PENDING",
+                    "result_key_alt": "PENDING",
+                    "miss_by_pts": None
+                })
+
+            t_rec = entry.get("total_record")
+            if t_rec and t_rec.get("vegas_closing_line") is not None:
+                v_tot = float(t_rec["vegas_closing_line"])
+                w_mph = 0.0 if env.get("is_dome") else float(env.get("wind_mph", 0.0))
+                tip_t = calc_independent_total_tip(h_m, a_m, lg, w_mph)
+                reg_t = calc_regime_safe_total_obj(v_tot, tip_t, env, tz_s, elev_i, lg, bool(h_qb < 0 or a_qb < 0))
+                bd_t = reg_t["balls_deep_total"]
+                t_dir = reg_t["safe_dir"] if reg_t["regime"] != "NEUTRAL_PASS" else ("U" if tip_t < v_tot else "O")
+                p_tip_t = max(0.50, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * abs(tip_t - v_tot)))))
+                p_bd_t = max(0.50, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * abs(bd_t - v_tot)))))
+                ev_t_tot = calc_ev_pct(p_tip_t, -110)
+                ev_b_tot = calc_ev_pct(p_bd_t, -110)
+                t_rec.update({
+                    "pick_label": f"{entry['away_team']}@{entry['home_team']} Total ({t_dir} {v_tot}) ({entry['away_team']} @ {entry['home_team']})",
+                    "odds": -110,
+                    "tip_proj": tip_t,
+                    "tip_direction": t_dir,
+                    "tip_win_pct": round(p_tip_t * 100.0, 2),
+                    "tip_ev_pct": ev_t_tot,
+                    "balls_deep_proj": bd_t,
+                    "balls_deep_direction": reg_t["safe_dir"],
+                    "balls_deep_win_pct": round(p_bd_t * 100.0, 2),
+                    "balls_deep_ev_pct": ev_b_tot,
+                    "total_regime": reg_t["regime"],
+                    "safe_total_line": reg_t["safe_line"],
+                    "safe_total_dir": reg_t["safe_dir"],
+                    "safe_total_odds": reg_t["safe_odds"],
+                    "safe_total_label": reg_t["safe_label"],
+                    "safe_total_win_pct": reg_t["safe_win_pct"],
+                    "safe_total_ev_pct": reg_t["safe_ev_pct"],
+                    "tier_badge": "SMASH" if (reg_t["regime"] != "NEUTRAL_PASS" and reg_t["safe_ev_pct"] >= SMASH_EV_THRESHOLD) else "TOO_CLOSE",
+                    "result_tip": "PENDING",
+                    "result_balls_deep": "PENDING",
+                    "result_safe_total": "PENDING",
+                    "miss_by_pts": None
+                })
+            entry["engine_version"] = "v221_roots"
 
     for gid, entry in entries.items():
         espn_info = None
@@ -1453,6 +1908,18 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                 else:
                     s_rec["result_balls_deep"] = "MISS" if grade == "HIT" else ("HIT" if grade in ("MISS", "BLUE_BALLS") else "PUSH")
 
+                if s_rec.get("key_alt_line") is None:
+                    ka = calc_key_number_alt_spread(line, bd_proj, int(s_rec.get("odds", -110) or -110))
+                    s_rec["key_alt_line"] = ka["alt_line"]
+                    s_rec["key_alt_odds"] = ka["alt_odds"]
+                    s_rec["key_alt_label"] = ka["alt_str"]
+                    s_rec["key_alt_mer"] = ka["mer"]
+                    s_rec["key_alt_win_pct"] = ka["alt_win_pct"]
+                    s_rec["key_alt_ev_pct"] = ka["alt_ev_pct"]
+                ka_diff = team_margin + float(s_rec["key_alt_line"])
+                ka_miss = round(abs(ka_diff), 1) if ka_diff < 0 else 0.0
+                s_rec["result_key_alt"] = "HIT" if ka_diff > 0 else ("PUSH" if ka_diff == 0 else ("BLUE_BALLS" if ka_miss <= 3.0 else "MISS"))
+
             t_rec = entry.get("total_record")
             if t_rec and (t_rec.get("result_tip") == "PENDING" or t_rec.get("miss_by_pts") is None):
                 total_pts = h_pts + a_pts
@@ -1474,6 +1941,12 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                             t_rec[mode_key] = "MISS"
                         if mode_key == "result_tip":
                             t_rec["miss_by_pts"] = t_miss
+                if t_rec.get("safe_total_line") is not None:
+                    st_line = float(t_rec["safe_total_line"])
+                    st_dir = t_rec.get("safe_total_dir", t_rec.get("balls_deep_direction", "O"))
+                    st_diff = (total_pts - st_line) if st_dir == "O" else (st_line - total_pts)
+                    st_miss = round(abs(st_diff), 1) if st_diff < 0 else 0.0
+                    t_rec["result_safe_total"] = "HIT" if st_diff > 0 else ("PUSH" if st_diff == 0 else ("BLUE_BALLS" if st_miss <= 3.0 else "MISS"))
 
             p_rec = entry.get("porkys_record")
             if p_rec and (p_rec.get("result_floor") == "PENDING" or p_rec.get("result_straight") == "PENDING"):
@@ -1712,6 +2185,7 @@ def build_master_payload():
 
                     ev_tip = calc_ev_pct(win_prob_tip, price)
                     ev_bd = calc_ev_pct(win_prob_bd, price)
+                    key_alt = calc_key_number_alt_spread(point, model_bd_spread, price)
                     badge = "SMASH" if ev_tip >= SMASH_EV_THRESHOLD else ("PASS" if ev_tip <= -19.0 else "TOO_CLOSE")
 
                     props_board.append({
@@ -1723,6 +2197,13 @@ def build_master_payload():
                         "balls_deep_win_prob": round(win_prob_bd, 4),
                         "ev_pct": ev_tip,
                         "balls_deep_ev_pct": ev_bd,
+                        "key_alt_line": key_alt["alt_line"],
+                        "key_alt_odds": key_alt["alt_odds"],
+                        "key_alt_label": key_alt["alt_str"],
+                        "key_alt_note": key_alt["key_label"],
+                        "key_alt_mer": key_alt["mer"],
+                        "key_alt_win_pct": key_alt["alt_win_pct"],
+                        "key_alt_ev_pct": key_alt["alt_ev_pct"],
                         "tier_badge": badge,
                         "flagship_slot": "",
                         "projected_variance_sigma2": 0,
@@ -1742,11 +2223,13 @@ def build_master_payload():
                     o_price = int(over_out.get("price", -110))
                     u_price = int(under_out.get("price", -110))
 
+                    has_backup_qb = bool(home_inj["qb_replacement_delta"] < 0 or away_inj["qb_replacement_delta"] < 0)
                     proj_total_tip = calc_independent_total_tip(home_meta, away_meta, game_league, wind_mph)
-                    proj_total_bd = calc_report_calibrated_bd_total(t_point, proj_total_tip, env_weather, tz_shift, elev_info)
+                    reg_tot = calc_regime_safe_total_obj(t_point, proj_total_tip, env_weather, tz_shift, elev_info, game_league, has_backup_qb)
+                    proj_total_bd = reg_tot["balls_deep_total"]
 
                     is_under = proj_total_tip < t_point
-                    is_under_bd = proj_total_bd < t_point
+                    is_under_bd = (reg_tot["safe_dir"] == "U")
                     active_price = u_price if is_under else o_price
                     bd_price = u_price if is_under_bd else o_price
 
@@ -1758,7 +2241,7 @@ def build_master_payload():
 
                     ev_tip = calc_ev_pct(calc_prob_tip, active_price)
                     ev_bd = calc_ev_pct(calc_prob_bd, bd_price)
-                    badge = "SMASH" if ev_tip >= SMASH_EV_THRESHOLD else ("PASS" if ev_tip <= -19.0 else "TOO_CLOSE")
+                    badge = "SMASH" if (reg_tot["regime"] != "NEUTRAL_PASS" and reg_tot["safe_ev_pct"] >= SMASH_EV_THRESHOLD) else ("SMASH" if ev_tip >= SMASH_EV_THRESHOLD else ("PASS" if ev_tip <= -19.0 else "TOO_CLOSE"))
 
                     props_board.append({
                         "player": f"{away_code}@{home_code} Total ({'U' if is_under else 'O'} {t_point}) ({away_code} @ {home_code})",
@@ -1769,6 +2252,13 @@ def build_master_payload():
                         "balls_deep_win_prob": round(calc_prob_bd, 4),
                         "ev_pct": ev_tip,
                         "balls_deep_ev_pct": ev_bd,
+                        "total_regime": reg_tot["regime"],
+                        "key_alt_line": reg_tot["safe_line"],
+                        "key_alt_dir": reg_tot["safe_dir"],
+                        "key_alt_odds": reg_tot["safe_odds"],
+                        "key_alt_label": reg_tot["safe_label"],
+                        "key_alt_win_pct": reg_tot["safe_win_pct"],
+                        "key_alt_ev_pct": reg_tot["safe_ev_pct"],
                         "tier_badge": badge,
                         "flagship_slot": "",
                         "projected_variance_sigma2": 0,
@@ -1991,15 +2481,22 @@ def build_master_payload():
         if isinstance(old_ranked, list) and old_ranked:
             live_ranked_ncaa = old_ranked
 
+    # Strip legacy non-QB IR pollution from any preserved games so live UI reflects clean ΔQB-only math
+    for pg in games_slate:
+        for side_k in ("home", "away"):
+            t_blk = (pg.get("team_telemetry") or {}).get(side_k)
+            if isinstance(t_blk, dict):
+                t_blk["qb_replacement_delta"] = get_verified_qb_delta(t_blk)
+
     existing_ledger = old_payload.get("historical_ledger") if isinstance(old_payload.get("historical_ledger"), dict) else {"entries": {}, "summary": {}}
-    updated_ledger = update_and_grade_ledger(existing_ledger, games_slate, espn_scores, now_utc, porkys_by_gid)
+    updated_ledger = update_and_grade_ledger(existing_ledger, games_slate, espn_scores, now_utc, porkys_by_gid, old_games=old_games)
 
     return {
         "slate_info": {
             "league": "NFL_NCAA",
             "week": 12,
             "last_updated": now_iso,
-            "telemetry_version": "v219_live_feeds",
+            "telemetry_version": "v221_roots_live",
             "ranked_ncaa_teams": live_ranked_ncaa
         },
         "games": games_slate,
@@ -2014,7 +2511,7 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v219)")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v221 — BACK TO OUR ROOTS)")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("=========================================================")
 
