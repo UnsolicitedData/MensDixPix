@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v249 — BACK TO OUR ROOTS + WONG LADDER)
- * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with math_engine.js (v316) & scraper.py (v223)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v250 — PRE-GAME LOCK + PURE SMASH LEDGER)
+ * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with math_engine.js (v316) & scraper.py (v224)
  *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
  *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
  *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
@@ -3021,7 +3021,7 @@ function renderHistoricalLedger() {
                     vaultRows.flagship_5pack.push({ weekLabel, rowHTML });
                 }
 
-                if (ledgerTier === "SMASH" || rec.tier_badge === "SMASH") {
+                if (ledgerTier === "SMASH") {
                     if (gradedTip !== "PUSH") {
                         tallyGrade("overall_smash", gradedTip);
                         tallyGrade(isSpread ? "spread_smash" : "total_smash", gradedTip);
@@ -3138,7 +3138,8 @@ function renderHistoricalLedger() {
                 ceilingMissBy = ceilingResObj.missBy;
             }
 
-            if (isFinal && (gradedTip === "HIT" || gradedTip === "MISS" || gradedTip === "BLUE_BALLS")) {
+            const hasPoisonedLiveOdds = Math.abs(Number(p.baseOdds || -110)) >= 220;
+            if (isFinal && !hasPoisonedLiveOdds && (gradedTip === "HIT" || gradedTip === "MISS" || gradedTip === "BLUE_BALLS")) {
                 const rowHTML = buildStandardVaultRowHTML(
                     weekLabel, g.matchup, statusLabel, isSpread ? "SPREAD" : "TOTAL (O/U)", p.flagshipSlot,
                     p.player, ledgerTier, p.baseLine, p.baseOdds, tipColor, fmtTipProj, p.tipModelPct, p.tipEvPct,
@@ -3732,4 +3733,4 @@ function renderLiveBottomTicker() {
         </div>
     `;
 }
-// === END OF APP_CONTROLLER.JS (v249) ===
+// === END OF APP_CONTROLLER.JS (v250) ===
