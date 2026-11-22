@@ -1,5 +1,5 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v223 — BACK TO OUR ROOTS + WONG LADDER)
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v224 — PRE-GAME LOCK + TRUE 62.3-PLAY NFL EPA + PURE SMASH)
 Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
   1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
   2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
@@ -769,10 +769,14 @@ def get_team_meta(full_name, league="NFL", nflverse_map=None, fpi_map=None, stan
             meta["def_eff"] = fpi_hit.get("def_eff")
 
         if nv_hit:
+            # NFL teams run ~62.32 plays/game (= GOLDEN_PLAY_SCALER * PHI).
+            # Normalize raw per-play Net EPA onto the exact GOLDEN_PLAY_SCALER point scale (1:1 with FPI)!
+            nv_epa_scaled = nv_hit["net_epa_per_play"] * GOLDEN_RATIO_PHI
             if fpi_hit:
-                meta["epa"] = round((0.80 * nv_hit["net_epa_per_play"]) + (0.20 * fpi_hit["epa_equiv"]), 4)
+                meta["epa"] = round((0.80 * nv_epa_scaled) + (0.20 * fpi_hit["epa_equiv"]), 4)
             else:
-                meta["epa"] = nv_hit["net_epa_per_play"]
+                meta["epa"] = round(nv_epa_scaled, 4)
+            meta["epa_scaled_62"] = True
             meta["off_epa_per_play"] = nv_hit.get("off_epa_per_play")
             meta["def_epa_per_play"] = nv_hit.get("def_epa_per_play")
             meta["to_reg"] = nv_hit["to_reg"]
@@ -1864,7 +1868,7 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                 "result_balls_deep": "PENDING",
                 "result_key_alt": "PENDING"
             }
-            existing["engine_version"] = "v223_roots"
+            existing["engine_version"] = "v224_clean_pregame"
             if best_total:
                 existing["total_record"] = {
                     "pick_label": best_total["player"],
@@ -1900,11 +1904,11 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
 
         entries[gid] = existing
 
-    # ONE-TIME v223_roots MIGRATION (NULL-PROOF):
+    # ONE-TIME v224_clean_pregame MIGRATION (NULL-PROOF):
     # Upgrades ALL pre-v222 entries (both games still in data.json AND older archived FINAL entries)
     # to clean ΔQB-only spreads, Key-Number Alt Buys, and Regime Safe Totals, then re-grades against actual scores!
     for gid, entry in entries.items():
-        if entry.get("engine_version") == "v223_roots" or gid == "nfl_mnf_lac_bal_2026_w10":
+        if entry.get("engine_version") == "v224_clean_pregame" or gid == "nfl_mnf_lac_bal_2026_w10":
             continue
         try:
             src_g = game_lookup_by_gid.get(gid)
@@ -1921,15 +1925,21 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                 body_c = _i(src_g.get("kickoff_local_hour"), 13) - tz_s
                 phi_c = round(0.45 * (abs_tz * omega_d * math.exp(-0.35)) + (0.30 * max(0.0, 13.0 - body_c)), 3)
 
+                h_epa_val = _f(h_tel.get("net_epa_per_play"), 0.0)
+                a_epa_val = _f(a_tel.get("net_epa_per_play"), 0.0)
+                if lg == "NFL" and h_tel.get("telemetry_source") == "nflverse_2026_live" and not h_tel.get("epa_scaled_62"):
+                    h_epa_val = round(h_epa_val * GOLDEN_RATIO_PHI, 4)
+                if lg == "NFL" and a_tel.get("telemetry_source") == "nflverse_2026_live" and not a_tel.get("epa_scaled_62"):
+                    a_epa_val = round(a_epa_val * GOLDEN_RATIO_PHI, 4)
                 h_m = {
-                    "epa": _f(h_tel.get("net_epa_per_play"), 0.0), "to_reg": _f(h_tel.get("turnover_reg_delta"), 0.0),
+                    "epa": h_epa_val, "to_reg": _f(h_tel.get("turnover_reg_delta"), 0.0),
                     "close_pct": _f(h_tel.get("closing_rank_pct"), 0.5), "streak": _i(h_tel.get("active_win_streak"), 0),
                     "rz_dvoa": _f(h_tel.get("opp_rz_dvoa"), 0.0), "poll_rank": h_tel.get("poll_rank"), "epa_rank": h_tel.get("epa_rank"),
                     "off_eff": h_tel.get("off_eff"), "def_eff": h_tel.get("def_eff"),
                     "off_epa_per_play": h_tel.get("off_epa_per_play"), "def_epa_per_play": h_tel.get("def_epa_per_play")
                 }
                 a_m = {
-                    "epa": _f(a_tel.get("net_epa_per_play"), 0.0), "to_reg": _f(a_tel.get("turnover_reg_delta"), 0.0),
+                    "epa": a_epa_val, "to_reg": _f(a_tel.get("turnover_reg_delta"), 0.0),
                     "close_pct": _f(a_tel.get("closing_rank_pct"), 0.5), "streak": _i(a_tel.get("active_win_streak"), 0),
                     "rz_dvoa": _f(a_tel.get("opp_rz_dvoa"), 0.0), "poll_rank": a_tel.get("poll_rank"), "epa_rank": a_tel.get("epa_rank"),
                     "off_eff": a_tel.get("off_eff"), "def_eff": a_tel.get("def_eff"),
@@ -1948,7 +1958,7 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                     orig_is_home = (s_rec.get("pick_team") == entry.get("home_team"))
                     vegas_h = orig_line if orig_is_home else -orig_line
                     fair_h_bd = calc_report_calibrated_bd_spread(fair_h_tip, vegas_h, h_m, a_m, inj_diff, psi_val, elev_i, _i(src_g.get("kickoff_local_hour"), 13), lg)
-                    pick_home = (vegas_h - fair_h_bd) >= 0
+                    pick_home = (vegas_h - fair_h_tip) >= 0
                     pick_team = entry["home_team"] if pick_home else entry["away_team"]
                     opp_team = entry["away_team"] if pick_home else entry["home_team"]
                     pick_line = round(vegas_h if pick_home else -vegas_h, 1)
@@ -1980,7 +1990,8 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                         "key_alt_mer": k_alt["mer"],
                         "key_alt_win_pct": k_alt["alt_win_pct"],
                         "key_alt_ev_pct": k_alt["alt_ev_pct"],
-                        "tier_badge": "SMASH" if (ev_t >= SMASH_EV_THRESHOLD or k_alt["alt_ev_pct"] >= SMASH_EV_THRESHOLD) else ("PASS" if ev_t <= -19.0 else "TOO_CLOSE"),
+                        "tier_badge": "SMASH" if ev_t >= SMASH_EV_THRESHOLD else ("PASS" if ev_t <= -19.0 else "TOO_CLOSE"),
+                        "key_tier_badge": "SMASH" if k_alt["alt_ev_pct"] >= SMASH_EV_THRESHOLD else "TOO_CLOSE",
                         "result_tip": "PENDING",
                         "result_balls_deep": "PENDING",
                         "result_key_alt": "PENDING",
@@ -1994,7 +2005,7 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                     tip_t = calc_independent_total_tip(h_m, a_m, lg, w_mph)
                     reg_t = calc_regime_safe_total_obj(v_tot, tip_t, env, tz_s, elev_i, lg, bool(h_qb < 0 or a_qb < 0))
                     bd_t = reg_t["balls_deep_total"]
-                    t_dir = reg_t["safe_dir"] if reg_t["regime"] != "NEUTRAL_PASS" else ("U" if tip_t < v_tot else "O")
+                    t_dir = "U" if tip_t < v_tot else "O"
                     p_tip_t = max(0.50, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * abs(tip_t - v_tot)))))
                     p_bd_t = max(0.50, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * abs(bd_t - v_tot)))))
                     ev_t_tot = calc_ev_pct(p_tip_t, -110)
@@ -2017,7 +2028,8 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                         "safe_total_label": reg_t["safe_label"],
                         "safe_total_win_pct": reg_t["safe_win_pct"],
                         "safe_total_ev_pct": reg_t["safe_ev_pct"],
-                        "tier_badge": "SMASH" if (reg_t["regime"] != "NEUTRAL_PASS" and reg_t["safe_ev_pct"] >= SMASH_EV_THRESHOLD) else "TOO_CLOSE",
+                        "tier_badge": "SMASH" if ev_t_tot >= SMASH_EV_THRESHOLD else ("PASS" if ev_t_tot <= -19.0 else "TOO_CLOSE"),
+                        "safe_tier_badge": "SMASH" if (reg_t["regime"] != "NEUTRAL_PASS" and reg_t["safe_ev_pct"] >= SMASH_EV_THRESHOLD) else "TOO_CLOSE",
                         "result_tip": "PENDING",
                         "result_balls_deep": "PENDING",
                         "result_safe_total": "PENDING",
@@ -2064,9 +2076,9 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                         "safe_total_ev_pct": reg_t["safe_ev_pct"],
                         "result_safe_total": "PENDING"
                     })
-            entry["engine_version"] = "v223_roots"
+            entry["engine_version"] = "v224_clean_pregame"
         except Exception as mig_err:
-            print(f"[v223 Migration Skip {gid}] {mig_err}")
+            print(f"[v224 Migration Skip {gid}] {mig_err}")
 
     for gid, entry in entries.items():
         espn_info = None
@@ -2299,6 +2311,13 @@ def build_master_payload():
                 except Exception:
                     prefetched_nfl_injuries[k] = {}
 
+    old_payload = load_existing_payload()
+    old_games = old_payload.get("games", []) if isinstance(old_payload.get("games"), list) else []
+    old_games_by_id = {}
+    for og in old_games:
+        if isinstance(og, dict) and og.get("game_id"):
+            old_games_by_id[og["game_id"]] = og
+
     games_slate = []
     seen_matchups = set()
 
@@ -2328,14 +2347,30 @@ def build_master_payload():
         commence_str = game.get("commence_time", "")
         kickoff_local_hour = 13
         is_upcoming_soon = False
+        is_game_started = False
         if commence_str:
             try:
                 dt_utc = datetime.strptime(commence_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
                 dt_local = dt_utc + timedelta(hours=home_meta["tz"])
                 kickoff_local_hour = dt_local.hour
+                is_game_started = (now_utc >= dt_utc)
                 is_upcoming_soon = (-timedelta(hours=4) <= (dt_utc - now_utc) <= timedelta(days=8))
             except Exception:
                 pass
+
+        espn_live_chk = espn_scores.get(f"{away_code}_{home_code}")
+        if espn_live_chk and (espn_live_chk.get("state") in ("in", "post") or espn_live_chk.get("completed")):
+            is_game_started = True
+
+        # LIVE IN-GAME ODDS FIREWALL: Never overwrite a started/live game with halftime odds (e.g. LAC +3.5 / JAX +7.5)!
+        if is_game_started:
+            preserved_g = old_games_by_id.get(game_id)
+            if preserved_g:
+                games_slate.append(preserved_g)
+                print(f"[PRE-GAME LOCK] Preserved locked pre-kickoff lines for live/final game {game_id}")
+            else:
+                print(f"[LIVE ODDS BLOCKED] Skipped un-locked in-progress game {game_id} to prevent halftime spread poisoning")
+            continue
 
         # Pull live NFL injury reports for upcoming week's games via ESPN event summary
         home_inj = {"qb_replacement_delta": 0.0, "lt_or_rb_pass_pro_out": False, "is_third_string_qb": False, "injuries_summary": []}
@@ -2467,7 +2502,7 @@ def build_master_payload():
 
                     ev_tip = calc_ev_pct(calc_prob_tip, active_price)
                     ev_bd = calc_ev_pct(calc_prob_bd, bd_price)
-                    badge = "SMASH" if (reg_tot["regime"] != "NEUTRAL_PASS" and reg_tot["safe_ev_pct"] >= SMASH_EV_THRESHOLD) else ("SMASH" if ev_tip >= SMASH_EV_THRESHOLD else ("PASS" if ev_tip <= -19.0 else "TOO_CLOSE"))
+                    badge = "SMASH" if ev_tip >= SMASH_EV_THRESHOLD else ("PASS" if ev_tip <= -19.0 else "TOO_CLOSE")
 
                     props_board.append({
                         "player": f"{away_code}@{home_code} Total ({'U' if is_under else 'O'} {t_point}) ({away_code} @ {home_code})",
@@ -2538,6 +2573,8 @@ def build_master_payload():
                 tel_obj["def_epa_per_play"] = meta_obj["def_epa_per_play"]
             if meta_obj.get("is_fcs"):
                 tel_obj["is_fcs"] = True
+            if meta_obj.get("epa_scaled_62"):
+                tel_obj["epa_scaled_62"] = True
 
         games_slate.append({
             "game_id": game_id,
@@ -2684,9 +2721,6 @@ def build_master_payload():
             "trap_dodged": None
         }
 
-    old_payload = load_existing_payload()
-    old_games = old_payload.get("games", []) if isinstance(old_payload.get("games"), list) else []
-
     # ZERO-WIPEOUT SAFEGUARD: If Odds API failed / hit 0 credits for NFL or NCAA, preserve previous games
     # instead of overwriting data.json with an empty [] slate!
     live_nfl_cnt = sum(1 for g in games_slate if g.get("league") == "NFL")
@@ -2722,7 +2756,7 @@ def build_master_payload():
             "league": "NFL_NCAA",
             "week": 12,
             "last_updated": now_iso,
-            "telemetry_version": "v223_roots_live",
+            "telemetry_version": "v224_clean_pregame_live",
             "ranked_ncaa_teams": live_ranked_ncaa
         },
         "games": games_slate,
@@ -2737,7 +2771,7 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v223 — BACK TO OUR ROOTS + WONG LADDER)")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v224 — PRE-GAME LOCK + TRUE 62.3-PLAY NFL EPA + PURE SMASH)")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("=========================================================")
 
