@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v314)
- * Pure Untouched OG M1–M9 (LOCKED) + Report-Calibrated M11–M13 (Synced 1:1 with scraper.py v217)
+ * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v315 — BACK TO OUR ROOTS)
+ * Pure OG M1–M9 + Verified ΔQB-Only Filter + Key-Number Alt Buys (MER > 1.15) + Regime Safe Totals (Synced 1:1 with scraper.py v221)
  *  - PURE OG MODULES 1–9 RESTORED: 100% Independent Fair Margin (ZERO Vegas-Spread Anchoring)
  *  - Live Roster/Injury Integration (qb_replacement_delta) + Fixed opp_rz_dvoa Sign
  *  - Strict M1–M9 Firewall in Just the Tip | Full M11–M13 Physics & Sacred Geometry in Balls Deep/DaVinci
@@ -480,8 +480,10 @@ function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "
     const epaDiff = awayEpa - homeEpa;
     const deltaTOReg = (away.turnover_reg_delta || 0) - (home.turnover_reg_delta || 0);
 
-    // Live Roster & Injury Adjustment (negative delta = team missing key starters -> opponent benefits)
-    const injurySpreadDiff = Number(away.qb_replacement_delta || 0) - Number(home.qb_replacement_delta || 0);
+    // Back-to-Our-Roots ΔQB-ONLY Injury Filter (Zero non-QB IR double-counting!)
+    const awayQbDelta = getVerifiedQbDelta(away);
+    const homeQbDelta = getVerifiedQbDelta(home);
+    const injurySpreadDiff = awayQbDelta - homeQbDelta;
 
     // Module 9 Red-Zone TD Finishing & Road Kicker Reliability Coefficient (Delta_RZ_fin)
     // Fixed Sign: negative opp_rz_dvoa = stronger defense (good home RZ defense moves home spread negative)
@@ -647,28 +649,178 @@ function calcPointGapWinProb(pointGap) {
     return Math.max(0.01, Math.min(0.99, prob));
 }
 
-// REPORT-CALIBRATED BALLS DEEP TOTAL SYNTHESIS (M7 COLD/WIND + M8 3-TZ + M11 HYPOXIA + EFF LEAN)
-function calcReportCalibratedTotal(vegasTotal, ogTipTotal, envPayload = {}, circPayload = {}, elevMatrix = null) {
+// ==========================================
+// BACK-TO-OUR-ROOTS ΔQB-ONLY GUARDRAIL (ELIMINATES NON-QB IR DOUBLE-COUNTING)
+// ==========================================
+function getVerifiedQbDelta(teamTel) {
+    if (!teamTel) return 0.0;
+    const raw = Number(teamTel.qb_replacement_delta || 0);
+    if (raw === 0) return 0.0;
+    // If injuries_summary is present, verify an actual QB is listed; otherwise ignore legacy non-QB IR sums
+    if (Array.isArray(teamTel.injuries_summary) && teamTel.injuries_summary.length > 0) {
+        const hasQbOut = teamTel.injuries_summary.some(s => String(s).toUpperCase().includes("(QB,"));
+        if (!hasQbOut) return 0.0;
+    }
+    return Number(Math.max(-3.5, Math.min(0.0, raw)).toFixed(2));
+}
+
+// ==========================================
+// MODULE 3 UPGRADE: BACK-TO-OUR-ROOTS KEY-NUMBER ALT-BUY ENGINE (MER > 1.15)
+// Crosses Key Numbers 3, 7, 10, 14, 17, 21 onto lethal .5 hooks (-2.5, +3.5, -6.5, +7.5, -13.5, -14.5, -17.5)
+// ==========================================
+function calcKeyNumberAltSpread(baseLine, modelFairLine, baseOdds = -110) {
+    const line = Number(baseLine || 0);
+    const fair = Number(modelFairLine !== undefined ? modelFairLine : line);
+    const baseProb = calcPointGapWinProb(line - fair);
+
+    let altLine = line;
+    let altOdds = Number(baseOdds || -110);
+    let keyLabel = "Hold Base";
+
+    if (line < 0) {
+        // FAVORITE: buy DOWN across the next key number
+        if (line >= -2.5) {
+            altLine = line; altOdds = Number(baseOdds || -110); keyLabel = "Hold Under Key #3";
+        } else if (line >= -4.5) {
+            altLine = -2.5; altOdds = (line >= -3.5) ? -145 : -165; keyLabel = "Key #3 Buy (-2.5)";
+        } else if (line >= -6.5) {
+            altLine = (line >= -5.5) ? -2.5 : -3.5; altOdds = -165; keyLabel = "Key #3/#6 Buy";
+        } else if (line >= -9.5) {
+            altLine = -6.5; altOdds = (line >= -7.5) ? -135 : -160; keyLabel = "Key #7 Buy (-6.5)";
+        } else if (line >= -13.0) {
+            altLine = -9.5; altOdds = (line >= -11.5) ? -145 : -165; keyLabel = "Key #10 Buy (-9.5)";
+        } else if (line >= -16.5) {
+            altLine = (line <= -14.0) ? -13.5 : -10.5; altOdds = (line <= -15.5) ? -150 : -165; keyLabel = "Key #14 Buy (-13.5)";
+        } else if (line >= -19.5) {
+            altLine = -14.5; altOdds = -160; keyLabel = "Key #14.5/#17 Buy (-14.5)";
+        } else {
+            altLine = (line >= -21.5) ? -17.5 : (Math.floor(line + 3.5) + 0.5);
+            altOdds = -155;
+            keyLabel = `Key #17.5 Blowout Buy (${altLine > 0 ? '+' : ''}${altLine.toFixed(1)})`;
+        }
+    } else {
+        // UNDERDOG (or PK): buy UP across the next key number
+        if (line <= 3.0) {
+            altLine = 3.5; altOdds = (line >= 2.0) ? -135 : -160; keyLabel = "Key #3 Dog Buy (+3.5)";
+        } else if (line <= 5.0) {
+            altLine = (line <= 4.0) ? 6.5 : 7.5; altOdds = -155; keyLabel = "Key #7 Dog Buy";
+        } else if (line <= 6.5) {
+            altLine = 7.5; altOdds = -140; keyLabel = "Key #7 Dog Buy (+7.5)";
+        } else if (line <= 9.5) {
+            altLine = 10.5; altOdds = (line >= 8.0) ? -145 : -165; keyLabel = "Key #10 Dog Buy (+10.5)";
+        } else if (line <= 13.0) {
+            altLine = (line <= 11.5) ? 13.5 : 14.5; altOdds = -150; keyLabel = "Key #14 Dog Buy (+13.5/+14.5)";
+        } else if (line <= 16.5) {
+            altLine = 17.5; altOdds = -155; keyLabel = "Key #17.5 Dog Buy (+17.5)";
+        } else {
+            altLine = Math.floor(line + 3.5) + 0.5;
+            altOdds = -160;
+            keyLabel = `Blowout Dog Floor (+${altLine.toFixed(1)})`;
+        }
+    }
+
+    const rawAltProb = calcPointGapWinProb(altLine - fair);
+    let crossedBonus = 0.0;
+    const lo = Math.min(line, altLine), hi = Math.max(line, altLine);
+    const keyMasses = [[3.0, 0.045], [-3.0, 0.045], [7.0, 0.035], [-7.0, 0.035], [10.0, 0.025], [-10.0, 0.025], [14.0, 0.025], [-14.0, 0.025], [17.0, 0.018], [-17.0, 0.018]];
+    for (let i = 0; i < keyMasses.length; i++) {
+        if (lo < keyMasses[i][0] && keyMasses[i][0] < hi) crossedBonus += keyMasses[i][1];
+    }
+    const altProb = Math.min(0.95, Math.max(0.05, rawAltProb + crossedBonus));
+    const beBase = calcImpliedProbability(Number(baseOdds || -110));
+    const beAlt = calcImpliedProbability(altOdds);
+    const dTax = Math.max(0.01, beAlt - beBase);
+    const merRatio = (altLine !== line) ? Number(((altProb - baseProb) / dTax).toFixed(2)) : 1.0;
+    const evObj = calcExpectedValueAndKelly(altProb, altOdds);
+    const fmtAlt = `${altLine > 0 ? '+' : ''}${altLine.toFixed(1)}`;
+
+    return {
+        altLine: Number(altLine.toFixed(1)),
+        altOdds,
+        altProb,
+        altProbPct: Number((altProb * 100).toFixed(1)),
+        merRatio,
+        isMerApproved: merRatio >= 1.15,
+        altEvPct: Number(evObj.evPercentage.toFixed(2)),
+        keyLabel,
+        altStr: `Alt ${fmtAlt} (${altOdds})`
+    };
+}
+
+// ==========================================
+// BACK-TO-OUR-ROOTS REGIME SAFE TOTALS ENGINE (KILLS THE 42.986 BLIND FADE BUG!)
+//   - Inflated / Dome Shootouts -> Drop DOWN 4–5 pts to Safe Alt OVER (-175 / -180)
+//   - Grind-Fests / Cold / Wind / Backup QB / Zone 7+ Altitude -> Buy UP 4 pts to Safe Alt UNDER (-175)
+//   - Neutral Mid-Range -> NEUTRAL_PASS (no forced contrarian fade)
+// ==========================================
+function calcReportCalibratedTotal(vegasTotal, ogTipTotal, envPayload = {}, circPayload = {}, elevMatrix = null, gameLeague = "NFL", hasBackupQb = false) {
     const vTot = Number(vegasTotal || ogTipTotal || 45.0);
     const isDome = Boolean(envPayload && envPayload.is_dome);
-    const tempF = isDome ? 72.0 : Number(envPayload.temperature_f !== undefined ? envPayload.temperature_f : 59.0);
-    const windMph = isDome ? 0.0 : Number(envPayload.wind_mph !== undefined ? envPayload.wind_mph : 0.0);
+    const tempF = isDome ? 72.0 : Number(envPayload.temperature_f !== undefined ? envPayload.temperature_f : 58.0);
+    const windMph = isDome ? 0.0 : Number(envPayload.wind_mph !== undefined ? envPayload.wind_mph : 5.0);
     const absTz = Math.abs(Number((circPayload && circPayload.away_tz_shift) || 0));
-
-    const coldDrag = isDome ? 0.0 : -Math.max(0.0, (42.0 - tempF) * 0.14);
-    const windDrag = isDome ? 0.0 : -Math.max(0.0, (windMph - 10.0) * 0.30);
-    const tzDrag = absTz >= 3 ? -1.65 : (absTz === 2 ? -0.75 : 0.0);
+    const elevZone = (elevMatrix && elevMatrix.zoneNumber) ? Number(elevMatrix.zoneNumber) : 1;
     const elevTotDrag = (elevMatrix && elevMatrix.elevationTotalDragPts) ? Number(elevMatrix.elevationTotalDragPts) : 0.0;
-    const effLean = 0.25 * Math.max(-8.0, Math.min(8.0, Number(ogTipTotal) - vTot));
 
-    const totalDelta = Math.max(-6.5, Math.min(6.5, effLean + coldDrag + windDrag + tzDrag + elevTotDrag));
+    const ballistics = calcBarometricBallistics(envPayload || {});
+    const rho = ballistics.airDensityRho || 1.225;
+
+    const coldDrag = isDome ? 0.0 : -Math.max(0.0, (44.0 - tempF) * 0.14);
+    const windDrag = isDome ? 0.0 : -Math.max(0.0, (windMph - 10.0) * 0.28);
+    const tzDrag = absTz >= 3 ? -1.50 : (absTz === 2 ? -0.65 : 0.0);
+    const qbDrag = hasBackupQb ? -2.75 : 0.0;
+    const envDrag = coldDrag + windDrag + tzDrag + elevTotDrag + qbDrag;
+    const pacePull = 0.15 * Math.max(-6.0, Math.min(6.0, Number(ogTipTotal) - vTot));
+
+    const shootoutThresh = (gameLeague === "NCAA") ? 58.5 : 49.5;
+    const domeShootoutThresh = (gameLeague === "NCAA") ? 54.5 : 46.5;
+    const grindThresh = (gameLeague === "NCAA") ? 44.5 : 41.5;
+    const weatherGrindThresh = (gameLeague === "NCAA") ? 52.5 : 48.5;
+    const heavyGrindEnv = (!isDome && (tempF <= 42.0 || windMph >= 10.0 || rho >= 1.250 || elevZone >= 7)) || Boolean(hasBackupQb);
+
+    let regime = "NEUTRAL_PASS";
+    let fairTotal = vTot + envDrag + pacePull;
+    let safeDir = fairTotal < vTot ? "U" : "O";
+    let safeLine = (safeDir === "U") ? (Math.floor(vTot + 3.5) + 0.5) : (Math.floor(vTot - 3.5) + 0.5);
+    let safeOdds = -175;
+    let safeProb = 0.65;
+
+    if (vTot >= shootoutThresh || (isDome && vTot >= domeShootoutThresh && !hasBackupQb)) {
+        regime = "SHOOTOUT_SAFE_OVER";
+        fairTotal = vTot + Math.max(0.8, 1.5 + (0.20 * Math.max(0.0, vTot - domeShootoutThresh)) + (isDome ? 0.4 : 0.0) + Math.max(-0.5, pacePull));
+        const dropPts = (vTot >= shootoutThresh + 4.0) ? 5.0 : 4.0;
+        safeLine = Math.floor(vTot - dropPts) + 0.5;
+        safeOdds = (dropPts >= 5.0) ? -180 : -175;
+        safeDir = "O";
+        safeProb = Math.min(0.92, Math.max(0.55, calcPointGapWinProb(fairTotal - safeLine) + 0.04));
+    } else if (vTot <= grindThresh || (vTot <= weatherGrindThresh && heavyGrindEnv)) {
+        regime = "GRIND_SAFE_UNDER";
+        fairTotal = vTot + Math.min(-1.0, envDrag + Math.min(0.0, pacePull) - 0.8);
+        safeLine = Math.floor(vTot + 4.0) + 0.5;
+        safeOdds = -175;
+        safeDir = "U";
+        safeProb = Math.min(0.92, Math.max(0.55, calcPointGapWinProb(safeLine - fairTotal) + 0.04));
+    } else {
+        const edge = (safeDir === "U") ? (safeLine - fairTotal) : (fairTotal - safeLine);
+        safeProb = Math.min(0.82, Math.max(0.50, calcPointGapWinProb(edge)));
+    }
+
+    const safeEvObj = calcExpectedValueAndKelly(safeProb, safeOdds);
     return {
-        ballsDeepTotal: Number((vTot + totalDelta).toFixed(1)),
+        regime,
+        ballsDeepTotal: Number(fairTotal.toFixed(1)),
+        safeDir,
+        safeLine: Number(safeLine.toFixed(1)),
+        safeOdds,
+        safeProb,
+        safeProbPct: Number((safeProb * 100).toFixed(1)),
+        safeEvPct: Number(safeEvObj.evPercentage.toFixed(2)),
+        safeLabel: `Alt ${safeDir} ${safeLine.toFixed(1)} (${safeOdds})`,
         coldDrag: Number(coldDrag.toFixed(2)),
         windDrag: Number(windDrag.toFixed(2)),
         tzDrag: Number(tzDrag.toFixed(2)),
         elevTotDrag: Number(elevTotDrag.toFixed(2)),
-        effLean: Number(effLean.toFixed(2))
+        effLean: Number(pacePull.toFixed(2))
     };
 }
 
@@ -852,4 +1004,4 @@ function calcMasterFibonacciAggregate(moduleScores, fibLookupFn = 13, intensityS
         liveAdjustedProb: Number((pAgg * 100).toFixed(2))
     };
 }
-// === END OF ONLINEMATH_ENGINE.JS (v314) ===
+// === END OF ONLINEMATH_ENGINE.JS (v315) ===
