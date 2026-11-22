@@ -2,7 +2,7 @@
   "slate_info": {
     "league": "NFL_NCAA",
     "week": 12,
-    "last_updated": "2026-11-22T00:37:31Z",
+    "last_updated": "2026-11-22T04:49:17Z",
     "telemetry_version": "v218_live_feeds",
     "ranked_ncaa_teams": [
       "Georgia Bulldogs",
@@ -2148,8 +2148,8 @@
         "away_team": "USF",
         "commence_time": "2026-11-21T19:30:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "USF 14 - FLAT 35",
         "spread_record": {
           "pick_label": "FLAT Spread (+1.5) (FLAT vs SOFL)",
           "pick_team": "FLAT",
@@ -2163,8 +2163,9 @@
           "balls_deep_ev_pct": 33.44,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 0.0
         },
         "total_record": {
           "pick_label": "SOFL@FLAT Total (U 64.5) (SOFL @ FLAT)",
@@ -2180,8 +2181,9 @@
           "balls_deep_ev_pct": 50.45,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 0.0
         },
         "home_full_name": "Florida Atlantic Owls",
         "away_full_name": "South Florida Bulls"
@@ -2595,8 +2597,8 @@
         "away_team": "LSU",
         "commence_time": "2026-11-21T20:40:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "LSU 13 - TENN 27",
         "spread_record": {
           "pick_label": "TENN Spread (+1.5) (TENN vs LSU)",
           "pick_team": "TENN",
@@ -2610,8 +2612,9 @@
           "balls_deep_ev_pct": 5.87,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 0.0
         },
         "total_record": {
           "pick_label": "LSU@TENN Total (O 45.5) (LSU @ TENN)",
@@ -2627,8 +2630,9 @@
           "balls_deep_ev_pct": -3.32,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "MISS",
+          "miss_by_pts": 5.5
         },
         "home_full_name": "Tennessee Volunteers",
         "away_full_name": "LSU Tigers"
@@ -3025,8 +3029,8 @@
         "away_team": "WSU",
         "commence_time": "2026-11-21T23:00:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "WSU 14 - TEST 42",
         "spread_record": {
           "pick_label": "WSU Spread (+13.5) (WSU @ TEST)",
           "pick_team": "WSU",
@@ -3040,8 +3044,9 @@
           "balls_deep_ev_pct": -4.39,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 14.5
         },
         "total_record": {
           "pick_label": "WSU@TEST Total (U 61.5) (WSU @ TEST)",
@@ -3057,8 +3062,9 @@
           "balls_deep_ev_pct": 10.93,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 0.0
         },
         "home_full_name": "Texas State Bobcats",
         "away_full_name": "Washington State Cougars"
@@ -3071,8 +3077,8 @@
         "away_team": "MD",
         "commence_time": "2026-11-21T23:15:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "MD 21 - USC 35",
         "spread_record": {
           "pick_label": "USC Spread (-17.5) (USC vs MD)",
           "pick_team": "USC",
@@ -3086,8 +3092,9 @@
           "balls_deep_ev_pct": -0.19,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "MISS",
+          "miss_by_pts": 3.5
         },
         "total_record": {
           "pick_label": "MD@USC Total (U 57.5) (MD @ USC)",
@@ -3103,8 +3110,9 @@
           "balls_deep_ev_pct": 13.07,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 0.0
         },
         "home_full_name": "USC Trojans",
         "away_full_name": "Maryland Terrapins"
@@ -3117,8 +3125,8 @@
         "away_team": "ARIZ",
         "commence_time": "2026-11-22T00:00:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "ARIZ 35 - KSU 28",
         "spread_record": {
           "pick_label": "KSU Spread (+10.5) (KSU vs ARIZ)",
           "pick_team": "KSU",
@@ -3132,8 +3140,9 @@
           "balls_deep_ev_pct": -5.44,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 0.0
         },
         "total_record": {
           "pick_label": "ARIZ@KSU Total (U 53.5) (ARIZ @ KSU)",
@@ -3149,8 +3158,9 @@
           "balls_deep_ev_pct": -2.46,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "MISS",
+          "miss_by_pts": 9.5
         },
         "home_full_name": "Kansas State Wildcats",
         "away_full_name": "Arizona Wildcats"
@@ -3163,8 +3173,8 @@
         "away_team": "ARST",
         "commence_time": "2026-11-22T00:00:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "ARST 3 - LOTE 48",
         "spread_record": {
           "pick_label": "ARST Spread (+15.5) (ARST @ LOTE)",
           "pick_team": "ARST",
@@ -3178,8 +3188,9 @@
           "balls_deep_ev_pct": -6.39,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 29.5
         },
         "total_record": {
           "pick_label": "ARST@LOTE Total (U 54.5) (ARST @ LOTE)",
@@ -3195,8 +3206,9 @@
           "balls_deep_ev_pct": 3.9,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 0.0
         },
         "home_full_name": "Louisiana Tech Bulldogs",
         "away_full_name": "Arkansas State Red Wolves"
@@ -3209,8 +3221,8 @@
         "away_team": "VT",
         "commence_time": "2026-11-22T00:00:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "VT 20 - MIA 28",
         "spread_record": {
           "pick_label": "MIA Spread (-20.5) (MIA vs VT)",
           "pick_team": "MIA",
@@ -3224,8 +3236,9 @@
           "balls_deep_ev_pct": 4.4,
           "tier_badge": "SMASH",
           "flagship_slot": "5-PACK FLEX #5",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "MISS",
+          "miss_by_pts": 12.5
         },
         "total_record": {
           "pick_label": "VT@MIA Total (U 61.5) (VT @ MIA)",
@@ -3241,8 +3254,9 @@
           "balls_deep_ev_pct": 0.09,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 0.0
         },
         "home_full_name": "Miami Hurricanes",
         "away_full_name": "Virginia Tech Hokies",
@@ -3261,11 +3275,11 @@
           "safe_floor_hook": -16.5,
           "safe_floor_label": "Alt -16.5 (-175)",
           "safe_floor_win_pct": 77.3,
-          "result_floor": "PENDING",
-          "result_straight": "PENDING",
-          "floor_miss_by": 0.0,
-          "straight_miss_by": 0.0,
-          "trap_dodged": null
+          "result_floor": "MISS",
+          "result_straight": "MISS",
+          "floor_miss_by": 8.5,
+          "straight_miss_by": 12.5,
+          "trap_dodged": false
         }
       },
       "NCAA_UNLV_SJSU_2026": {
@@ -3276,8 +3290,8 @@
         "away_team": "UNLV",
         "commence_time": "2026-11-22T00:00:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "UNLV 24 - SJSU 22",
         "spread_record": {
           "pick_label": "UNLV Spread (-6.5) (UNLV @ SJSU)",
           "pick_team": "UNLV",
@@ -3291,8 +3305,9 @@
           "balls_deep_ev_pct": -5.59,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 4.5
         },
         "total_record": {
           "pick_label": "UNLV@SJSU Total (U 47.5) (UNLV @ SJSU)",
@@ -3308,8 +3323,9 @@
           "balls_deep_ev_pct": 2.49,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 0.0
         },
         "home_full_name": "San Jose State Spartans",
         "away_full_name": "UNLV Rebels"
@@ -3322,8 +3338,8 @@
         "away_team": "STAN",
         "commence_time": "2026-11-22T00:30:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "STAN 44 - CAL 28",
         "spread_record": {
           "pick_label": "CAL Spread (+2.5) (CAL vs STAN)",
           "pick_team": "CAL",
@@ -3337,8 +3353,9 @@
           "balls_deep_ev_pct": 1.96,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "MISS",
+          "miss_by_pts": 13.5
         },
         "total_record": {
           "pick_label": "STAN@CAL Total (U 55.5) (STAN @ CAL)",
@@ -3354,8 +3371,9 @@
           "balls_deep_ev_pct": 1.59,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "MISS",
+          "miss_by_pts": 16.5
         },
         "home_full_name": "California Golden Bears",
         "away_full_name": "Stanford Cardinal"
@@ -3367,9 +3385,9 @@
         "home_team": "FRES",
         "away_team": "CSU",
         "commence_time": "2026-11-22T00:30:00Z",
-        "is_locked": false,
-        "status": "PRE_GAME",
-        "final_score": null,
+        "is_locked": true,
+        "status": "FINAL",
+        "final_score": "CSU 42 - FRES 49",
         "spread_record": {
           "pick_label": "CSU Spread (+19.5) (CSU @ FRES)",
           "pick_team": "CSU",
@@ -3383,8 +3401,9 @@
           "balls_deep_ev_pct": -7.15,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "MISS",
+          "miss_by_pts": 0.0
         },
         "total_record": {
           "pick_label": "CSU@FRES Total (U 66.5) (CSU @ FRES)",
@@ -3400,8 +3419,9 @@
           "balls_deep_ev_pct": 3.75,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "MISS",
+          "miss_by_pts": 24.5
         },
         "home_full_name": "Fresno State Bulldogs",
         "away_full_name": "Colorado State Rams"
@@ -3413,9 +3433,9 @@
         "home_team": "SCAR",
         "away_team": "UGA",
         "commence_time": "2026-11-22T00:30:00Z",
-        "is_locked": false,
-        "status": "PRE_GAME",
-        "final_score": null,
+        "is_locked": true,
+        "status": "FINAL",
+        "final_score": "UGA 34 - SCAR 6",
         "spread_record": {
           "pick_label": "UGA Spread (-14.5) (UGA @ SCAR)",
           "pick_team": "UGA",
@@ -3429,8 +3449,9 @@
           "balls_deep_ev_pct": -5.96,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 0.0
         },
         "total_record": {
           "pick_label": "UGA@SCAR Total (O 50.5) (UGA @ SCAR)",
@@ -3446,8 +3467,9 @@
           "balls_deep_ev_pct": -1.71,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "MISS",
+          "miss_by_pts": 10.5
         },
         "home_full_name": "South Carolina Gamecocks",
         "away_full_name": "Georgia Bulldogs"
@@ -3459,9 +3481,9 @@
         "home_team": "MIZZ",
         "away_team": "UK",
         "commence_time": "2026-11-22T00:30:00Z",
-        "is_locked": false,
-        "status": "PRE_GAME",
-        "final_score": null,
+        "is_locked": true,
+        "status": "FINAL",
+        "final_score": "UK 14 - MIZZ 28",
         "spread_record": {
           "pick_label": "UK Spread (+4.5) (UK @ MIZZ)",
           "pick_team": "UK",
@@ -3475,8 +3497,9 @@
           "balls_deep_ev_pct": -5.04,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 9.5
         },
         "total_record": {
           "pick_label": "UK@MIZZ Total (U 50.5) (UK @ MIZZ)",
@@ -3492,8 +3515,9 @@
           "balls_deep_ev_pct": -1.11,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 0.0
         },
         "home_full_name": "Missouri Tigers",
         "away_full_name": "Kentucky Wildcats"
@@ -3506,8 +3530,8 @@
         "away_team": "PITT",
         "commence_time": "2026-11-22T00:30:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "PITT 10 - LOU 42",
         "spread_record": {
           "pick_label": "PITT Spread (+12.5) (PITT @ LOU)",
           "pick_team": "PITT",
@@ -3521,8 +3545,9 @@
           "balls_deep_ev_pct": -4.12,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "MISS",
+          "result_balls_deep": "MISS",
+          "miss_by_pts": 19.5
         },
         "total_record": {
           "pick_label": "PITT@LOU Total (U 50.5) (PITT @ LOU)",
@@ -3538,8 +3563,9 @@
           "balls_deep_ev_pct": -2.46,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "BLUE_BALLS",
+          "result_balls_deep": "BLUE_BALLS",
+          "miss_by_pts": 1.5
         },
         "home_full_name": "Louisville Cardinals",
         "away_full_name": "Pittsburgh Panthers"
@@ -3552,8 +3578,8 @@
         "away_team": "SMU",
         "commence_time": "2026-11-22T00:30:00Z",
         "is_locked": true,
-        "status": "IN_PLAY",
-        "final_score": null,
+        "status": "FINAL",
+        "final_score": "SMU 3 - ND 24",
         "spread_record": {
           "pick_label": "ND Spread (-20.5) (ND vs SMU)",
           "pick_team": "ND",
@@ -3567,8 +3593,9 @@
           "balls_deep_ev_pct": -1.54,
           "tier_badge": "TOO_CLOSE",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 0.0
         },
         "total_record": {
           "pick_label": "SMU@ND Total (U 55.5) (SMU @ ND)",
@@ -3584,8 +3611,9 @@
           "balls_deep_ev_pct": -0.86,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 0.0
         },
         "home_full_name": "Notre Dame Fighting Irish",
         "away_full_name": "SMU Mustangs"
@@ -3597,9 +3625,9 @@
         "home_team": "UABL",
         "away_team": "UTSA",
         "commence_time": "2026-11-22T01:00:00Z",
-        "is_locked": false,
-        "status": "PRE_GAME",
-        "final_score": null,
+        "is_locked": true,
+        "status": "FINAL",
+        "final_score": "UTSA 19 - UABL 17",
         "spread_record": {
           "pick_label": "UTSA Spread (-3.5) (UTSA @ UABL)",
           "pick_team": "UTSA",
@@ -3613,8 +3641,9 @@
           "balls_deep_ev_pct": -4.8,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "BLUE_BALLS",
+          "result_balls_deep": "BLUE_BALLS",
+          "miss_by_pts": 1.5
         },
         "total_record": {
           "pick_label": "UTSA@UABL Total (U 49.5) (UTSA @ UABL)",
@@ -3630,8 +3659,9 @@
           "balls_deep_ev_pct": 4.52,
           "tier_badge": "SMASH",
           "flagship_slot": "",
-          "result_tip": "PENDING",
-          "result_balls_deep": "PENDING"
+          "result_tip": "HIT",
+          "result_balls_deep": "HIT",
+          "miss_by_pts": 0.0
         },
         "home_full_name": "UAB Blazers",
         "away_full_name": "UTSA Roadrunners"
@@ -3643,8 +3673,8 @@
         "home_team": "TCU",
         "away_team": "UTAH",
         "commence_time": "2026-11-22T02:00:00Z",
-        "is_locked": false,
-        "status": "PRE_GAME",
+        "is_locked": true,
+        "status": "IN_PLAY",
         "final_score": null,
         "spread_record": {
           "pick_label": "TCU Spread (+8.5) (TCU vs UTAH)",
@@ -3689,8 +3719,8 @@
         "home_team": "BSU",
         "away_team": "SDSU",
         "commence_time": "2026-11-22T02:30:00Z",
-        "is_locked": false,
-        "status": "PRE_GAME",
+        "is_locked": true,
+        "status": "IN_PLAY",
         "final_score": null,
         "spread_record": {
           "pick_label": "BSU Spread (-20.5) (BSU vs SDSU)",
@@ -3735,8 +3765,8 @@
         "home_team": "ASU",
         "away_team": "OKST",
         "commence_time": "2026-11-22T03:15:00Z",
-        "is_locked": false,
-        "status": "PRE_GAME",
+        "is_locked": true,
+        "status": "IN_PLAY",
         "final_score": null,
         "spread_record": {
           "pick_label": "OKST Spread (-2.5) (OKST @ ASU)",
@@ -3781,8 +3811,8 @@
         "home_team": "NEV",
         "away_team": "HAW",
         "commence_time": "2026-11-22T03:30:00Z",
-        "is_locked": false,
-        "status": "PRE_GAME",
+        "is_locked": true,
+        "status": "IN_PLAY",
         "final_score": null,
         "spread_record": {
           "pick_label": "HAW Spread (+6.5) (HAW @ NEV)",
@@ -3827,8 +3857,8 @@
         "home_team": "ORST",
         "away_team": "USU",
         "commence_time": "2026-11-22T03:30:00Z",
-        "is_locked": false,
-        "status": "PRE_GAME",
+        "is_locked": true,
+        "status": "IN_PLAY",
         "final_score": null,
         "spread_record": {
           "pick_label": "ORST Spread (-7.5) (ORST vs USU)",
@@ -5620,28 +5650,28 @@
     },
     "summary": {
       "overall_smash": {
-        "hits": 32,
-        "total": 57,
-        "fraction": "32 / 57",
-        "win_pct": 56.1
+        "hits": 41,
+        "total": 73,
+        "fraction": "41 / 73",
+        "win_pct": 56.2
       },
       "spread_smash": {
-        "hits": 14,
-        "total": 24,
-        "fraction": "14 / 24",
-        "win_pct": 58.3
+        "hits": 15,
+        "total": 29,
+        "fraction": "15 / 29",
+        "win_pct": 51.7
       },
       "total_smash": {
-        "hits": 18,
-        "total": 33,
-        "fraction": "18 / 33",
-        "win_pct": 54.5
+        "hits": 26,
+        "total": 44,
+        "fraction": "26 / 44",
+        "win_pct": 59.1
       },
       "flagship_5pack": {
         "hits": 3,
-        "total": 5,
-        "fraction": "3 / 5",
-        "win_pct": 60.0
+        "total": 6,
+        "fraction": "3 / 6",
+        "win_pct": 50.0
       },
       "menage_a_trois": {
         "hits": 3,
@@ -5650,22 +5680,22 @@
         "win_pct": 60.0
       },
       "pass_audit": {
-        "hits": 16,
-        "total": 31,
-        "fraction": "16 / 31",
-        "win_pct": 51.6
+        "hits": 22,
+        "total": 45,
+        "fraction": "22 / 45",
+        "win_pct": 48.9
       },
       "tip_all": {
-        "hits": 48,
-        "total": 88,
-        "fraction": "48 / 88",
-        "win_pct": 54.5
+        "hits": 63,
+        "total": 118,
+        "fraction": "63 / 118",
+        "win_pct": 53.4
       },
       "balls_deep_all": {
-        "hits": 46,
-        "total": 88,
-        "fraction": "46 / 88",
-        "win_pct": 52.3
+        "hits": 64,
+        "total": 118,
+        "fraction": "64 / 118",
+        "win_pct": 54.2
       }
     }
   }
