@@ -1,2008 +1,3623 @@
-"""
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v218)
-Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
-  1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
-  2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
-     (true Offensive EPA/play - Defensive EPA/play allowed, turnover regression, red-zone defense proxy).
-  3. Live 2026 NCAA FBS & NFL FPI: Pulls ESPN Power Index (fitt/v3) + ESPN Standings (PPG For/Against,
-     active win streaks, closing win%) + True FCS Tiering (eliminates random MD5 hash EPA bugs).
-  4. Live 2026 AP/CFP Top-25 Rankings: Pulls real weekly poll_rank for M13 divergence & Ranked NCAA filter.
-  5. Live 2026 NFL Injury Reports: Pulls ESPN game summary injuries to populate qb_replacement_delta,
-     lt_or_rb_pass_pro_out, and injuries_summary automatically.
-  6. 3-Strike Open-Meteo Synoptic Weather + Zero-Credit ESPN Scoreboard Auto-Grader (NFL + NCAA).
-"""
+/**
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v246)
+ * Pure OG M1–M9 (LOCKED) + Report-Calibrated M11–M13 + Crash-Proof Fallback & Dynamic-Speed Ticker — Synced 1:1 with onlinemath_engine.js (v314) & scraper.py (v219)
+ *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
+ *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
+ *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
+ *  - Zero-Lag DaVinci Slider: 50ms rAF drag fast-path (visible-tab-only repaint) + full sync on release
+ *  - Organic Continuous Momentum Arc (calcMomentumArc): flows Spreads, Totals, Safe Floors & Ceilings
+ *    smoothly across [-2φ, +2φ] without artificial .5 or 5-yard snapping
+ *  - Strict M1–M9 Mode Firewall: Zero M11/M13 alerts or badges in Just the Tip mode
+ *  - Single-source-of-truth integration with v313 Guardrails (4.0% Quarter-Kelly Cap, M4/M5 Prop Gatekeepers,
+ *    M8 Totals-Weighted FAA Delay, M9 Red-Zone Finishing & 3rd-String QB TOP Redirect, M11>M13 Elevation Override)
+ *  - Preserves all 6 Clickable Ledger Vault Cards, Flagship 5-Pack Week Dropdown, Porky's Safe Floor Fades,
+ *    ESPN Live Scoreboard Sync, Auto-Sweep of FINAL games, and 300s Live Wire Ticker
+ */
 
-import csv
-import io
-import json
-import math
-import os
-import re
-import time
-import urllib.request
-import urllib.error
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone, timedelta
-import requests
+const AppState = {
+    rawPayload: null,
+    lastDataHash: "",
+    activeMode: "tip",                // "tip" | "balls_deep" | "davinci"
+    fivePackView: "main_stage",       // "main_stage" | "porkys"
+    ledgerFivePackView: "flagship",   // "flagship" | "porkys" (swaps Card #1 on Historical Ledger)
+    activeLedgerVault: null,          // null | "flagship_5pack" | "porkys_5pack" | "overall_smash" | "all_tease" | "grenades_dodged" | "floors_ceilings" | "tip_vs_bd"
+    selectedFivePackWeek: "ALL",      // "ALL" | "Week 10" | "Week 11" ...
+    selectedPorkysWeek: "ALL",        // "ALL" | "Week 10" | "Week 11" ...
+    ledgerShowAllCompleted: false,    // false = Top-25 NCAA + NFL | true = All Completed FBS + NFL
+    intensitySlider: 0.0,             // -3.236 (-2φ) to +3.236 (+2φ)
+    filters: { nfl: true, ncaa: true },
+    comboFilters: { team: "ALL", market: "ALL", tier: "ALL" },
+    selectedParlayLegs: new Set(),
+    safeFloorParlayLegs: new Set(),   // Tracks legs loaded at -2φ Safe Floor (-175) odds
+    mnfCutoffMs: Infinity,
+    processedGames: [],
+    processedProps: [],
+    flagshipFivePack: [],
+    porkysFivePack: []
+};
 
-DATA_FILE = "data.json"
-POLL_INTERVAL_SECONDS = 14400  # 4 hours
+const openCardMemory = new Set();
+const MODEL_TOTAL_INTERCEPT = 42.986;
+const SMASH_EV_CUTOFF = 10.0;          // >= +10.0% EV threshold for SMASH
+const PASS_EV_CUTOFF = -19.0;          // <= -19.0% EV threshold for definitive PASS (exact -110 mirror of +10.0% SMASH)
+const PHI = (typeof GOLDEN_RATIO_PHI !== "undefined") ? GOLDEN_RATIO_PHI : 1.6180339887;
+let sliderDragTimer = null;
 
-ODDS_API_KEY = os.environ.get("DIXPIX_ODDS_API_KEY", "44660163df1724ea28bfc8022e66f9e1")
-API_KEY = ODDS_API_KEY
+// Official AP / CFP Top-25 Ranked NCAA Programs (Full-Name & Code Matchers)
+const RANKED_NCAA_FULL_NAMES = [
+    "Georgia Bulldogs", "Utah Utes", "Notre Dame Fighting Irish", "UCLA Bruins",
+    "Miami Hurricanes", "Indiana Hoosiers", "Alabama Crimson Tide", "Texas Longhorns",
+    "Tennessee Volunteers", "Wake Forest Demon Deacons", "BYU Cougars", "Texas Tech Red Raiders",
+    "Kentucky Wildcats", "Houston Cougars", "Iowa Hawkeyes", "USC Trojans",
+    "Oregon Ducks", "Ole Miss Rebels", "Ohio State Buckeyes", "LSU Tigers",
+    "Boise State Broncos", "South Carolina Gamecocks", "Arizona Wildcats",
+    "New Mexico Lobos", "SMU Mustangs", "Oklahoma State Cowboys"
+];
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) DixPixQuantEngine/4.0",
-    "Accept": "application/json"
+const RANKED_NCAA_CODES = new Set([
+    "UGA", "UTAH", "ND", "UCLA", "UCBR", "MIA", "IND", "ALA", "TEX",
+    "TENN", "WAKE", "WAFO", "BYU", "TTU", "UK", "KEWI", "HOU", "HOCO", "IOWA",
+    "IOHA", "USC", "ORE", "MISS", "OSU", "LSU", "BSU", "SCAR", "ARI", "ARWI",
+    "UNM", "SMU", "OKST", "FLA", "TAMU", "OU", "LOU", "PSU", "MIZZ"
+]);
+
+const CLEAN_CODE_OVERRIDES = {
+    // Big 12
+    "TCHO": "TCU",
+    "KAJA": "KAN",
+    "KAST": "KSU",
+    "OKST": "OKST",
+    "IOST": "ISU",
+    "WEVI": "WVU",
+    "BABE": "BAY",
+    "TETE": "TTU",
+    "BYCO": "BYU",
+    "UTUT": "UTAH",
+    "ARWI": "ARIZ",
+    "ARST": "ASU",
+    "COBU": "COLO",
+    "UCKN": "UCF",
+    "CIBE": "CIN",
+    "HOCO": "HOU",
+
+    // Big Ten
+    "NECO": "NEB",
+    "IOHA": "IOWA",
+    "ILFI": "ILL",
+    "NOWI": "NW",
+    "WIBA": "WIS",
+    "MIGO": "MINN",
+    "PUBO": "PUR",
+    "INHO": "IND",
+    "OHST": "OSU",
+    "MIWO": "MICH",
+    "MIST": "MSU",
+    "PEST": "PSU",
+    "RUSC": "RUTG",
+    "MATE": "MD",
+    "ORDU": "ORE",
+    "WAHU": "WASH",
+    "USTR": "USC",
+    "UCBR": "UCLA",
+
+    // SEC
+    "ALCR": "ALA",
+    "GEBU": "UGA",
+    "TELO": "TEX",
+    "OKSO": "OU",
+    "TEVO": "TENN",
+    "OLMI": "MISS",
+    "LSTI": "LSU",
+    "TEA&": "TAMU",
+    "TEAG": "TAMU",
+    "MITI": "MIZZ",
+    "KEWI": "UK",
+    "SOCA": "SCAR",
+    "FLGA": "FLA",
+    "AUTI": "AUB",
+    "ARRA": "ARK",
+    "VACO": "VAN",
+
+    // ACC & Independents
+    "NODA": "NDSU",
+    "MIHU": "MIA",
+    "CLTI": "CLEM",
+    "SMMU": "SMU",
+    "PIPA": "PITT",
+    "LOCA": "LOU",
+    "GETE": "GT",
+    "WAFO": "WAKE",
+    "DUBL": "DUKE",
+    "NOCA": "UNC",
+    "NCST": "NCST",
+    "VATE": "VT",
+    "VICA": "UVA",
+    "BOCO": "BC",
+    "SYOR": "SYR",
+    "FLST": "FSU",
+    "CAGO": "CAL",
+    "STCA": "STAN",
+    "UCHU": "CONN",
+    "UMMI": "MASS",
+
+    // Mountain West, Pac-12, AAC, Sun Belt, MAC & FCS Opponents
+    "WOTE": "WOF",
+    "CHMO": "UTC",
+    "NOIL": "NIU",
+    "WYCO": "WYO",
+    "NEME": "UNM",
+    "BOST": "BSU",
+    "UNRE": "UNLV",
+    "COST": "CSU",
+    "FRST": "FRES",
+    "SADI": "SDSU",
+    "SAJO": "SJSU",
+    "AIFO": "AFA",
+    "UTST": "USU",
+    "NEWO": "NEV",
+    "HARA": "HAW",
+    "ORST": "ORST",
+    "WAST": "WSU",
+    "ARBL": "ARMY",
+    "NAMI": "NAVY",
+    "TUGR": "TULN",
+    "METI": "MEM",
+    "USBU": "USF",
+    "EACA": "ECU",
+    "UTRO": "UTSA",
+    "LIBL": "LIB",
+    "JAMA": "JMU",
+    "APST": "APP",
+    "COCH": "CCU",
+    "GESO": "GASO",
+    "GEST": "GAST",
+    "MAHE": "MRSH",
+    "WEKE": "WKU",
+    "WACA": "WCU",
+    "MEME": "MERC",
+    "THCI": "CIT"
+};
+
+function cleanTeamCode(code) {
+    return CLEAN_CODE_OVERRIDES[code] || code;
 }
 
-GOLDEN_RATIO_PHI = 1.6180339887
-GOLDEN_PLAY_SCALER = 38.5145
-MODEL_TOTAL_INTERCEPT = 42.986
-NCAA_TOTAL_INTERCEPT = 51.450
-PI_OVER_PHI_HFA = 1.9416110252
-NCAA_HFA_BASE = 2.6180339887  # Phi + 1.0 for College Campus Hostile Environments
-LOGISTIC_K_TIGHT = GOLDEN_RATIO_PHI / (4.0 * math.pi)  # ~0.12875903
-SMASH_EV_THRESHOLD = 10.0  # +10.0% EV cutoff (~57.62% Win Prob at -110)
-
-# ==============================================================================
-# 1. MASTER 32-TEAM NFL STADIUM & BASELINE FALLBACK REGISTRY
-#    (Live nflverse 2026 EPA/Turnovers + ESPN Standings/FPI override baseline stats)
-# ==============================================================================
-NFL_TEAM_REGISTRY = {
-    "Arizona Cardinals":     {"code": "ARI", "lat": 33.5276, "lon": -112.2626, "elev_m": 328,  "is_dome": True,  "tz": -7, "epa": -0.015, "to_reg": 0.1,  "close_pct": 0.480, "streak": 1, "rz_dvoa": 0.02},
-    "Atlanta Falcons":       {"code": "ATL", "lat": 33.7554, "lon": -84.4010,  "elev_m": 305,  "is_dome": True,  "tz": -5, "epa": 0.035,  "to_reg": -0.2, "close_pct": 0.610, "streak": 2, "rz_dvoa": -0.05},
-    "Baltimore Ravens":      {"code": "BAL", "lat": 39.2780, "lon": -76.6227,  "elev_m": 10,   "is_dome": False, "tz": -5, "epa": 0.145,  "to_reg": -0.3, "close_pct": 0.890, "streak": 3, "rz_dvoa": -0.18},
-    "Buffalo Bills":         {"code": "BUF", "lat": 42.7738, "lon": -78.7870,  "elev_m": 182,  "is_dome": False, "tz": -5, "epa": 0.125,  "to_reg": -0.4, "close_pct": 0.865, "streak": 4, "rz_dvoa": -0.16},
-    "Carolina Panthers":     {"code": "CAR", "lat": 35.2258, "lon": -80.8528,  "elev_m": 215,  "is_dome": False, "tz": -5, "epa": -0.110, "to_reg": 0.6,  "close_pct": 0.220, "streak": 0, "rz_dvoa": 0.14},
-    "Chicago Bears":         {"code": "CHI", "lat": 41.8623, "lon": -87.6167,  "elev_m": 181,  "is_dome": False, "tz": -6, "epa": 0.012,  "to_reg": 0.5,  "close_pct": 0.450, "streak": 0, "rz_dvoa": 0.04},
-    "Cincinnati Bengals":    {"code": "CIN", "lat": 39.0955, "lon": -84.5161,  "elev_m": 148,  "is_dome": False, "tz": -5, "epa": 0.068,  "to_reg": -0.1, "close_pct": 0.640, "streak": 1, "rz_dvoa": -0.08},
-    "Cleveland Browns":      {"code": "CLE", "lat": 41.5061, "lon": -81.6995,  "elev_m": 177,  "is_dome": False, "tz": -5, "epa": -0.075, "to_reg": 0.4,  "close_pct": 0.350, "streak": 0, "rz_dvoa": 0.09},
-    "Dallas Cowboys":        {"code": "DAL", "lat": 32.7473, "lon": -97.0945,  "elev_m": 184,  "is_dome": True,  "tz": -6, "epa": -0.020, "to_reg": 0.3,  "close_pct": 0.490, "streak": 0, "rz_dvoa": 0.06},
-    "Denver Broncos":        {"code": "DEN", "lat": 39.7439, "lon": -105.0201, "elev_m": 1609, "is_dome": False, "tz": -7, "epa": 0.042,  "to_reg": 0.2,  "close_pct": 0.781, "streak": 2, "rz_dvoa": -0.18},
-    "Detroit Lions":         {"code": "DET", "lat": 42.3400, "lon": -83.0456,  "elev_m": 183,  "is_dome": True,  "tz": -5, "epa": 0.155,  "to_reg": -0.5, "close_pct": 0.920, "streak": 5, "rz_dvoa": -0.21},
-    "Green Bay Packers":     {"code": "GB",  "lat": 44.5013, "lon": -88.0622,  "elev_m": 195,  "is_dome": False, "tz": -6, "epa": 0.078,  "to_reg": -0.2, "close_pct": 0.740, "streak": 1, "rz_dvoa": -0.11},
-    "Houston Texans":        {"code": "HOU", "lat": 29.6847, "lon": -95.4107,  "elev_m": 15,   "is_dome": True,  "tz": -6, "epa": 0.052,  "to_reg": -0.3, "close_pct": 0.710, "streak": 1, "rz_dvoa": -0.09},
-    "Indianapolis Colts":    {"code": "IND", "lat": 39.7601, "lon": -86.1639,  "elev_m": 218,  "is_dome": True,  "tz": -5, "epa": -0.010, "to_reg": 0.1,  "close_pct": 0.520, "streak": 0, "rz_dvoa": 0.01},
-    "Jacksonville Jaguars":  {"code": "JAX", "lat": 30.3240, "lon": -81.6373,  "elev_m": 5,    "is_dome": False, "tz": -5, "epa": -0.045, "to_reg": 0.4,  "close_pct": 0.380, "streak": 0, "rz_dvoa": 0.08},
-    "Kansas City Chiefs":    {"code": "KC",  "lat": 39.0489, "lon": -94.4839,  "elev_m": 250,  "is_dome": False, "tz": -6, "epa": 0.115,  "to_reg": -0.1, "close_pct": 0.906, "streak": 4, "rz_dvoa": -0.14},
-    "Las Vegas Raiders":     {"code": "LV",  "lat": 36.0909, "lon": -115.1833, "elev_m": 610,  "is_dome": True,  "tz": -8, "epa": -0.085, "to_reg": 0.5,  "close_pct": 0.290, "streak": 0, "rz_dvoa": 0.11},
-    "Los Angeles Chargers":  {"code": "LAC", "lat": 33.9535, "lon": -118.3390, "elev_m": 40,   "is_dome": True,  "tz": -8, "epa": 0.048,  "to_reg": -0.4, "close_pct": 0.760, "streak": 3, "rz_dvoa": -0.15},
-    "Los Angeles Rams":      {"code": "LAR", "lat": 33.9535, "lon": -118.3390, "elev_m": 40,   "is_dome": True,  "tz": -8, "epa": 0.038,  "to_reg": 0.0,  "close_pct": 0.620, "streak": 2, "rz_dvoa": -0.04},
-    "Miami Dolphins":        {"code": "MIA", "lat": 25.9580, "lon": -80.2389,  "elev_m": 3,    "is_dome": False, "tz": -5, "epa": 0.025,  "to_reg": 0.1,  "close_pct": 0.550, "streak": 1, "rz_dvoa": -0.03},
-    "Minnesota Vikings":     {"code": "MIN", "lat": 44.9736, "lon": -93.2575,  "elev_m": 255,  "is_dome": True,  "tz": -6, "epa": 0.092,  "to_reg": -0.3, "close_pct": 0.830, "streak": 2, "rz_dvoa": -0.17},
-    "New England Patriots":  {"code": "NE",  "lat": 42.0909, "lon": -71.2643,  "elev_m": 78,   "is_dome": False, "tz": -5, "epa": -0.095, "to_reg": 0.2,  "close_pct": 0.310, "streak": 0, "rz_dvoa": 0.10},
-    "New Orleans Saints":    {"code": "NO",  "lat": 29.9511, "lon": -90.0812,  "elev_m": 2,    "is_dome": True,  "tz": -6, "epa": -0.055, "to_reg": 0.2,  "close_pct": 0.410, "streak": 0, "rz_dvoa": 0.05},
-    "New York Giants":       {"code": "NYG", "lat": 40.8128, "lon": -74.0742,  "elev_m": 2,    "is_dome": False, "tz": -5, "epa": -0.088, "to_reg": 0.3,  "close_pct": 0.280, "streak": 0, "rz_dvoa": 0.09},
-    "New York Jets":         {"code": "NYJ", "lat": 40.8128, "lon": -74.0742,  "elev_m": 2,    "is_dome": False, "tz": -5, "epa": -0.030, "to_reg": 0.1,  "close_pct": 0.460, "streak": 0, "rz_dvoa": 0.02},
-    "Philadelphia Eagles":   {"code": "PHI", "lat": 39.9008, "lon": -75.1675,  "elev_m": 12,   "is_dome": False, "tz": -5, "epa": 0.118,  "to_reg": -0.2, "close_pct": 0.850, "streak": 4, "rz_dvoa": -0.15},
-    "Pittsburgh Steelers":   {"code": "PIT", "lat": 40.4468, "lon": -80.0158,  "elev_m": 223,  "is_dome": False, "tz": -5, "epa": 0.065,  "to_reg": -0.6, "close_pct": 0.840, "streak": 3, "rz_dvoa": -0.19},
-    "San Francisco 49ers":   {"code": "SF",  "lat": 37.4032, "lon": -121.9698, "elev_m": 7,    "is_dome": False, "tz": -8, "epa": 0.105,  "to_reg": 0.1,  "close_pct": 0.790, "streak": 2, "rz_dvoa": -0.12},
-    "Seattle Seahawks":      {"code": "SEA", "lat": 47.5952, "lon": -122.3316, "elev_m": 4,    "is_dome": False, "tz": -8, "epa": 0.015,  "to_reg": 0.2,  "close_pct": 0.560, "streak": 1, "rz_dvoa": 0.01},
-    "Tampa Bay Buccaneers":  {"code": "TB",  "lat": 27.9759, "lon": -82.5033,  "elev_m": 12,   "is_dome": False, "tz": -5, "epa": 0.085,  "to_reg": -0.4, "close_pct": 0.812, "streak": 2, "rz_dvoa": -0.12},
-    "Tennessee Titans":      {"code": "TEN", "lat": 36.1665, "lon": -86.7713,  "elev_m": 130,  "is_dome": False, "tz": -6, "epa": -0.090, "to_reg": 0.5,  "close_pct": 0.260, "streak": 0, "rz_dvoa": 0.12},
-    "Washington Commanders": {"code": "WAS", "lat": 38.9076, "lon": -76.8645,  "elev_m": 60,   "is_dome": False, "tz": -5, "epa": 0.110,  "to_reg": -0.3, "close_pct": 0.805, "streak": 3, "rz_dvoa": -0.13}
+function cleanLabelCodes(labelStr) {
+    if (!labelStr) return "";
+    let out = labelStr;
+    Object.keys(CLEAN_CODE_OVERRIDES).forEach(bad => {
+        const good = CLEAN_CODE_OVERRIDES[bad];
+        out = out.replace(new RegExp(`\\b${bad}\\b`, "g"), good);
+    });
+    return out;
 }
 
-# ==============================================================================
-# 2. NCAA STADIUM COORDINATES, ALTITUDE & TIMEZONE REGISTRY
-#    (Live ESPN FPI + ESPN Standings override performance metrics; zero MD5 hashes!)
-# ==============================================================================
-NCAA_TEAM_REGISTRY = {
-    # High-Altitude Mountain West / Big 12 Venues (Zones 7-10)
-    "Wyoming Cowboys":            {"code": "WYO",  "lat": 41.3119, "lon": -105.5681, "elev_m": 2200, "is_dome": False, "tz": -7, "epa": -0.025, "to_reg": 0.2,  "close_pct": 0.460, "streak": 1, "rz_dvoa": 0.02},
-    "Air Force Falcons":          {"code": "AFA",  "lat": 38.9969, "lon": -104.8436, "elev_m": 2026, "is_dome": False, "tz": -7, "epa": 0.015,  "to_reg": -0.2, "close_pct": 0.580, "streak": 2, "rz_dvoa": -0.06},
-    "Colorado Buffaloes":         {"code": "COLO", "lat": 40.0094, "lon": -105.2669, "elev_m": 1634, "is_dome": False, "tz": -7, "epa": 0.095,  "to_reg": -0.4, "close_pct": 0.790, "streak": 3, "rz_dvoa": -0.14},
-    "New Mexico Lobos":           {"code": "UNM",  "lat": 35.0672, "lon": -106.6283, "elev_m": 1554, "is_dome": False, "tz": -7, "epa": -0.010, "to_reg": 0.3,  "close_pct": 0.490, "streak": 1, "rz_dvoa": 0.05},
-    "Colorado State Rams":        {"code": "CSU",  "lat": 40.5700, "lon": -105.0886, "elev_m": 1525, "is_dome": False, "tz": -7, "epa": 0.032,  "to_reg": -0.1, "close_pct": 0.620, "streak": 2, "rz_dvoa": -0.05},
-    "Utah State Aggies":          {"code": "USU",  "lat": 41.7516, "lon": -111.8116, "elev_m": 1435, "is_dome": False, "tz": -7, "epa": -0.040, "to_reg": 0.3,  "close_pct": 0.390, "streak": 0, "rz_dvoa": 0.08},
-    "Utah Utes":                  {"code": "UTAH", "lat": 40.7600, "lon": -111.8489, "elev_m": 1420, "is_dome": False, "tz": -7, "epa": 0.045,  "to_reg": -0.2, "close_pct": 0.680, "streak": 1, "rz_dvoa": -0.11},
-    "BYU Cougars":                {"code": "BYU",  "lat": 40.2575, "lon": -111.6545, "elev_m": 1417, "is_dome": False, "tz": -7, "epa": 0.110,  "to_reg": -0.4, "close_pct": 0.840, "streak": 3, "rz_dvoa": -0.15},
-    "Nevada Wolf Pack":           {"code": "NEV",  "lat": 39.5469, "lon": -119.8175, "elev_m": 1405, "is_dome": False, "tz": -8, "epa": -0.055, "to_reg": 0.2,  "close_pct": 0.360, "streak": 0, "rz_dvoa": 0.07},
-    "New Mexico State Aggies":    {"code": "NMSU", "lat": 32.2797, "lon": -106.7411, "elev_m": 1190, "is_dome": False, "tz": -7, "epa": -0.120, "to_reg": 0.2,  "close_pct": 0.350, "streak": 0, "rz_dvoa": 0.08},
-    "UTEP Miners":                {"code": "UTEP", "lat": 31.7733, "lon": -106.5078, "elev_m": 1189, "is_dome": False, "tz": -7, "epa": -0.075, "to_reg": 0.4,  "close_pct": 0.310, "streak": 0, "rz_dvoa": 0.10},
-    "Appalachian State Mountaineers": {"code": "APP", "lat": 36.2114, "lon": -81.6856, "elev_m": 1016, "is_dome": False, "tz": -5, "epa": 0.025, "to_reg": 0.0, "close_pct": 0.590, "streak": 1, "rz_dvoa": -0.03},
-    "Texas Tech Red Raiders":     {"code": "TTU",  "lat": 33.5911, "lon": -101.8728, "elev_m": 976,  "is_dome": False, "tz": -6, "epa": 0.048,  "to_reg": -0.1, "close_pct": 0.650, "streak": 1, "rz_dvoa": -0.04},
-    "Boise State Broncos":        {"code": "BSU",  "lat": 43.6028, "lon": -116.1958, "elev_m": 823,  "is_dome": False, "tz": -7, "epa": 0.142,  "to_reg": -0.4, "close_pct": 0.885, "streak": 5, "rz_dvoa": -0.18},
-    "Arizona Wildcats":           {"code": "ARIZ", "lat": 32.2289, "lon": -110.9489, "elev_m": 738,  "is_dome": False, "tz": -7, "epa": 0.060,  "to_reg": 0.0,  "close_pct": 0.600, "streak": 1, "rz_dvoa": -0.05},
-    "Arizona State Sun Devils":   {"code": "ASU",  "lat": 33.4264, "lon": -111.9325, "elev_m": 355,  "is_dome": False, "tz": -7, "epa": 0.050,  "to_reg": 0.0,  "close_pct": 0.620, "streak": 1, "rz_dvoa": -0.05},
-    # Power-4 & Major FBS Programs
-    "Ohio State Buckeyes":        {"code": "OSU",  "lat": 40.0017, "lon": -83.0197,  "elev_m": 217,  "is_dome": False, "tz": -5, "epa": 0.185,  "to_reg": -0.4, "close_pct": 0.945, "streak": 4, "rz_dvoa": -0.22},
-    "Oregon Ducks":               {"code": "ORE",  "lat": 44.0583, "lon": -123.0686, "elev_m": 130,  "is_dome": False, "tz": -8, "epa": 0.178,  "to_reg": -0.4, "close_pct": 0.935, "streak": 6, "rz_dvoa": -0.20},
-    "Texas Longhorns":            {"code": "TEX",  "lat": 30.2836, "lon": -97.7325,  "elev_m": 165,  "is_dome": False, "tz": -6, "epa": 0.168,  "to_reg": -0.3, "close_pct": 0.915, "streak": 3, "rz_dvoa": -0.19},
-    "Georgia Bulldogs":           {"code": "UGA",  "lat": 33.9497, "lon": -83.3733,  "elev_m": 214,  "is_dome": False, "tz": -5, "epa": 0.162,  "to_reg": -0.3, "close_pct": 0.910, "streak": 2, "rz_dvoa": -0.18},
-    "Alabama Crimson Tide":       {"code": "ALA",  "lat": 33.2083, "lon": -87.5503,  "elev_m": 68,   "is_dome": False, "tz": -6, "epa": 0.155,  "to_reg": -0.3, "close_pct": 0.895, "streak": 3, "rz_dvoa": -0.17},
-    "Penn State Nittany Lions":   {"code": "PSU",  "lat": 40.8122, "lon": -77.8561,  "elev_m": 354,  "is_dome": False, "tz": -5, "epa": 0.148,  "to_reg": -0.3, "close_pct": 0.880, "streak": 2, "rz_dvoa": -0.17},
-    "Notre Dame Fighting Irish":  {"code": "ND",   "lat": 41.6983, "lon": -86.2339,  "elev_m": 222,  "is_dome": False, "tz": -5, "epa": 0.152,  "to_reg": -0.5, "close_pct": 0.890, "streak": 5, "rz_dvoa": -0.19},
-    "Indiana Hoosiers":           {"code": "IND",  "lat": 39.1808, "lon": -86.5256,  "elev_m": 235,  "is_dome": False, "tz": -5, "epa": 0.145,  "to_reg": -0.4, "close_pct": 0.870, "streak": 4, "rz_dvoa": -0.16},
-    "Tennessee Volunteers":       {"code": "TENN", "lat": 35.9550, "lon": -83.9250,  "elev_m": 271,  "is_dome": False, "tz": -5, "epa": 0.138,  "to_reg": -0.3, "close_pct": 0.860, "streak": 2, "rz_dvoa": -0.16},
-    "Ole Miss Rebels":            {"code": "MISS", "lat": 34.3619, "lon": -89.5342,  "elev_m": 152,  "is_dome": False, "tz": -6, "epa": 0.144,  "to_reg": -0.3, "close_pct": 0.865, "streak": 3, "rz_dvoa": -0.15},
-    "Miami Hurricanes":           {"code": "MIA",  "lat": 25.9580, "lon": -80.2389,  "elev_m": 3,    "is_dome": False, "tz": -5, "epa": 0.135,  "to_reg": -0.2, "close_pct": 0.845, "streak": 2, "rz_dvoa": -0.13},
-    "SMU Mustangs":               {"code": "SMU",  "lat": 32.8369, "lon": -96.7828,  "elev_m": 168,  "is_dome": False, "tz": -6, "epa": 0.122,  "to_reg": -0.3, "close_pct": 0.825, "streak": 4, "rz_dvoa": -0.12},
-    "Clemson Tigers":             {"code": "CLEM", "lat": 34.6786, "lon": -82.8431,  "elev_m": 205,  "is_dome": False, "tz": -5, "epa": 0.108,  "to_reg": -0.2, "close_pct": 0.795, "streak": 2, "rz_dvoa": -0.11},
-    "Texas A&M Aggies":           {"code": "TAMU", "lat": 30.6103, "lon": -96.3397,  "elev_m": 103,  "is_dome": False, "tz": -6, "epa": 0.105,  "to_reg": -0.2, "close_pct": 0.790, "streak": 2, "rz_dvoa": -0.12},
-    "Iowa State Cyclones":        {"code": "ISU",  "lat": 42.0140, "lon": -93.6358,  "elev_m": 282,  "is_dome": False, "tz": -6, "epa": 0.088,  "to_reg": -0.2, "close_pct": 0.750, "streak": 1, "rz_dvoa": -0.10},
-    "Kansas State Wildcats":      {"code": "KSU",  "lat": 39.2019, "lon": -96.5939,  "elev_m": 330,  "is_dome": False, "tz": -6, "epa": 0.085,  "to_reg": -0.1, "close_pct": 0.740, "streak": 1, "rz_dvoa": -0.09},
-    "LSU Tigers":                 {"code": "LSU",  "lat": 30.4119, "lon": -91.1836,  "elev_m": 15,   "is_dome": False, "tz": -6, "epa": 0.092,  "to_reg": 0.1,  "close_pct": 0.755, "streak": 1, "rz_dvoa": -0.08},
-    "South Carolina Gamecocks":   {"code": "SCAR", "lat": 33.9731, "lon": -81.0192,  "elev_m": 55,   "is_dome": False, "tz": -5, "epa": 0.112,  "to_reg": -0.4, "close_pct": 0.815, "streak": 3, "rz_dvoa": -0.15},
-    "Louisville Cardinals":       {"code": "LOU",  "lat": 38.2058, "lon": -85.7589,  "elev_m": 142,  "is_dome": False, "tz": -5, "epa": 0.090,  "to_reg": -0.1, "close_pct": 0.735, "streak": 1, "rz_dvoa": -0.09},
-    "Pittsburgh Panthers":        {"code": "PITT", "lat": 40.4468, "lon": -80.0158,  "elev_m": 223,  "is_dome": False, "tz": -5, "epa": 0.042,  "to_reg": 0.1,  "close_pct": 0.640, "streak": 0, "rz_dvoa": -0.05},
-    "West Virginia Mountaineers": {"code": "WVU",  "lat": 39.6503, "lon": -79.9547,  "elev_m": 325,  "is_dome": False, "tz": -5, "epa": 0.028,  "to_reg": 0.1,  "close_pct": 0.595, "streak": 1, "rz_dvoa": -0.03},
-    "Michigan Wolverines":        {"code": "MICH", "lat": 42.2658, "lon": -83.7486,  "elev_m": 268,  "is_dome": False, "tz": -5, "epa": 0.018,  "to_reg": 0.1,  "close_pct": 0.610, "streak": 1, "rz_dvoa": -0.06},
-    "Michigan State Spartans":    {"code": "MSU",  "lat": 42.7281, "lon": -84.4847,  "elev_m": 258,  "is_dome": False, "tz": -5, "epa": 0.005,  "to_reg": 0.0,  "close_pct": 0.500, "streak": 0, "rz_dvoa": 0.00},
-    "USC Trojans":                {"code": "USC",  "lat": 34.0142, "lon": -118.2878, "elev_m": 52,   "is_dome": False, "tz": -8, "epa": 0.065,  "to_reg": 0.1,  "close_pct": 0.680, "streak": 1, "rz_dvoa": -0.07},
-    "UCLA Bruins":                {"code": "UCLA", "lat": 34.1613, "lon": -118.1676, "elev_m": 251,  "is_dome": False, "tz": -8, "epa": -0.010, "to_reg": 0.0,  "close_pct": 0.480, "streak": 0, "rz_dvoa": 0.02},
-    "Washington Huskies":         {"code": "WASH", "lat": 47.6503, "lon": -122.3017, "elev_m": 12,   "is_dome": False, "tz": -8, "epa": 0.040,  "to_reg": 0.0,  "close_pct": 0.630, "streak": 1, "rz_dvoa": -0.05},
-    "Nebraska Cornhuskers":       {"code": "NEB",  "lat": 40.8206, "lon": -96.7056,  "elev_m": 358,  "is_dome": False, "tz": -6, "epa": 0.045,  "to_reg": 0.0,  "close_pct": 0.580, "streak": 1, "rz_dvoa": -0.04},
-    "Iowa Hawkeyes":              {"code": "IOWA", "lat": 41.6586, "lon": -91.5511,  "elev_m": 204,  "is_dome": False, "tz": -6, "epa": 0.060,  "to_reg": -0.1, "close_pct": 0.680, "streak": 1, "rz_dvoa": -0.10},
-    "Illinois Fighting Illini":   {"code": "ILL",  "lat": 40.0992, "lon": -88.2359,  "elev_m": 225,  "is_dome": False, "tz": -6, "epa": 0.055,  "to_reg": 0.0,  "close_pct": 0.650, "streak": 1, "rz_dvoa": -0.05},
-    "Wisconsin Badgers":          {"code": "WIS",  "lat": 43.0700, "lon": -89.4128,  "elev_m": 265,  "is_dome": False, "tz": -6, "epa": 0.030,  "to_reg": 0.0,  "close_pct": 0.550, "streak": 0, "rz_dvoa": -0.03},
-    "Minnesota Golden Gophers":   {"code": "MINN", "lat": 44.9765, "lon": -93.2246,  "elev_m": 255,  "is_dome": False, "tz": -6, "epa": 0.035,  "to_reg": 0.0,  "close_pct": 0.560, "streak": 0, "rz_dvoa": -0.04},
-    "Purdue Boilermakers":        {"code": "PUR",  "lat": 40.4344, "lon": -86.9184,  "elev_m": 195,  "is_dome": False, "tz": -5, "epa": -0.080, "to_reg": 0.2,  "close_pct": 0.350, "streak": 0, "rz_dvoa": 0.08},
-    "Maryland Terrapins":         {"code": "MD",   "lat": 38.9903, "lon": -76.9475,  "elev_m": 41,   "is_dome": False, "tz": -5, "epa": -0.015, "to_reg": 0.1,  "close_pct": 0.480, "streak": 0, "rz_dvoa": 0.02},
-    "Rutgers Scarlet Knights":    {"code": "RUTG", "lat": 40.5138, "lon": -74.4649,  "elev_m": 26,   "is_dome": False, "tz": -5, "epa": 0.010,  "to_reg": 0.0,  "close_pct": 0.520, "streak": 0, "rz_dvoa": 0.00},
-    "Northwestern Wildcats":      {"code": "NW",   "lat": 42.0653, "lon": -87.6924,  "elev_m": 182,  "is_dome": False, "tz": -6, "epa": -0.025, "to_reg": 0.1,  "close_pct": 0.450, "streak": 0, "rz_dvoa": 0.03},
-    "Oklahoma Sooners":           {"code": "OU",   "lat": 35.2059, "lon": -97.4424,  "elev_m": 357,  "is_dome": False, "tz": -6, "epa": 0.065,  "to_reg": 0.0,  "close_pct": 0.660, "streak": 1, "rz_dvoa": -0.07},
-    "Missouri Tigers":            {"code": "MIZZ", "lat": 38.9358, "lon": -92.3332,  "elev_m": 225,  "is_dome": False, "tz": -6, "epa": 0.075,  "to_reg": -0.1, "close_pct": 0.700, "streak": 1, "rz_dvoa": -0.08},
-    "Florida Gators":             {"code": "FLA",  "lat": 29.6500, "lon": -82.3486,  "elev_m": 48,   "is_dome": False, "tz": -5, "epa": 0.045,  "to_reg": 0.0,  "close_pct": 0.580, "streak": 1, "rz_dvoa": -0.04},
-    "Auburn Tigers":              {"code": "AUB",  "lat": 32.6023, "lon": -85.4892,  "elev_m": 216,  "is_dome": False, "tz": -6, "epa": 0.040,  "to_reg": 0.0,  "close_pct": 0.560, "streak": 0, "rz_dvoa": -0.04},
-    "Arkansas Razorbacks":        {"code": "ARK",  "lat": 36.0681, "lon": -94.1789,  "elev_m": 408,  "is_dome": False, "tz": -6, "epa": 0.025,  "to_reg": 0.0,  "close_pct": 0.530, "streak": 0, "rz_dvoa": -0.02},
-    "Kentucky Wildcats":          {"code": "UK",   "lat": 38.0227, "lon": -84.5053,  "elev_m": 298,  "is_dome": False, "tz": -5, "epa": 0.015,  "to_reg": 0.0,  "close_pct": 0.520, "streak": 0, "rz_dvoa": -0.02},
-    "Vanderbilt Commodores":      {"code": "VAN",  "lat": 36.1440, "lon": -86.8087,  "elev_m": 173,  "is_dome": False, "tz": -6, "epa": 0.020,  "to_reg": 0.0,  "close_pct": 0.540, "streak": 0, "rz_dvoa": -0.02},
-    "Mississippi State Bulldogs": {"code": "MSST", "lat": 33.4563, "lon": -88.7934,  "elev_m": 115,  "is_dome": False, "tz": -6, "epa": -0.030, "to_reg": 0.1,  "close_pct": 0.420, "streak": 0, "rz_dvoa": 0.04},
-    "Kansas Jayhawks":            {"code": "KAN",  "lat": 38.9628, "lon": -95.2464,  "elev_m": 265,  "is_dome": False, "tz": -6, "epa": 0.040,  "to_reg": 0.0,  "close_pct": 0.550, "streak": 0, "rz_dvoa": -0.03},
-    "TCU Horned Frogs":           {"code": "TCU",  "lat": 32.7097, "lon": -97.3681,  "elev_m": 185,  "is_dome": False, "tz": -6, "epa": 0.035,  "to_reg": 0.0,  "close_pct": 0.560, "streak": 0, "rz_dvoa": -0.03},
-    "Baylor Bears":               {"code": "BAY",  "lat": 31.5582, "lon": -97.1157,  "elev_m": 122,  "is_dome": False, "tz": -6, "epa": 0.025,  "to_reg": 0.0,  "close_pct": 0.540, "streak": 0, "rz_dvoa": -0.02},
-    "Houston Cougars":            {"code": "HOU",  "lat": 29.7219, "lon": -95.3491,  "elev_m": 15,   "is_dome": False, "tz": -6, "epa": 0.030,  "to_reg": 0.0,  "close_pct": 0.550, "streak": 0, "rz_dvoa": -0.02},
-    "Oklahoma State Cowboys":     {"code": "OKST", "lat": 36.1257, "lon": -97.0665,  "elev_m": 295,  "is_dome": False, "tz": -6, "epa": 0.015,  "to_reg": 0.0,  "close_pct": 0.500, "streak": 0, "rz_dvoa": 0.00},
-    "UCF Knights":                {"code": "UCF",  "lat": 28.6080, "lon": -81.1924,  "elev_m": 20,   "is_dome": False, "tz": -5, "epa": 0.020,  "to_reg": 0.0,  "close_pct": 0.520, "streak": 0, "rz_dvoa": -0.01},
-    "Cincinnati Bearcats":        {"code": "CIN",  "lat": 39.1312, "lon": -84.5162,  "elev_m": 250,  "is_dome": False, "tz": -5, "epa": 0.030,  "to_reg": 0.0,  "close_pct": 0.540, "streak": 0, "rz_dvoa": -0.02},
-    "Georgia Tech Yellow Jackets":{"code": "GT",   "lat": 33.7724, "lon": -84.3928,  "elev_m": 286,  "is_dome": False, "tz": -5, "epa": 0.040,  "to_reg": 0.0,  "close_pct": 0.580, "streak": 1, "rz_dvoa": -0.03},
-    "Wake Forest Demon Deacons":  {"code": "WAKE", "lat": 36.1306, "lon": -80.2553,  "elev_m": 272,  "is_dome": False, "tz": -5, "epa": 0.000,  "to_reg": 0.0,  "close_pct": 0.480, "streak": 0, "rz_dvoa": 0.01},
-    "Duke Blue Devils":           {"code": "DUKE", "lat": 35.9953, "lon": -78.9417,  "elev_m": 115,  "is_dome": False, "tz": -5, "epa": 0.045,  "to_reg": -0.1, "close_pct": 0.620, "streak": 1, "rz_dvoa": -0.05},
-    "North Carolina Tar Heels":   {"code": "UNC",  "lat": 35.9069, "lon": -79.0479,  "elev_m": 146,  "is_dome": False, "tz": -5, "epa": 0.020,  "to_reg": 0.0,  "close_pct": 0.530, "streak": 0, "rz_dvoa": -0.01},
-    "NC State Wolfpack":          {"code": "NCST", "lat": 35.8008, "lon": -78.7195,  "elev_m": 122,  "is_dome": False, "tz": -5, "epa": 0.020,  "to_reg": 0.0,  "close_pct": 0.530, "streak": 0, "rz_dvoa": -0.01},
-    "Virginia Tech Hokies":       {"code": "VT",   "lat": 37.2200, "lon": -80.4180,  "elev_m": 627,  "is_dome": False, "tz": -5, "epa": 0.035,  "to_reg": 0.0,  "close_pct": 0.560, "streak": 0, "rz_dvoa": -0.03},
-    "Virginia Cavaliers":         {"code": "UVA",  "lat": 38.0311, "lon": -78.5137,  "elev_m": 168,  "is_dome": False, "tz": -5, "epa": 0.005,  "to_reg": 0.0,  "close_pct": 0.500, "streak": 0, "rz_dvoa": 0.00},
-    "Boston College Eagles":      {"code": "BC",   "lat": 42.3351, "lon": -71.1664,  "elev_m": 56,   "is_dome": False, "tz": -5, "epa": 0.010,  "to_reg": 0.0,  "close_pct": 0.520, "streak": 0, "rz_dvoa": 0.00},
-    "Florida State Seminoles":    {"code": "FSU",  "lat": 30.4381, "lon": -84.3044,  "elev_m": 32,   "is_dome": False, "tz": -5, "epa": 0.020,  "to_reg": 0.0,  "close_pct": 0.520, "streak": 0, "rz_dvoa": -0.01},
-    "California Golden Bears":    {"code": "CAL",  "lat": 37.8710, "lon": -122.2508, "elev_m": 135,  "is_dome": False, "tz": -8, "epa": 0.025,  "to_reg": 0.0,  "close_pct": 0.540, "streak": 0, "rz_dvoa": -0.02},
-    "Stanford Cardinal":          {"code": "STAN", "lat": 37.4345, "lon": -122.1611, "elev_m": 25,   "is_dome": False, "tz": -8, "epa": -0.045, "to_reg": 0.1,  "close_pct": 0.400, "streak": 0, "rz_dvoa": 0.04},
-    "Tulane Green Wave":          {"code": "TULN", "lat": 29.9447, "lon": -90.1167,  "elev_m": 2,    "is_dome": False, "tz": -6, "epa": 0.118,  "to_reg": -0.4, "close_pct": 0.835, "streak": 4, "rz_dvoa": -0.14},
-    "Army Black Knights":         {"code": "ARMY", "lat": 41.3875, "lon": -73.9642,  "elev_m": 102,  "is_dome": False, "tz": -5, "epa": 0.115,  "to_reg": -0.5, "close_pct": 0.840, "streak": 4, "rz_dvoa": -0.15},
-    "Navy Midshipmen":            {"code": "NAVY", "lat": 38.9847, "lon": -76.5072,  "elev_m": 12,   "is_dome": False, "tz": -5, "epa": 0.060,  "to_reg": -0.2, "close_pct": 0.700, "streak": 2, "rz_dvoa": -0.06},
-    "UNLV Rebels":                {"code": "UNLV", "lat": 36.0909, "lon": -115.1833, "elev_m": 610,  "is_dome": True,  "tz": -8, "epa": 0.098,  "to_reg": -0.3, "close_pct": 0.805, "streak": 2, "rz_dvoa": -0.12},
-    "Syracuse Orange":            {"code": "SYR",  "lat": 43.0361, "lon": -76.1364,  "elev_m": 165,  "is_dome": True,  "tz": -5, "epa": 0.038,  "to_reg": 0.1,  "close_pct": 0.625, "streak": 1, "rz_dvoa": -0.04},
-    "San Diego State Aztecs":     {"code": "SDSU", "lat": 32.7844, "lon": -117.1228, "elev_m": 14,   "is_dome": False, "tz": -8, "epa": -0.025, "to_reg": 0.1,  "close_pct": 0.450, "streak": 0, "rz_dvoa": 0.02},
-    "Fresno State Bulldogs":      {"code": "FRES", "lat": 36.8143, "lon": -119.7580, "elev_m": 99,   "is_dome": False, "tz": -8, "epa": 0.030,  "to_reg": 0.0,  "close_pct": 0.560, "streak": 0, "rz_dvoa": -0.02},
-    "San Jose State Spartans":    {"code": "SJSU", "lat": 37.3197, "lon": -121.8683, "elev_m": 29,   "is_dome": False, "tz": -8, "epa": 0.010,  "to_reg": 0.0,  "close_pct": 0.520, "streak": 0, "rz_dvoa": 0.00},
-    "Hawaii Rainbow Warriors":    {"code": "HAW",  "lat": 21.2943, "lon": -157.8160, "elev_m": 12,   "is_dome": False, "tz": -10,"epa": -0.050, "to_reg": 0.1,  "close_pct": 0.400, "streak": 0, "rz_dvoa": 0.05},
-    "Oregon State Beavers":       {"code": "ORST", "lat": 44.5594, "lon": -123.2814, "elev_m": 72,   "is_dome": False, "tz": -8, "epa": 0.010,  "to_reg": 0.0,  "close_pct": 0.500, "streak": 0, "rz_dvoa": 0.00},
-    "Washington State Cougars":   {"code": "WSU",  "lat": 46.7319, "lon": -117.1604, "elev_m": 775,  "is_dome": False, "tz": -8, "epa": 0.045,  "to_reg": -0.1, "close_pct": 0.620, "streak": 1, "rz_dvoa": -0.04},
-    "Memphis Tigers":             {"code": "MEM",  "lat": 35.1209, "lon": -89.9771,  "elev_m": 85,   "is_dome": False, "tz": -6, "epa": 0.070,  "to_reg": -0.1, "close_pct": 0.720, "streak": 1, "rz_dvoa": -0.06},
-    "South Florida Bulls":        {"code": "USF",  "lat": 27.9759, "lon": -82.5033,  "elev_m": 12,   "is_dome": False, "tz": -5, "epa": 0.015,  "to_reg": 0.0,  "close_pct": 0.520, "streak": 0, "rz_dvoa": -0.01},
-    "East Carolina Pirates":      {"code": "ECU",  "lat": 35.5964, "lon": -77.3652,  "elev_m": 17,   "is_dome": False, "tz": -5, "epa": 0.005,  "to_reg": 0.0,  "close_pct": 0.500, "streak": 0, "rz_dvoa": 0.00},
-    "UTSA Roadrunners":           {"code": "UTSA", "lat": 29.4169, "lon": -98.4789,  "elev_m": 198,  "is_dome": True,  "tz": -6, "epa": 0.025,  "to_reg": 0.0,  "close_pct": 0.550, "streak": 0, "rz_dvoa": -0.02},
-    "UConn Huskies":              {"code": "CONN", "lat": 41.7596, "lon": -72.6188,  "elev_m": 17,   "is_dome": False, "tz": -5, "epa": 0.010,  "to_reg": 0.0,  "close_pct": 0.520, "streak": 0, "rz_dvoa": 0.00},
-    "UMass Minutemen":            {"code": "MASS", "lat": 42.3774, "lon": -72.5361,  "elev_m": 58,   "is_dome": False, "tz": -5, "epa": -0.180, "to_reg": 0.2,  "close_pct": 0.250, "streak": 0, "rz_dvoa": 0.14},
-    "Liberty Flames":             {"code": "LIB",  "lat": 37.3544, "lon": -79.1753,  "elev_m": 286,  "is_dome": False, "tz": -5, "epa": 0.055,  "to_reg": -0.1, "close_pct": 0.680, "streak": 1, "rz_dvoa": -0.05},
-    "James Madison Dukes":        {"code": "JMU",  "lat": 38.4354, "lon": -78.8732,  "elev_m": 412,  "is_dome": False, "tz": -5, "epa": 0.075,  "to_reg": -0.2, "close_pct": 0.740, "streak": 2, "rz_dvoa": -0.08},
-    "North Dakota State Bison":   {"code": "NDSU", "lat": 46.9033, "lon": -96.8017,  "elev_m": 275,  "is_dome": True,  "tz": -6, "epa": -0.220, "to_reg": 0.0,  "close_pct": 0.750, "streak": 3, "rz_dvoa": -0.04},
-    "Wofford Terriers":           {"code": "WOF",  "lat": 34.9616, "lon": -81.9333,  "elev_m": 245,  "is_dome": False, "tz": -5, "epa": -0.600, "to_reg": 0.2,  "close_pct": 0.300, "streak": 0, "rz_dvoa": 0.15},
-    "Chattanooga Mocs":           {"code": "UTC",  "lat": 35.0365, "lon": -85.3156,  "elev_m": 206,  "is_dome": False, "tz": -5, "epa": -0.580, "to_reg": 0.2,  "close_pct": 0.350, "streak": 0, "rz_dvoa": 0.14},
-    "Samford Bulldogs":           {"code": "SAM",  "lat": 33.4658, "lon": -86.7950,  "elev_m": 215,  "is_dome": False, "tz": -6, "epa": -0.600, "to_reg": 0.2,  "close_pct": 0.300, "streak": 0, "rz_dvoa": 0.15},
-    "Tennessee Tech Golden Eagles":{"code": "TNTC","lat": 36.1783, "lon": -85.5078,  "elev_m": 340,  "is_dome": False, "tz": -6, "epa": -0.580, "to_reg": 0.2,  "close_pct": 0.320, "streak": 0, "rz_dvoa": 0.14}
+function getTierFromEv(evPct) {
+    const ev = Number(evPct);
+    if (ev >= SMASH_EV_CUTOFF) return "SMASH";
+    if (ev <= PASS_EV_CUTOFF) return "PASS";
+    return "TOO_CLOSE"; // -18.99% to +9.99% EV
 }
 
-# Known elite FCS programs (when playing FBS opponents, closer to -12 FPI than generic -23 FPI)
-ELITE_FCS_KEYWORDS = {
-    "north dakota state", "south dakota state", "montana state", "montana grizzlies",
-    "south dakota coyotes", "villanova", "idaho vandals", "uc davis", "tarleton", "mercer"
+function getTierColor(tierBadge, useHex = false) {
+    if (tierBadge === "SMASH") return useHex ? "#22c55e" : "var(--accent-emerald)";
+    if (tierBadge === "PASS") return useHex ? "#ef4444" : "var(--accent-danger)";
+    return useHex ? "#94a3b8" : "var(--text-secondary)";
 }
 
-ESPN_CODE_MAP = {"WSH": "WAS", "JAC": "JAX", "LA": "LAR"}
-WEATHER_CACHE = {}
-
-# Name aliases for matching Odds API team names to ESPN FPI / Standings names
-TEAM_NAME_ALIASES = {
-    "ole miss rebels": "ole miss rebels",
-    "mississippi rebels": "ole miss rebels",
-    "uconn huskies": "uconn huskies",
-    "connecticut huskies": "uconn huskies",
-    "umass minutemen": "umass minutemen",
-    "massachusetts minutemen": "umass minutemen",
-    "pitt panthers": "pittsburgh panthers",
-    "nc state wolfpack": "nc state wolfpack",
-    "north carolina state wolfpack": "nc state wolfpack",
-    "app state mountaineers": "appalachian state mountaineers",
-    "appalachian state mountaineers": "appalachian state mountaineers",
-    "ul monroe warhawks": "louisiana monroe warhawks",
-    "louisiana monroe warhawks": "louisiana monroe warhawks",
-    "ulm warhawks": "louisiana monroe warhawks",
-    "louisiana ragin cajuns": "louisiana ragin cajuns",
-    "fiu panthers": "florida international panthers",
-    "florida international golden panthers": "florida international panthers",
-    "fau owls": "florida atlantic owls",
-    "usf bulls": "south florida bulls",
-    "ucf knights": "ucf knights",
-    "central florida knights": "ucf knights",
-    "uab blazers": "uab blazers",
-    "utsa roadrunners": "utsa roadrunners",
-    "utep miners": "utep miners",
-    "unlv rebels": "unlv rebels",
-    "smu mustangs": "smu mustangs",
-    "tcu horned frogs": "tcu horned frogs",
-    "byu cougars": "byu cougars",
-    "lsu tigers": "lsu tigers",
-    "usc trojans": "usc trojans",
-    "ucla bruins": "ucla bruins",
-    "miami hurricanes": "miami hurricanes",
-    "miami (fl) hurricanes": "miami hurricanes",
-    "miami oh redhawks": "miami oh redhawks",
-    "miami (oh) redhawks": "miami oh redhawks",
-    "hawaii rainbow warriors": "hawaii rainbow warriors",
-    "san jose state spartans": "san jose state spartans",
-    "sam houston bearkats": "sam houston state bearkats",
-    "sam houston state bearkats": "sam houston state bearkats",
-    "southern miss golden eagles": "southern mississippi golden eagles",
-    "southern mississippi golden eagles": "southern mississippi golden eagles",
-    "ut martin skyhawks": "tennessee martin skyhawks"
+function renderTierBadgeHTML(tierBadge) {
+    if (tierBadge === "SMASH") {
+        return `<span class="badge-smash">SMASH</span>`;
+    }
+    if (tierBadge === "PASS") {
+        return `<span class="badge-pass" style="background: rgba(239, 68, 68, 0.16); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.45); font-weight: 800;">PASS</span>`;
+    }
+    return "";
 }
 
-def normalize_team_key(name):
-    if not name:
-        return ""
-    cleaned = name.lower().replace("é", "e").replace("'", "").replace("’", "").replace(".", "").replace("-", " ")
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    if cleaned in TEAM_NAME_ALIASES:
-        cleaned = TEAM_NAME_ALIASES[cleaned]
-    return cleaned
+function renderGatekeeperPillsHTML(flags, action = "ALLOW") {
+    if (!Array.isArray(flags) || flags.length === 0) return "";
+    const isHardStop = (action === "PASS" || action === "PIVOT_TEAM_TOTAL_UNDER" || action === "PIVOT_SAFE_FLOOR");
+    const bg = isHardStop ? "rgba(239, 68, 68, 0.13)" : "rgba(245, 158, 11, 0.13)";
+    const border = isHardStop ? "rgba(239, 68, 68, 0.48)" : "rgba(245, 158, 11, 0.48)";
+    const color = isHardStop ? "#fca5a5" : "var(--accent-gold)";
+    const icon = action === "PIVOT_TEAM_TOTAL_UNDER" ? "🔄" : (isHardStop ? "🛑" : "⚠️");
 
-def lookup_by_name(lookup_dict, full_name, code="", allow_code=True):
-    """Strict exact-match lookup ONLY (normalized full team name or verified team code).
-    ZERO prefix or first-word fuzzy matching so 'Florida Atlantic' / 'Florida International' /
-    'Texas State' / 'Georgia State' can NEVER falsely inherit 'Florida' / 'Texas' / 'Georgia'.
-    """
-    if not lookup_dict:
-        return None
-    norm = normalize_team_key(full_name)
-    if norm in lookup_dict:
-        return lookup_dict[norm]
-    if allow_code and code and f"code:{code.upper()}" in lookup_dict:
-        return lookup_dict[f"code:{code.upper()}"]
-    return None
+    return flags.map(flagText => `
+        <div style="margin-top: 4px; padding: 3px 7px; border-radius: 4px; background: ${bg}; border: 1px solid ${border}; color: ${color}; font-family: var(--font-mono); font-size: 10px; font-weight: 700; line-height: 1.35;">
+            ${icon} ${flagText}
+        </div>
+    `).join("");
+}
 
-# ==============================================================================
-# 3. LIVE 2026 DATA FEEDS (NFLVERSE + ESPN FPI + ESPN STANDINGS + RANKINGS + INJURIES)
-# ==============================================================================
-def fetch_nflverse_live_team_epa(season_year=2026):
-    """
-    Pulls real 2026 NFL weekly team stats directly from nflverse-data releases (zero API key).
-    Computes true Net EPA/play = (Off EPA/play - Def EPA/play allowed), turnover regression,
-    red-zone defense proxy, and league EPA rank (1..32).
-    """
-    url = f"https://github.com/nflverse/nflverse-data/releases/download/stats_team/stats_team_week_{season_year}.csv"
-    team_stats = {}
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=18)
-        if resp.status_code != 200:
-            print(f"[nflverse Notice] HTTP {resp.status_code} for {season_year} weekly team stats.")
-            return {}
+function renderGameGuardrailChipsHTML(gameRecord) {
+    const chips = [];
+    const isUnlocked = (AppState.activeMode !== "tip");
 
-        reader = csv.DictReader(io.StringIO(resp.text))
-        agg = {}
-
-        def ensure(t):
-            if t not in agg:
-                agg[t] = {
-                    "games": 0, "off_plays": 0.0, "off_epa": 0.0,
-                    "def_plays": 0.0, "def_epa_allowed": 0.0,
-                    "giveaways": 0.0, "takeaways": 0.0
-                }
-            return agg[t]
-
-        def fval(row, *keys):
-            for k in keys:
-                v = row.get(k)
-                if v not in (None, "", "NA", "NaN"):
-                    try:
-                        return float(v)
-                    except ValueError:
-                        pass
-            return 0.0
-
-        for row in reader:
-            stype = (row.get("season_type") or "REG").upper()
-            if stype not in ("REG", "POST"):
-                continue
-            raw_t = (row.get("team") or "").strip().upper()
-            raw_opp = (row.get("opponent_team") or "").strip().upper()
-            if not raw_t:
-                continue
-            t = ESPN_CODE_MAP.get(raw_t, raw_t)
-            opp = ESPN_CODE_MAP.get(raw_opp, raw_opp)
-
-            att = fval(row, "attempts")
-            car = fval(row, "carries")
-            sacks = fval(row, "sacks_suffered", "sacks")
-            plays = att + car + sacks
-            pass_epa = fval(row, "passing_epa")
-            rush_epa = fval(row, "rushing_epa")
-            tot_epa = pass_epa + rush_epa
-
-            giveaways = (
-                fval(row, "passing_interceptions", "interceptions")
-                + fval(row, "rushing_fumbles_lost")
-                + fval(row, "receiving_fumbles_lost")
-                + fval(row, "sack_fumbles_lost")
-            )
-
-            rec = ensure(t)
-            rec["games"] += 1
-            rec["off_plays"] += plays
-            rec["off_epa"] += tot_epa
-            rec["giveaways"] += giveaways
-
-            if opp:
-                opp_rec = ensure(opp)
-                opp_rec["def_plays"] += plays
-                opp_rec["def_epa_allowed"] += tot_epa
-                opp_rec["takeaways"] += giveaways
-
-        ranked_list = []
-        for t, d in agg.items():
-            if d["games"] == 0 or d["off_plays"] <= 0 or d["def_plays"] <= 0:
-                continue
-            off_epa_pp = d["off_epa"] / d["off_plays"]
-            def_epa_pp = d["def_epa_allowed"] / d["def_plays"]
-            net_epa_pp = off_epa_pp - def_epa_pp
-            to_margin_pg = (d["takeaways"] - d["giveaways"]) / d["games"]
-            # Positive turnover margin implies slight mean-reversion penalty (negative to_reg)
-            to_reg = max(-0.85, min(0.85, -0.35 * to_margin_pg))
-            # Negative opp_rz_dvoa = stronger defense (lower defensive EPA allowed)
-            rz_dvoa = max(-0.25, min(0.25, def_epa_pp * 1.45))
-
-            team_stats[f"code:{t}"] = {
-                "net_epa_per_play": round(net_epa_pp, 4),
-                "off_epa_per_play": round(off_epa_pp, 4),
-                "def_epa_per_play": round(def_epa_pp, 4),
-                "to_reg": round(to_reg, 2),
-                "rz_dvoa": round(rz_dvoa, 3),
-                "games_played": d["games"]
-            }
-            ranked_list.append((net_epa_pp, f"code:{t}"))
-
-        ranked_list.sort(reverse=True)
-        for rank_idx, (_, key) in enumerate(ranked_list, start=1):
-            team_stats[key]["epa_rank"] = rank_idx
-
-        print(f"[nflverse Live {season_year}] Loaded real Net EPA/play & turnovers for {len(ranked_list)} NFL teams.")
-    except Exception as e:
-        print(f"[nflverse Notice] Live fetch skipped ({e}); falling back to ESPN FPI/registry.")
-    return team_stats
-
-def fetch_espn_fpi(league="NCAA"):
-    """
-    Pulls live ESPN Football Power Index (fitt/v3) for NCAA FBS (~134 teams) or NFL (32 teams).
-    Returns dict keyed by normalized displayName AND 'code:ABBR'.
-    FPI is predictive neutral-field points above league average.
-    """
-    sport_path = "college-football" if league == "NCAA" else "nfl"
-    limit = 160 if league == "NCAA" else 40
-    url = f"https://site.web.api.espn.com/apis/fitt/v3/sports/football/{sport_path}/powerindex?limit={limit}"
-    fpi_map = {}
-
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=14)
-        if resp.status_code != 200:
-            print(f"[ESPN FPI {league} Notice] HTTP {resp.status_code}")
-            return {}
-        payload = resp.json()
-
-        # Build category name -> stat index map from top-level categories metadata
-        cat_stat_names = {}
-        for cat in payload.get("categories", []):
-            cname = cat.get("name", "")
-            cat_stat_names[cname] = cat.get("names", [])
-
-        teams_arr = payload.get("teams", [])
-        ranked_entries = []
-
-        for item in teams_arr:
-            team_obj = item.get("team", {})
-            dname = team_obj.get("displayName") or team_obj.get("name") or ""
-            abbr = ESPN_CODE_MAP.get((team_obj.get("abbreviation") or "").upper(), (team_obj.get("abbreviation") or "").upper())
-            if not dname:
-                continue
-
-            stats_dict = {}
-            for cat in item.get("categories", []):
-                cname = cat.get("name", "")
-                names = cat.get("names") or cat_stat_names.get(cname, [])
-                vals = cat.get("totals") or cat.get("values") or []
-                for idx, val in enumerate(vals):
-                    stat_key = names[idx].lower() if idx < len(names) else f"{cname}_{idx}"
-                    try:
-                        stats_dict[stat_key] = float(val)
-                    except (ValueError, TypeError):
-                        pass
-
-            fpi_val = None
-            for k in ("fpi", "overall", "powerindex"):
-                if k in stats_dict:
-                    fpi_val = stats_dict[k]
-                    break
-            if fpi_val is None:
-                continue
-
-            fpi_rk = None
-            for k in ("fpirank", "rank", "fpi_rk"):
-                if k in stats_dict:
-                    fpi_rk = int(round(stats_dict[k]))
-                    break
-
-            off_eff = stats_dict.get("offefficiency", stats_dict.get("off", 50.0))
-            def_eff = stats_dict.get("defefficiency", stats_dict.get("def", 50.0))
-
-            # Convert FPI (predictive neutral-field points vs avg) cleanly into GOLDEN_PLAY_SCALER EPA units
-            epa_equiv = round(fpi_val / GOLDEN_PLAY_SCALER, 4)
-            # Defensive efficiency (0..100, higher=better) -> opp_rz_dvoa (-0.22..+0.22, negative=better)
-            rz_proxy = round(max(-0.22, min(0.22, -(def_eff - 50.0) / 220.0)), 3)
-
-            entry = {
-                "fpi": round(fpi_val, 2),
-                "epa_equiv": epa_equiv,
-                "epa_rank": fpi_rk,
-                "off_eff": round(off_eff, 1),
-                "def_eff": round(def_eff, 1),
-                "rz_dvoa": rz_proxy,
-                "is_fbs": True,
-                "espn_abbr": abbr
-            }
-            ranked_entries.append((fpi_val, entry))
-            fpi_map[normalize_team_key(dname)] = entry
-            if abbr:
-                fpi_map[f"code:{abbr}"] = entry
-
-        # Fill epa_rank cleanly if not explicitly present
-        ranked_entries.sort(key=lambda x: x[0], reverse=True)
-        for idx, (_, ent) in enumerate(ranked_entries, start=1):
-            if not ent.get("epa_rank"):
-                ent["epa_rank"] = idx
-
-        print(f"[ESPN FPI {league}] Loaded live FPI ratings for {len(ranked_entries)} teams.")
-    except Exception as e:
-        print(f"[ESPN FPI {league} Notice] {e}")
-
-    return fpi_map
-
-def parse_record_games(record_str):
-    """Parses an ESPN W-L or W-L-T string (e.g. '8-2', '7-2-1') into (wins, losses, ties, gp)."""
-    if not record_str or not isinstance(record_str, str):
-        return None
-    m = re.match(r"^\s*(\d+)\s*-\s*(\d+)(?:\s*-\s*(\d+))?\s*$", record_str)
-    if not m:
-        return None
-    w = int(m.group(1))
-    l = int(m.group(2))
-    t = int(m.group(3)) if m.group(3) else 0
-    return (w, l, t, w + l + t)
-
-def fetch_espn_standings(league="NFL"):
-    """
-    Pulls live 2026 ESPN Standings (avgPointsFor/Against, overall record W-L, gamesPlayed, winPercent, streak).
-    Safeguards against ESPN college-football duplicate stat names (where conference/home/road splits share
-    'wins'/'losses' or omit 'gamesPlayed') and enforces strict physical PPG bounds [8.0, 55.0].
-    """
-    if league == "NFL":
-        url = "https://site.api.espn.com/apis/v2/sports/football/nfl/standings"
-    else:
-        url = "https://site.api.espn.com/apis/v2/sports/football/college-football/standings?group=80"
-
-    standings_map = {}
-
-    def walk_node(node):
-        if not isinstance(node, dict):
-            return
-        st = node.get("standings", {})
-        for ent in st.get("entries", []):
-            team = ent.get("team", {})
-            dname = team.get("displayName") or team.get("name") or ""
-            abbr = ESPN_CODE_MAP.get((team.get("abbreviation") or "").upper(), (team.get("abbreviation") or "").upper())
-            if not dname:
-                continue
-
-            # Keep FIRST occurrence per stat name (ESPN lists overall before conference/split duplicates)
-            # and also parse explicit overall record string ('overall' / type=='total') for true full-season GP
-            smap = {}
-            overall_parsed = None
-            max_record_gp = 0
-            for s in ent.get("stats", []):
-                sname = s.get("name", "")
-                stype = (s.get("type") or "").lower()
-                disp = s.get("summary") or s.get("displayValue") or ""
-
-                if sname.lower() == "overall" or stype == "total":
-                    parsed = parse_record_games(disp)
-                    if parsed and parsed[3] > 0:
-                        overall_parsed = parsed
-
-                # Track largest W-L string as a secondary lower bound on games played
-                if sname.lower() in ("overall", "total"):
-                    p2 = parse_record_games(disp)
-                    if p2:
-                        max_record_gp = max(max_record_gp, p2[3])
-
-                if sname and sname not in smap and s.get("value") is not None:
-                    try:
-                        smap[sname] = float(s["value"])
-                    except (ValueError, TypeError):
-                        pass
-
-            if overall_parsed:
-                wins, losses, ties, rec_gp = overall_parsed
-            else:
-                wins = smap.get("wins", 0.0)
-                losses = smap.get("losses", 0.0)
-                ties = smap.get("ties", 0.0)
-                rec_gp = wins + losses + ties
-
-            gp = max(1.0, float(smap.get("gamesPlayed", 0.0)), float(rec_gp), float(max_record_gp))
-            pf = smap.get("pointsFor", 0.0)
-            pa = smap.get("pointsAgainst", 0.0)
-
-            # Prefer ESPN's direct per-game averages when present; otherwise divide season totals by true overall GP
-            raw_avg_pf = smap.get("avgPointsFor")
-            raw_avg_pa = smap.get("avgPointsAgainst")
-
-            if raw_avg_pf is not None and 8.0 <= raw_avg_pf <= 55.0:
-                ppg_for = round(raw_avg_pf, 2)
-            elif pf > 0 and gp >= 3:
-                cand_pf = round(pf / gp, 2)
-                ppg_for = cand_pf if (8.0 <= cand_pf <= 55.0) else None
-            else:
-                ppg_for = None
-
-            if raw_avg_pa is not None and 8.0 <= raw_avg_pa <= 55.0:
-                ppg_against = round(raw_avg_pa, 2)
-            elif pa > 0 and gp >= 3:
-                cand_pa = round(pa / gp, 2)
-                ppg_against = cand_pa if (8.0 <= cand_pa <= 55.0) else None
-            else:
-                ppg_against = None
-
-            # Final sanity pair check: never emit half-valid PPG or impossible scoring paces
-            if ppg_for is None or ppg_against is None:
-                ppg_for = None
-                ppg_against = None
-
-            win_pct = smap.get("winPercent", wins / gp)
-            if overall_parsed and gp > 0:
-                win_pct = wins / gp
-            streak_val = smap.get("streak", 0.0)
-            active_win_streak = int(streak_val) if streak_val > 0 else 0
-
-            point_diff_pg = round(ppg_for - ppg_against, 2) if (ppg_for is not None and ppg_against is not None) else (
-                round((pf - pa) / gp, 2) if (gp >= 3 and (pf > 0 or pa > 0)) else 0.0
-            )
-
-            rec = {
-                "games_played": int(gp),
-                "win_pct": round(max(0.05, min(0.95, win_pct)), 3),
-                "active_win_streak": active_win_streak,
-                "ppg_for": ppg_for,
-                "ppg_against": ppg_against,
-                "point_diff_pg": point_diff_pg,
-                "is_fbs": True
-            }
-            standings_map[normalize_team_key(dname)] = rec
-            if abbr:
-                standings_map[f"code:{abbr}"] = rec
-
-        for child in node.get("children", []):
-            walk_node(child)
-
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=14)
-        if resp.status_code == 200:
-            walk_node(resp.json())
-            valid_ppg = sum(1 for k, v in standings_map.items() if not k.startswith("code:") and v.get("ppg_for") is not None)
-            total_tm = sum(1 for k in standings_map if not k.startswith("code:"))
-            print(f"[ESPN Standings {league}] Loaded {total_tm} teams ({valid_ppg} with verified PPG in [8, 55]).")
-    except Exception as e:
-        print(f"[ESPN Standings {league} Notice] {e}")
-
-    return standings_map
-
-def fetch_espn_ncaa_rankings():
-    """Pulls live weekly CFP / AP Top-25 poll_rank for NCAA M13 divergence & Ranked board filter."""
-    url = "https://site.api.espn.com/apis/site/v2/sports/football/college-football/rankings"
-    poll_map = {}
-    ranked_names = []
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=12)
-        if resp.status_code != 200:
-            return poll_map, ranked_names
-        rankings = resp.json().get("rankings", [])
-        if not rankings:
-            return poll_map, ranked_names
-
-        # Prefer CFP Poll if active in November, else AP Top 25
-        chosen = next((r for r in rankings if "playoff" in (r.get("name", "").lower())), None) or \
-                 next((r for r in rankings if "ap" in (r.get("name", "").lower())), rankings[0])
-
-        for item in chosen.get("ranks", []):
-            rk = int(item.get("current", 0) or 0)
-            team = item.get("team", {})
-            loc = team.get("location", "")
-            nick = team.get("name", "")
-            full_nm = f"{loc} {nick}".strip() if loc and nick else (team.get("displayName") or loc or nick)
-            abbr = (team.get("abbreviation") or "").upper()
-            if rk > 0 and full_nm:
-                ranked_names.append(full_nm)
-                poll_map[normalize_team_key(full_nm)] = rk
-                if abbr:
-                    poll_map[f"code:{abbr}"] = rk
-        print(f"[ESPN Rankings NCAA] Loaded {len(ranked_names)} live Top-25 teams ({chosen.get('name', 'Poll')}).")
-    except Exception as e:
-        print(f"[ESPN Rankings Notice] {e}")
-    return poll_map, ranked_names
-
-def fetch_espn_game_injuries(event_id, league="NFL"):
-    """
-    Pulls live ESPN game summary injury report for an upcoming game.
-    Computes realistic qb_replacement_delta (negative pts = missing starters),
-    lt_or_rb_pass_pro_out flag (for M5 Sack-Trauma), and human-readable injuries_summary.
-    """
-    sport_path = "nfl" if league == "NFL" else "college-football"
-    url = f"https://site.api.espn.com/apis/site/v2/sports/football/{sport_path}/summary?event={event_id}"
-    out_by_abbr = {}
-
-    POS_WEIGHTS = {
-        "QB": 3.50,
-        "OT": 0.90, "LT": 1.00, "RT": 0.85, "T": 0.85,
-        "OG": 0.45, "G": 0.45, "C": 0.55, "OL": 0.50,
-        "CB": 0.70, "DB": 0.45, "S": 0.45, "FS": 0.45, "SS": 0.45,
-        "DE": 0.65, "EDGE": 0.75, "OLB": 0.55, "LB": 0.45, "ILB": 0.45, "DT": 0.45, "DL": 0.45,
-        "WR": 0.60, "TE": 0.45, "RB": 0.50
+    // Balls Deep / DaVinci Modules ONLY (M11 & M13) — strictly sealed out of Just the Tip (M1–M9)
+    if (isUnlocked && gameRecord.elevMatrix && gameRecord.elevMatrix.hypoxicOverrideM13) {
+        chips.push(`<span style="background:rgba(245,158,11,0.16); color:var(--accent-gold); border:1px solid rgba(245,158,11,0.5); padding:2px 6px; border-radius:4px; font-size:10px; font-family:var(--font-mono); font-weight:800;">🏔️ M11&gt;M13 ZONE ${gameRecord.elevMatrix.zoneNumber} HYPOXIA</span>`);
+    }
+    if (isUnlocked && gameRecord.m13Details && gameRecord.m13Details.coachSyncBlocked) {
+        chips.push(`<span style="background:rgba(239,68,68,0.16); color:#f87171; border:1px solid rgba(239,68,68,0.5); padding:2px 6px; border-radius:4px; font-size:10px; font-family:var(--font-mono); font-weight:800;">🔒 M13 COACH/QB LOCK</span>`);
     }
 
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=8)
-        if resp.status_code != 200:
-            return out_by_abbr
-        data = resp.json()
-        for team_block in data.get("injuries", []):
-            t_info = team_block.get("team", {})
-            abbr = ESPN_CODE_MAP.get((t_info.get("abbreviation") or "").upper(), (t_info.get("abbreviation") or "").upper())
-            if not abbr:
-                continue
+    // Modules 8 & 9 Core Guardrails (Active in all modes)
+    if (gameRecord.thirdStringQbAlert) {
+        chips.push(`<span style="background:rgba(6,182,212,0.16); color:var(--accent-cyan); border:1px solid rgba(6,182,212,0.5); padding:2px 6px; border-radius:4px; font-size:10px; font-family:var(--font-mono); font-weight:800;">🔄 3RD-STRING QB → ${gameRecord.thirdStringTeam} TT UNDER</span>`);
+    }
+    if (gameRecord.m8 && gameRecord.m8.charterDelayShock > 0) {
+        chips.push(`<span style="background:rgba(168,85,247,0.16); color:#d8b4fe; border:1px solid rgba(168,85,247,0.5); padding:2px 6px; border-radius:4px; font-size:10px; font-family:var(--font-mono); font-weight:800;">✈️ FAA DELAY (${gameRecord.m8.delayTotalDragPts} TOT)</span>`);
+    }
+    if (gameRecord.m9Base && Math.abs(gameRecord.m9Base.injurySpreadDiff || 0) >= 0.75) {
+        const injPts = gameRecord.m9Base.injurySpreadDiff;
+        const favTeam = injPts < 0 ? gameRecord.homeTeam : gameRecord.awayTeam;
+        chips.push(`<span style="background:rgba(244,63,94,0.16); color:#fda4af; border:1px solid rgba(244,63,94,0.5); padding:2px 6px; border-radius:4px; font-size:10px; font-family:var(--font-mono); font-weight:800;">🚑 INJURY WIRE (${favTeam} +${Math.abs(injPts).toFixed(1)} pts)</span>`);
+    }
+    if (chips.length === 0) return "";
+    return `<div style="display:flex; flex-wrap:wrap; justify-content:center; gap:5px; margin-bottom:8px;">${chips.join("")}</div>`;
+}
 
-            total_impact = 0.0
-            pass_pro_compromised = False
-            qb_out_count = 0
-            key_outs = []
+function isRankedNCAAGame(game) {
+    const hFull = game.home_full_name || "";
+    const aFull = game.away_full_name || "";
+    const homeTel = (game.team_telemetry && game.team_telemetry.home) || {};
+    const awayTel = (game.team_telemetry && game.team_telemetry.away) || {};
+    if ((homeTel.poll_rank && homeTel.poll_rank <= 25) || (awayTel.poll_rank && awayTel.poll_rank <= 25)) {
+        return true;
+    }
+    const hasLivePoll = Boolean(
+        AppState.rawPayload &&
+        AppState.rawPayload.slate_info &&
+        Array.isArray(AppState.rawPayload.slate_info.ranked_ncaa_teams) &&
+        AppState.rawPayload.slate_info.ranked_ncaa_teams.length >= 20
+    );
+    if (hasLivePoll) {
+        const liveRanked = AppState.rawPayload.slate_info.ranked_ncaa_teams;
+        return liveRanked.includes(hFull) || liveRanked.includes(aFull);
+    }
+    if (RANKED_NCAA_FULL_NAMES.includes(hFull) || RANKED_NCAA_FULL_NAMES.includes(aFull)) {
+        return true;
+    }
+    return RANKED_NCAA_CODES.has(game.home_team) || RANKED_NCAA_CODES.has(game.away_team);
+}
 
-            for inj in team_block.get("injuries", []):
-                status = (inj.get("status") or "").strip().lower()
-                if status not in ("out", "doubtful", "injured reserve", "ir", "suspended"):
-                    continue
-                status_mult = 0.75 if status == "doubtful" else 1.0
-                athlete = inj.get("athlete", {})
-                pname = athlete.get("displayName") or athlete.get("shortName") or ""
-                pos_obj = athlete.get("position") or {}
-                pos = (pos_obj.get("abbreviation") or "").upper()
+function shouldIncludeGame(game, defaultLeague = "NFL") {
+    const lg = game.league || defaultLeague;
+    if (lg === "NFL") return AppState.filters.nfl;
+    if (lg === "NCAA") return AppState.filters.ncaa && isRankedNCAAGame(game);
+    return true;
+}
 
-                weight = POS_WEIGHTS.get(pos, 0.25) * status_mult
-                # Only count meaningful active-roster outs (skip deep practice-squad/unknown)
-                if pos in ("OT", "LT", "RT", "T"):
-                    pass_pro_compromised = True
-                if pos == "QB":
-                    qb_out_count += 1
-                total_impact += weight
-                if pos in ("QB", "OT", "LT", "RT", "T", "CB", "WR", "RB", "DE", "EDGE", "LB") and len(key_outs) < 5:
-                    key_outs.append(f"{pname} ({pos}, {status.upper()})")
+// Calculates Tuesday 5:00 AM cutoff right after Monday Night Football for the active week
+function computeUpcomingMnfCutoffMs(gamesList) {
+    const validTimes = (gamesList || [])
+        .map(g => g.commence_time || g.commenceTime)
+        .filter(Boolean)
+        .map(t => new Date(t).getTime())
+        .filter(ms => !isNaN(ms));
 
-            # Cap total team injury impact cleanly at -5.5 pts so deep IR lists never blow up spreads
-            capped_delta = round(-min(5.5, total_impact), 2)
-            out_by_abbr[abbr] = {
-                "qb_replacement_delta": capped_delta,
-                "lt_or_rb_pass_pro_out": pass_pro_compromised,
-                "is_third_string_qb": (qb_out_count >= 2),
-                "injuries_summary": key_outs
+    const anchorMs = validTimes.length > 0 ? Math.min(...validTimes) : Date.now();
+    const anchorDate = new Date(anchorMs);
+    const day = anchorDate.getDay();
+    const daysUntilTueAfterMnf = (day === 2) ? 7 : ((9 - day) % 7 || 7);
+
+    const cutoffDate = new Date(anchorDate);
+    cutoffDate.setDate(anchorDate.getDate() + daysUntilTueAfterMnf);
+    cutoffDate.setHours(5, 0, 0, 0);
+    return cutoffDate.getTime();
+}
+
+function isGameInCurrentWeek(commenceTimeStr, cutoffMs) {
+    if (!commenceTimeStr) return true;
+    const ms = new Date(commenceTimeStr).getTime();
+    if (isNaN(ms)) return true;
+    return ms <= cutoffMs;
+}
+
+// Infers football Week label (e.g., "Week 10", "Week 11") from timestamp or entry metadata
+function inferFootballWeekLabel(entryOrGame, fallbackLabel = "Week 10") {
+    if (!entryOrGame) return fallbackLabel;
+    if (entryOrGame.week_label) return entryOrGame.week_label;
+    if (entryOrGame.week) return `Week ${entryOrGame.week}`;
+    const timeStr = entryOrGame.commence_time || entryOrGame.commenceTime || entryOrGame.timestamp;
+    if (timeStr) {
+        const ms = new Date(timeStr).getTime();
+        if (!isNaN(ms)) {
+            const week1StartMs = new Date("2026-09-02T00:00:00Z").getTime();
+            const diffDays = Math.floor((ms - week1StartMs) / (1000 * 60 * 60 * 24));
+            const weekNum = Math.max(1, Math.min(18, Math.floor(diffDays / 7) + 1));
+            return `Week ${weekNum}`;
+        }
+    }
+    return fallbackLabel;
+}
+
+// Checks if a game on Tab 1 has already finished (FINAL) so it can be swept into the Ledger vaults
+function isGameCompletedFinal(game) {
+    if (!game) return false;
+    if (game.status === "FINAL") return true;
+    const cleanHome = cleanTeamCode(game.home_team || game.homeTeam || "");
+    const cleanAway = cleanTeamCode(game.away_team || game.awayTeam || "");
+    const matchupKey = game.matchup || `${cleanAway} @ ${cleanHome}`;
+    const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[matchupKey];
+    if (espnMatch && espnMatch.state === "post") return true;
+    return false;
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    ensureTickerStylesInjected();
+    bindUIControls();
+    pollDataFeed();
+    setInterval(pollDataFeed, 5000);
+    setInterval(syncEspnLiveScores, 60000);
+    window.addEventListener("resize", () => {
+        if (AppState.rawPayload) render_game_cards(AppState.rawPayload);
+    });
+});
+
+window.unlockBallsDeepMode = function(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const bdRadio = document.getElementById("mode-balls-deep") || document.getElementById("mode-unsolicited");
+    if (bdRadio) {
+        bdRadio.checked = true;
+    }
+    AppState.activeMode = "balls_deep";
+    recalculateAndRenderAll();
+};
+
+// Pinned Corner Toggle between Main Stage 5-Pack and "Wednesday Night at Porky's" Top 5 Safe Floor Fades
+window.toggleFivePackView = function(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const savedY = window.scrollY;
+    AppState.fivePackView = (AppState.fivePackView === "main_stage") ? "porkys" : "main_stage";
+    openCardMemory.add("FLAGSHIP_5_PACK_DRAWER");
+    renderFlagshipFivePack();
+    window.scrollTo(window.scrollX, savedY);
+};
+
+// Toggles the 6 Clickable Historical Ledger Vault Cards open/closed
+window.toggleLedgerVault = function(vaultKey, event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const savedY = window.scrollY;
+    AppState.activeLedgerVault = (AppState.activeLedgerVault === vaultKey) ? null : vaultKey;
+    renderHistoricalLedger();
+    window.scrollTo(window.scrollX, savedY);
+};
+
+// Changes the Selected Week inside the Flagship 5-Pack Ledger Card Dropdown and opens the 5-Pack Vault
+window.setFivePackVaultWeek = function(weekVal, event) {
+    if (event) {
+        event.stopPropagation();
+    }
+    const savedY = window.scrollY;
+    AppState.selectedFivePackWeek = weekVal || "ALL";
+    AppState.ledgerFivePackView = "flagship";
+    AppState.activeLedgerVault = "flagship_5pack";
+    renderHistoricalLedger();
+    window.scrollTo(window.scrollX, savedY);
+};
+
+// Swaps Card #1 on the Historical Ledger between Flagship 5-Pack and Porky's 5-Pack Audit (just like Main Card!)
+window.toggleLedgerFivePackView = function(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const savedY = window.scrollY;
+    AppState.ledgerFivePackView = (AppState.ledgerFivePackView === "flagship") ? "porkys" : "flagship";
+    if (AppState.activeLedgerVault === "flagship_5pack" || AppState.activeLedgerVault === "porkys_5pack") {
+        AppState.activeLedgerVault = (AppState.ledgerFivePackView === "porkys") ? "porkys_5pack" : "flagship_5pack";
+    }
+    renderHistoricalLedger();
+    window.scrollTo(window.scrollX, savedY);
+};
+
+// Changes the Selected Week inside the Porky's 5-Pack Ledger Card Dropdown and opens the Porky's Vault
+window.setPorkysVaultWeek = function(weekVal, event) {
+    if (event) {
+        event.stopPropagation();
+    }
+    const savedY = window.scrollY;
+    AppState.selectedPorkysWeek = weekVal || "ALL";
+    AppState.ledgerFivePackView = "porkys";
+    AppState.activeLedgerVault = "porkys_5pack";
+    renderHistoricalLedger();
+    window.scrollTo(window.scrollX, savedY);
+};
+
+// Toggles Historical Ledger between Top-25 NCAA + NFL and ALL Completed Games (including unranked FBS)
+window.toggleLedgerAllCompleted = function(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const savedY = window.scrollY;
+    AppState.ledgerShowAllCompleted = !AppState.ledgerShowAllCompleted;
+    renderHistoricalLedger();
+    window.scrollTo(window.scrollX, savedY);
+};
+
+window.toggleLegendDrawer = function(memoryKey, targetRenderFnName, event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const savedY = window.scrollY;
+    if (openCardMemory.has(memoryKey)) {
+        openCardMemory.delete(memoryKey);
+    } else {
+        openCardMemory.add(memoryKey);
+    }
+    if (targetRenderFnName === "fivePack") {
+        renderFlagshipFivePack();
+    } else if (targetRenderFnName === "ledger") {
+        renderHistoricalLedger();
+    }
+    window.scrollTo(window.scrollX, savedY);
+};
+
+window.toggleParlayLeg = function(propKey) {
+    const savedY = window.scrollY;
+    if (!AppState.safeFloorParlayLegs) AppState.safeFloorParlayLegs = new Set();
+    if (AppState.selectedParlayLegs.has(propKey)) {
+        AppState.selectedParlayLegs.delete(propKey);
+        AppState.safeFloorParlayLegs.delete(propKey);
+    } else {
+        AppState.selectedParlayLegs.add(propKey);
+    }
+    renderCombinatoricsDeck();
+    window.scrollTo(window.scrollX, savedY);
+};
+
+window.loadFlagshipPreset = function(onlyMenage = false) {
+    const savedY = window.scrollY;
+    if (!AppState.safeFloorParlayLegs) AppState.safeFloorParlayLegs = new Set();
+    AppState.selectedParlayLegs.clear();
+    AppState.safeFloorParlayLegs.clear();
+    AppState.flagshipFivePack.forEach(p => {
+        if (!onlyMenage || (p.flagshipSlot && p.flagshipSlot.includes("MÉNAGE"))) {
+            AppState.selectedParlayLegs.add(p.propKey);
+        }
+    });
+    renderCombinatoricsDeck();
+    window.scrollTo(window.scrollX, savedY);
+};
+
+window.loadPorkysPreset = function(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const savedY = window.scrollY;
+    if (!AppState.safeFloorParlayLegs) AppState.safeFloorParlayLegs = new Set();
+    AppState.selectedParlayLegs.clear();
+    AppState.safeFloorParlayLegs.clear();
+    AppState.porkysFivePack.forEach(item => {
+        if (item.fadeProp && item.fadeProp.propKey) {
+            AppState.selectedParlayLegs.add(item.fadeProp.propKey);
+            AppState.safeFloorParlayLegs.add(item.fadeProp.propKey);
+        }
+    });
+    renderCombinatoricsDeck();
+    window.scrollTo(window.scrollX, savedY);
+};
+
+window.clearParlaySlip = function(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const savedY = window.scrollY;
+    if (AppState.safeFloorParlayLegs) AppState.safeFloorParlayLegs.clear();
+    AppState.selectedParlayLegs.clear();
+    renderCombinatoricsDeck();
+    window.scrollTo(window.scrollX, savedY);
+};
+
+window.setComboFilter = function(filterType, value) {
+    const savedY = window.scrollY;
+    AppState.comboFilters[filterType] = value;
+    renderCombinatoricsDeck();
+    window.scrollTo(window.scrollX, savedY);
+};
+
+function bindUIControls() {
+    const modeRadios = {
+        "mode-tip": "tip",
+        "mode-balls-deep": "balls_deep",
+        "mode-unsolicited": "balls_deep",
+        "mode-davinci": "davinci"
+    };
+
+    Object.keys(modeRadios).forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            if (el.checked) {
+                AppState.activeMode = modeRadios[id];
             }
-    except Exception:
-        pass
-    return out_by_abbr
+            el.addEventListener("change", (e) => {
+                if (e.target.checked) {
+                    AppState.activeMode = modeRadios[id];
+                    recalculateAndRenderAll({ isSliderDrag: false });
+                }
+            });
+        }
+    });
 
-def get_team_meta(full_name, league="NFL", nflverse_map=None, fpi_map=None, standings_map=None, poll_map=None):
-    # 1. Start from Stadium/Geography Registry (or clean regional neutral fallback — ZERO MD5 HASHES!)
-    is_verified_code = False
-    if league == "NFL" and full_name in NFL_TEAM_REGISTRY:
-        meta = dict(NFL_TEAM_REGISTRY[full_name])
-        is_verified_code = True
-    elif league == "NCAA" and full_name in NCAA_TEAM_REGISTRY:
-        meta = dict(NCAA_TEAM_REGISTRY[full_name])
-        is_verified_code = True
-    else:
-        words = [w for w in full_name.replace("&", "").replace("(", "").replace(")", "").split() if w]
-        code = (words[0][:2] + words[1][:2]).upper() if len(words) >= 2 else full_name[:4].upper()
-        meta = {
-            "code": code,
-            "lat": 37.5,
-            "lon": -88.0,
-            "elev_m": 220,
-            "is_dome": False,
-            "tz": -6,
-            "epa": 0.0,
-            "to_reg": 0.0,
-            "close_pct": 0.500,
-            "streak": 0,
-            "rz_dvoa": 0.0
+    // Fast-path while actively dragging the DaVinci slider (zero hidden-tab thrashing)
+    document.addEventListener("input", (e) => {
+        if (e.target && e.target.id === "davinci-intensity-slider") {
+            const readout = document.getElementById("davinci-readout");
+            const val = parseFloat(e.target.value) || 0.0;
+            if (readout) readout.textContent = val > 0 ? "+" + val : val;
+            AppState.intensitySlider = val;
+
+            if (AppState.activeMode !== "davinci") return;
+            if (sliderDragTimer) return;
+            sliderDragTimer = setTimeout(() => {
+                sliderDragTimer = null;
+                requestAnimationFrame(() => recalculateAndRenderAll({ isSliderDrag: true }));
+            }, 50);
+        }
+    });
+
+    // Full sync across all tabs the instant you release the slider
+    document.addEventListener("change", (e) => {
+        if (e.target && e.target.id === "davinci-intensity-slider") {
+            if (sliderDragTimer) {
+                clearTimeout(sliderDragTimer);
+                sliderDragTimer = null;
+            }
+            AppState.intensitySlider = parseFloat(e.target.value) || 0.0;
+            if (AppState.activeMode === "davinci") {
+                recalculateAndRenderAll({ isSliderDrag: false });
+            }
+        }
+    });
+
+    const nflCheck = document.getElementById("filter-nfl");
+    const ncaaCheck = document.getElementById("filter-ncaa");
+    if (nflCheck) {
+        AppState.filters.nfl = nflCheck.checked;
+        nflCheck.addEventListener("change", (e) => {
+            AppState.filters.nfl = e.target.checked;
+            recalculateAndRenderAll();
+        });
+    }
+    if (ncaaCheck) {
+        AppState.filters.ncaa = ncaaCheck.checked;
+        ncaaCheck.addEventListener("change", (e) => {
+            AppState.filters.ncaa = e.target.checked;
+            recalculateAndRenderAll();
+        });
+    }
+}
+
+async function pollDataFeed() {
+    let textData = "";
+    try {
+        const response = await fetch(`./data.json?t=${Date.now()}`, { cache: "no-store" });
+        if (!response.ok) return;
+        textData = await response.text();
+    } catch (err) {
+        console.warn("DixPix Polling Notice: Waiting for data.json feed...", err.message);
+        return;
+    }
+    if (textData !== AppState.lastDataHash) {
+        try {
+            AppState.rawPayload = JSON.parse(textData);
+            AppState.lastDataHash = textData;
+        } catch (parseErr) {
+            console.error("DixPix data.json Parse Error:", parseErr);
+            return;
+        }
+        recalculateAndRenderAll();
+    }
+}
+
+function snapToHalfPointHook(lineVal, deltaPts) {
+    const rawTarget = lineVal + deltaPts;
+    return Math.floor(rawTarget) + 0.5;
+}
+
+// Organic Continuous Golden Ratio Momentum Arc (zero robotic snapping while dragging DaVinci slider)
+function calcMomentumArc(sliderVal, scale = 1.0) {
+    if (!sliderVal) return 0.0;
+    const norm = Math.max(-1.0, Math.min(1.0, sliderVal / (2.0 * PHI))); // -1.0 to +1.0
+    const exponent = 2.0 / PHI; // ~1.236068 natural swell curve
+    const arc = Math.sign(norm) * Math.pow(Math.abs(norm), exponent) * (PHI * PHI) * scale;
+    return Number(arc.toFixed(3));
+}
+
+// Clean bare lock icon (no border or background)
+function renderLockCellHTML() {
+    return `<span onclick="window.unlockBallsDeepMode(event)" title="Click to unlock Balls Deep Telemetry" style="cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-size:15px; user-select:none;">🔒</span>`;
+}
+
+// Safe wrapper so browser-cached older onlinemath_engine.js NEVER throws ReferenceError and blanks the site
+function calcReportCalibratedTotalSafe(vegasTotal, ogTipTotal, envPayload = {}, circPayload = {}, elevMatrix = null) {
+    if (typeof calcReportCalibratedTotal === "function") {
+        return calcReportCalibratedTotal(vegasTotal, ogTipTotal, envPayload, circPayload, elevMatrix);
+    }
+    const vTot = Number(vegasTotal || ogTipTotal || 45.0);
+    const isDome = Boolean(envPayload && envPayload.is_dome);
+    const tempF = isDome ? 72.0 : Number(envPayload.temperature_f !== undefined ? envPayload.temperature_f : 59.0);
+    const windMph = isDome ? 0.0 : Number(envPayload.wind_mph !== undefined ? envPayload.wind_mph : 0.0);
+    const absTz = Math.abs(Number((circPayload && circPayload.away_tz_shift) || 0));
+    const coldDrag = isDome ? 0.0 : -Math.max(0.0, (42.0 - tempF) * 0.14);
+    const windDrag = isDome ? 0.0 : -Math.max(0.0, (windMph - 10.0) * 0.30);
+    const tzDrag = absTz >= 3 ? -1.65 : (absTz === 2 ? -0.75 : 0.0);
+    const elevTotDrag = (elevMatrix && elevMatrix.elevationTotalDragPts) ? Number(elevMatrix.elevationTotalDragPts) : 0.0;
+    const effLean = 0.25 * Math.max(-8.0, Math.min(8.0, Number(ogTipTotal) - vTot));
+    const totalDelta = Math.max(-6.5, Math.min(6.5, effLean + coldDrag + windDrag + tzDrag + elevTotDrag));
+    return {
+        ballsDeepTotal: Number((vTot + totalDelta).toFixed(1)),
+        coldDrag: Number(coldDrag.toFixed(2)),
+        windDrag: Number(windDrag.toFixed(2)),
+        tzDrag: Number(tzDrag.toFixed(2)),
+        elevTotDrag: Number(elevTotDrag.toFixed(2)),
+        effLean: Number(effLean.toFixed(2))
+    };
+}
+
+// ==========================================
+// MASTER CALCULATION PIPELINE — SINGLE SOURCE OF TRUTH (ONLINEMATH_ENGINE v313)
+// ==========================================
+function recalculateAndRenderAll(opts = {}) {
+    const isSliderDrag = Boolean(opts && opts.isSliderDrag);
+    if (!AppState.rawPayload || !AppState.rawPayload.games) return;
+
+    const savedScrollX = window.scrollX;
+    const savedScrollY = window.scrollY;
+
+    const defaultLeague = (AppState.rawPayload.slate_info && AppState.rawPayload.slate_info.league) || "NFL";
+    const mode = AppState.activeMode;
+    const sliderVal = (mode === "davinci") ? AppState.intensitySlider : 0.0;
+    const isActiveMomentumArc = (mode === "davinci" && sliderVal !== 0);
+    const playScaler = (typeof GOLDEN_PLAY_SCALER !== "undefined") ? GOLDEN_PLAY_SCALER : 38.5145;
+
+    const eligibleGamesForCutoff = AppState.rawPayload.games.filter(g => shouldIncludeGame(g, defaultLeague));
+    AppState.mnfCutoffMs = computeUpcomingMnfCutoffMs(eligibleGamesForCutoff);
+
+    AppState.processedGames = [];
+    AppState.processedProps = [];
+
+    AppState.rawPayload.games.forEach(game => {
+      try {
+        const gameLeague = game.league || defaultLeague;
+        if (!shouldIncludeGame(game, defaultLeague)) return;
+
+        const isCurrentWeek = isGameInCurrentWeek(game.commence_time, AppState.mnfCutoffMs);
+        const cleanHome = cleanTeamCode(game.home_team);
+        const cleanAway = cleanTeamCode(game.away_team);
+
+        const envPayload = game.environmental_payload || {};
+        const circPayload = game.circadian_payload || {};
+        const homeTel = (game.team_telemetry && game.team_telemetry.home) || {};
+        const awayTel = (game.team_telemetry && game.team_telemetry.away) || {};
+
+        // Modules 7 & 8 (Barometrics + Circadian/FAA Charter Delay)
+        const m7 = calcBarometricBallistics(envPayload);
+        const m8 = calcCircadianStrain(circPayload, game.kickoff_local_hour);
+
+        let vegasHomeSpread = 0;
+        let vegasTotalLine = (gameLeague === "NCAA") ? 51.5 : 43.5;
+        if (Array.isArray(game.props_board)) {
+            const homeSpreadObj = game.props_board.find(
+                p => p.market_type === "spread" && p.player.startsWith(`${game.home_team} `)
+            );
+            const awaySpreadObj = game.props_board.find(
+                p => p.market_type === "spread" && p.player.startsWith(`${game.away_team} `)
+            );
+            if (homeSpreadObj && homeSpreadObj.base_line !== undefined) {
+                vegasHomeSpread = Number(homeSpreadObj.base_line);
+            } else if (awaySpreadObj && awaySpreadObj.base_line !== undefined) {
+                vegasHomeSpread = -Number(awaySpreadObj.base_line);
+            }
+            const totalObj = game.props_board.find(p => p.market_type === "total");
+            if (totalObj && totalObj.base_line !== undefined) {
+                vegasTotalLine = Number(totalObj.base_line);
+            }
         }
 
-    code = meta["code"]
-    meta["epa_rank"] = None
-    meta["poll_rank"] = None
-    meta["off_eff"] = None
-    meta["def_eff"] = None
-    meta["off_epa_per_play"] = None
-    meta["def_epa_per_play"] = None
-    meta["is_fcs"] = False
-    meta["telemetry_source"] = "registry_fallback"
+        // Module 11.1 (Biophysical Mass), Module 11.2 (10-Zone Elevation Matrix) & Module 12 (Turnover EPA)
+        const elevTip = calcTenZoneElevationMatrix(envPayload, circPayload, "tip", 0.0);
+        const elevBd = calcTenZoneElevationMatrix(envPayload, circPayload, "balls_deep", 0.0);
+        const elevActive = calcTenZoneElevationMatrix(envPayload, circPayload, mode, sliderVal);
 
-    # 2. Overlay Live Standings ONLY for verified full-season win streak / NFL win_pct (NEVER broken CFB PPG!)
-    st_hit = lookup_by_name(standings_map, full_name, code, allow_code=is_verified_code) if standings_map else None
-    if st_hit and st_hit.get("games_played", 0) >= 3:
-        meta["streak"] = st_hit["active_win_streak"]
-        if league == "NFL":
-            meta["close_pct"] = st_hit["win_pct"]
+        const m11Bd = calcBiophysicalMassLoad(envPayload, homeTel, 95.0, 0.62, "balls_deep", 0.0);
+        const m12Bd = calcTurnoverEPAMatrix({ home: homeTel, away: awayTel }, gameLeague, "balls_deep", 0.0);
 
-    # 3. Overlay Live Performance Efficiency (ZERO MD5 HASHES, ZERO BROKEN STANDINGS PPG)
-    if league == "NFL":
-        nv_hit = nflverse_map.get(f"code:{code}") if nflverse_map else None
-        fpi_hit = lookup_by_name(fpi_map, full_name, code, allow_code=is_verified_code) if fpi_map else None
+        const m11 = calcBiophysicalMassLoad(envPayload, homeTel, 95.0, 0.62, mode, sliderVal);
+        const m12 = calcTurnoverEPAMatrix({ home: homeTel, away: awayTel }, gameLeague, mode, sliderVal);
 
-        if fpi_hit:
-            meta["off_eff"] = fpi_hit.get("off_eff")
-            meta["def_eff"] = fpi_hit.get("def_eff")
+        // Coupled M11 & M12 Interaction Vector (negative favors Home Team in spread notation)
+        const rawCoupledBd = -calcCoupledInteractionPsi(m11Bd.phiBioScore, m12Bd.netTurnoverEPA, 0.0);
+        const psiCoupledBd = Number(Math.max(-2.85, Math.min(2.85, rawCoupledBd)).toFixed(3));
 
-        if nv_hit:
-            if fpi_hit:
-                meta["epa"] = round((0.80 * nv_hit["net_epa_per_play"]) + (0.20 * fpi_hit["epa_equiv"]), 4)
-            else:
-                meta["epa"] = nv_hit["net_epa_per_play"]
-            meta["off_epa_per_play"] = nv_hit.get("off_epa_per_play")
-            meta["def_epa_per_play"] = nv_hit.get("def_epa_per_play")
-            meta["to_reg"] = nv_hit["to_reg"]
-            meta["rz_dvoa"] = nv_hit["rz_dvoa"]
-            meta["epa_rank"] = nv_hit.get("epa_rank")
-            if meta["epa_rank"]:
-                meta["close_pct"] = round(max(0.10, min(0.95, 1.0 - ((meta["epa_rank"] - 1) / 31.0))), 3)
-            meta["telemetry_source"] = "nflverse_2026_live"
-        elif fpi_hit:
-            meta["epa"] = fpi_hit["epa_equiv"]
-            meta["rz_dvoa"] = fpi_hit["rz_dvoa"]
-            meta["epa_rank"] = fpi_hit.get("epa_rank")
-            if meta["epa_rank"]:
-                meta["close_pct"] = round(max(0.10, min(0.95, 1.0 - ((meta["epa_rank"] - 1) / 31.0))), 3)
-            meta["telemetry_source"] = "espn_fpi_2026_live"
-    else:
-        fpi_hit = lookup_by_name(fpi_map, full_name, code, allow_code=is_verified_code) if fpi_map else None
-        if fpi_hit:
-            meta["epa"] = fpi_hit["epa_equiv"]
-            meta["rz_dvoa"] = fpi_hit["rz_dvoa"]
-            meta["epa_rank"] = fpi_hit.get("epa_rank")
-            meta["off_eff"] = fpi_hit.get("off_eff")
-            meta["def_eff"] = fpi_hit.get("def_eff")
-            # Derive closing_rank_pct cleanly across ALL 136 FBS teams (fixes 0.05 bug!)
-            if meta["epa_rank"]:
-                meta["close_pct"] = round(max(0.10, min(0.95, 1.0 - ((meta["epa_rank"] - 1) / 135.0))), 3)
-            meta["telemetry_source"] = "espn_fpi_2026_live"
-        else:
-            # If ESPN FPI (all ~136 FBS teams) loaded and this team isn't in FPI, it is an FCS opponent
-            if fpi_map and len(fpi_map) >= 80:
-                meta["is_fcs"] = True
-                norm_nm = normalize_team_key(full_name)
-                is_elite_fcs = any(kw in norm_nm for kw in ELITE_FCS_KEYWORDS)
-                fcs_fpi = -12.5 if is_elite_fcs else -23.5
-                meta["epa"] = round(fcs_fpi / GOLDEN_PLAY_SCALER, 4)
-                meta["off_eff"] = 38.0 if is_elite_fcs else 20.0
-                meta["def_eff"] = 38.0 if is_elite_fcs else 20.0
-                meta["rz_dvoa"] = 0.06 if is_elite_fcs else 0.15
-                meta["close_pct"] = 0.650 if is_elite_fcs else 0.250
-                meta["telemetry_source"] = "fcs_calibrated_tier"
+        const rawCoupledActive = (mode === "tip")
+            ? 0.0
+            : -calcCoupledInteractionPsi(m11.phiBioScore, m12.netTurnoverEPA, sliderVal);
+        const psiCoupledActive = Number(Math.max(-3.65, Math.min(3.65, rawCoupledActive)).toFixed(3));
 
-        # Overlay live Top-25 poll rank
-        if poll_map:
-            prk = lookup_by_name(poll_map, full_name, code, allow_code=is_verified_code)
-            if prk:
-                meta["poll_rank"] = prk
+        const gameWithLeague = Object.assign({}, game, { league: gameLeague });
 
-    return meta
+        // SINGLE-SOURCE-OF-TRUTH M9 + M11 + M13 FAIR MARGIN SYNTHESIS (v313)
+        // Mode 1 ("tip") strictly enforces M1–M9 firewall (activePsi = 0, activeElev = 0, M13 = 0)
+        const m9Base = calcFullGameFairMargin(
+            gameWithLeague, m8.phiCircadianPenalty, 0, "tip", vegasHomeSpread, 0, elevTip, 0.0
+        );
+        const m9Bd = calcFullGameFairMargin(
+            gameWithLeague, m8.phiCircadianPenalty, psiCoupledBd, "balls_deep", vegasHomeSpread, elevBd.psiElevPts, elevBd, 0.0
+        );
+        const m9 = (mode === "tip")
+            ? m9Base
+            : ((mode === "balls_deep")
+                ? m9Bd
+                : calcFullGameFairMargin(
+                    gameWithLeague, m8.phiCircadianPenalty, psiCoupledActive, "davinci", vegasHomeSpread, elevActive.psiElevPts, elevActive, sliderVal
+                ));
 
-def calc_haversine_miles(lat1, lon1, lat2, lon2):
-    r_miles = 3958.8
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lon2 - lon1)
-    a = math.sin(dphi / 2.0)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2.0)**2
-    return round(2.0 * r_miles * math.atan2(math.sqrt(a), math.sqrt(1.0 - a)), 1)
+        // Exact spread delta contributed by M11–M13 coupled overlay (guarantees Tip + Psi = Active)
+        const psiBd = Number((m9Bd.fairHomeSpread - m9Base.fairHomeSpread).toFixed(2));
+        const psi11_12 = (mode === "tip") ? 0 : Number((m9.fairHomeSpread - m9Base.fairHomeSpread).toFixed(2));
 
-def prefetch_all_stadium_weather(metas_list):
-    """Batches all unique outdoor stadium coordinates into multi-location Open-Meteo requests (~2s total)."""
-    coords = []
-    seen = set()
-    for m in metas_list:
-        if m.get("is_dome"):
-            continue
-        lat = round(float(m.get("lat", 40.0)), 2)
-        lon = round(float(m.get("lon", -80.0)), 2)
-        ck = f"{lat}_{lon}"
-        if ck not in WEATHER_CACHE and ck not in seen:
-            seen.add(ck)
-            coords.append((lat, lon, ck))
+        // Pure Vegas-Independent Total Projection (Live nflverse Off/Def EPA for NFL; Live ESPN FPI Off/Def Eff for NCAA)
+        const windMph = envPayload.is_dome ? 0 : (envPayload.wind_mph || 0);
+        const windPenalty = Math.max(0, (windMph - 10.0) * 0.25);
+        const totalIntercept = (gameLeague === "NCAA") ? 51.450 : MODEL_TOTAL_INTERCEPT;
 
-    # Open-Meteo supports comma-separated multi-location queries (chunk by 40 coords)
-    for start in range(0, len(coords), 40):
-        chunk = coords[start:start + 40]
-        lats_str = ",".join(str(c[0]) for c in chunk)
-        lons_str = ",".join(str(c[1]) for c in chunk)
-        url = (
-            f"https://api.open-meteo.com/v1/forecast?latitude={lats_str}&longitude={lons_str}"
-            f"&current=temperature_2m,wind_speed_10m,surface_pressure"
-            f"&temperature_unit=fahrenheit&wind_speed_unit=mph"
-        )
-        try:
-            resp = requests.get(url, headers=HEADERS, timeout=10)
-            if resp.status_code == 200:
-                payload = resp.json()
-                items = payload if isinstance(payload, list) else [payload]
-                for idx, item in enumerate(items):
-                    if idx >= len(chunk):
-                        break
-                    cur = item.get("current", {}) if isinstance(item, dict) else {}
-                    _, _, ck = chunk[idx]
-                    WEATHER_CACHE[ck] = {
-                        "temperature_f": cur.get("temperature_2m", 54.0),
-                        "wind_mph": cur.get("wind_speed_10m", 6.5),
-                        "pressure_hpa": cur.get("surface_pressure", 1013.25),
-                        "is_dome": False,
-                        "elevation_m": 0
+        let baseTelemetryTotal;
+        const hasNflSplitEpa = (
+            gameLeague === "NFL" &&
+            homeTel.off_epa_per_play !== undefined && homeTel.def_epa_per_play !== undefined &&
+            awayTel.off_epa_per_play !== undefined && awayTel.def_epa_per_play !== undefined
+        );
+        const hasFpiOffDef = (
+            homeTel.off_eff !== undefined && homeTel.def_eff !== undefined &&
+            awayTel.off_eff !== undefined && awayTel.def_eff !== undefined
+        );
+
+        if (hasNflSplitEpa) {
+            const epaTotDelta = (playScaler * 0.5) * (
+                Number(homeTel.off_epa_per_play) + Number(homeTel.def_epa_per_play) +
+                Number(awayTel.off_epa_per_play) + Number(awayTel.def_epa_per_play)
+            );
+            baseTelemetryTotal = Number(Math.max(28.0, Math.min(65.0, totalIntercept + epaTotDelta - windPenalty + m8.delayTotalDragPts)).toFixed(1));
+        } else if (hasFpiOffDef) {
+            const effScaler = (gameLeague === "NCAA") ? 0.16 : 0.12;
+            const effDelta = effScaler * (
+                (Number(homeTel.off_eff) - 50.0) + (Number(awayTel.off_eff) - 50.0) -
+                (Number(homeTel.def_eff) - 50.0) - (Number(awayTel.def_eff) - 50.0)
+            );
+            baseTelemetryTotal = Number(Math.max(28.0, Math.min(78.0, totalIntercept + effDelta - windPenalty + m8.delayTotalDragPts)).toFixed(1));
+        } else {
+            const epaSum = Math.max(-0.20, Math.min(0.20, (homeTel.net_epa_per_play || 0) + (awayTel.net_epa_per_play || 0)));
+            const epaTotalPts = epaSum * playScaler;
+            const rzTotalPts = ((homeTel.opp_rz_dvoa || 0) + (awayTel.opp_rz_dvoa || 0)) * 10.0;
+            baseTelemetryTotal = Number(Math.max(28.0, Math.min(78.0, totalIntercept + epaTotalPts + rzTotalPts - windPenalty + m8.delayTotalDragPts)).toFixed(1));
+        }
+
+        const m13Details = (mode === "davinci" ? m9.m13Details : m9Bd.m13Details) || {
+            mRiseMultiplier: 1.0,
+            mRiseDog: 1.0,
+            mRiseFav: 1.0,
+            mRiseSignedHomeDelta: 0.0,
+            deltaContext: 0.0,
+            dogHavocRatio: 1.0,
+            riseHomeSpreadAdj: 0.0,
+            propMeanMultDog: 1.0,
+            propMeanMultFav: 1.0,
+            m11OverrideApplied: false,
+            coachSyncBlocked: false
+        };
+
+        const thirdStringTeamClean = m9Base.thirdStringTeam ? cleanTeamCode(m9Base.thirdStringTeam) : null;
+
+        const gameRecord = {
+            gameId: game.game_id,
+            league: gameLeague,
+            isCurrentWeek,
+            weekLabel: inferFootballWeekLabel(game, "Week 11"),
+            matchup: `${cleanAway} @ ${cleanHome}`,
+            homeTeam: cleanHome,
+            awayTeam: cleanAway,
+            commenceTime: game.commence_time,
+            elevationM: envPayload.elevation_m || 0,
+            tempK: envPayload.temp_kelvin || (envPayload.temperature_f !== undefined ? Number((((envPayload.temperature_f - 32) * 5 / 9) + 273.15).toFixed(2)) : 288.15),
+            windMph,
+            vegasHomeSpread,
+            vegasTotalLine,
+            m7, m8, m9Base, m9Bd, m9, m11, m12,
+            elevMatrix: elevBd,
+            elevActive,
+            psiElev: elevActive.psiElevPts,
+            m11CombinedDisplay: Number((m11.phiBioScore + Math.abs(elevActive.psiElevPts)).toFixed(4)),
+            m13Details,
+            m13Rise: m13Details.mRiseSignedHomeDelta,
+            thirdStringQbAlert: m9Base.thirdStringQbAlert,
+            thirdStringTeam: thirdStringTeamClean,
+            psiBd,
+            psi11_12,
+            baseTelemetryTotal
+        };
+
+        AppState.processedGames.push(gameRecord);
+
+        if (Array.isArray(game.props_board)) {
+            game.props_board.forEach((prop, idx) => {
+                const propKey = `${game.game_id}_${prop.market_type}_${idx}`;
+                const m1 = calcVigFreeProbability(prop.base_odds_over || -110, prop.base_odds_under || -110);
+                const vigFreeOver = m1.trueProbA;
+                const vegasLine = (prop.base_line !== undefined && prop.base_line !== null) ? Number(prop.base_line) : 0;
+                const isHomeSpread = prop.market_type === "spread" && prop.player.startsWith(`${game.home_team} `);
+
+                const isAwayPlayer = Boolean(
+                    prop.is_away_player ||
+                    (prop.team && cleanTeamCode(prop.team) === cleanAway) ||
+                    (prop.player && prop.player.startsWith(`${game.away_team} `))
+                );
+                const playerTeamSpread = isAwayPlayer ? -vegasHomeSpread : vegasHomeSpread;
+                const isUnderdogPlayer = playerTeamSpread > 0;
+
+                // Strict M1-M9 firewall: pass null for elevMatrix in Just the Tip so M11 never leaks into Tip mode
+                const gatekeeper = evaluatePropGatekeepers(prop, {
+                    playerTeamSpread,
+                    isRoadPlayer: isAwayPlayer,
+                    elevMatrix: (mode === "tip") ? null : elevActive,
+                    teamTelemetry: isAwayPlayer ? awayTel : homeTel,
+                    oppTelemetry: isAwayPlayer ? homeTel : awayTel,
+                    thirdStringQbAlert: m9Base.thirdStringQbAlert,
+                    thirdStringTeam: thirdStringTeamClean,
+                    isUnderLean: (prop.market_type === "total" && baseTelemetryTotal < vegasLine)
+                });
+
+                let baseProjectedLine = vegasLine;
+                let tipModelProb = 0.50;
+                let bdProjectedLine = vegasLine;
+                let bdModelProb = 0.50;
+                let finalCalculatedLine = vegasLine;
+                let activeModelProb = 0.50;
+
+                let safeFloorHookNum = vegasLine;
+                let safeFloorLabel = "";
+                let safeFloorWinPct = 82.0;
+                let ceilingHookNum = vegasLine;
+                let bdAltLineLabel = "";
+                let bdLongerOdds = 145;
+                let bdReachProb = 0.50;
+
+                if (prop.market_type === "spread") {
+                    baseProjectedLine = isHomeSpread ? m9Base.fairHomeSpread : Number((-m9Base.fairHomeSpread).toFixed(2));
+                    const tipGap = vegasLine - baseProjectedLine;
+                    tipModelProb = calcPointGapWinProb(tipGap);
+
+                    bdProjectedLine = isHomeSpread ? m9Bd.fairHomeSpread : Number((-m9Bd.fairHomeSpread).toFixed(2));
+                    const bdGap = vegasLine - bdProjectedLine;
+                    bdModelProb = calcPointGapWinProb(bdGap);
+
+                    if (mode === "balls_deep") {
+                        finalCalculatedLine = bdProjectedLine;
+                        activeModelProb = bdModelProb;
+                    } else if (mode === "davinci") {
+                        finalCalculatedLine = isHomeSpread ? m9.fairHomeSpread : Number((-m9.fairHomeSpread).toFixed(2));
+                        activeModelProb = calcPointGapWinProb(vegasLine - finalCalculatedLine);
+                    } else {
+                        finalCalculatedLine = baseProjectedLine;
+                        activeModelProb = tipModelProb;
                     }
-        except Exception as e:
-            print(f"[Open-Meteo Batch Notice] {e}")
 
-def fetch_live_stadium_weather(home_meta):
-    lat = round(float(home_meta.get("lat", 40.0)), 2)
-    lon = round(float(home_meta.get("lon", -80.0)), 2)
-    is_dome = bool(home_meta.get("is_dome", False))
-    elev_m = home_meta.get("elev_m", 0)
+                    // Organic Continuous Momentum Arc on Safe Floor & Ceiling (no snapping while sliding DaVinci)
+                    const baseSafeSpread = snapToHalfPointHook(vegasLine, +3.5);
+                    const baseAltSpread = snapToHalfPointHook(vegasLine, -3.0);
+                    const spreadArc = isActiveMomentumArc ? calcMomentumArc(sliderVal, 1.0) : 0.0;
 
-    weather_payload = {
-        "temperature_f": 72.0 if is_dome else 54.0,
-        "wind_mph": 0.0 if is_dome else 6.5,
-        "pressure_hpa": 1013.25,
-        "is_dome": is_dome,
-        "elevation_m": elev_m
-    }
+                    const safeSpreadVal = isActiveMomentumArc
+                        ? Number((baseSafeSpread - spreadArc).toFixed(2))
+                        : baseSafeSpread;
+                    safeFloorHookNum = safeSpreadVal;
+                    const safeCoverGap = safeSpreadVal - finalCalculatedLine;
+                    const safeProbRaw = Math.min(0.96, Math.max(0.05, calcPointGapWinProb(safeCoverGap)));
+                    safeFloorWinPct = Number((safeProbRaw * 100).toFixed(1));
+                    const safeFmt = isActiveMomentumArc ? safeSpreadVal.toFixed(2) : safeSpreadVal.toFixed(1);
+                    safeFloorLabel = `Alt ${safeSpreadVal > 0 ? '+' + safeFmt : safeFmt} (-175)`;
 
-    if is_dome:
-        return weather_payload
+                    const altSpreadVal = isActiveMomentumArc
+                        ? Number((baseAltSpread - spreadArc).toFixed(2))
+                        : baseAltSpread;
+                    ceilingHookNum = altSpreadVal;
+                    const altFmt = isActiveMomentumArc ? altSpreadVal.toFixed(2) : altSpreadVal.toFixed(1);
+                    bdAltLineLabel = `Alt ${altSpreadVal > 0 ? '+' + altFmt : altFmt} (+145)`;
+                    bdLongerOdds = 145;
+                    const altCoverGap = altSpreadVal - finalCalculatedLine;
+                    bdReachProb = calcPointGapWinProb(altCoverGap);
 
-    cache_key = f"{lat}_{lon}"
-    if cache_key in WEATHER_CACHE:
-        cached = dict(WEATHER_CACHE[cache_key])
-        cached["elevation_m"] = elev_m
-        cached["is_dome"] = is_dome
-        return cached
+                } else if (prop.market_type === "total") {
+                    baseProjectedLine = baseTelemetryTotal;
+                    const tipTotalDiff = baseProjectedLine - vegasLine;
+                    tipModelProb = calcPointGapWinProb(Math.abs(tipTotalDiff));
 
-    try:
-        url = (
-            f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
-            f"&current=temperature_2m,wind_speed_10m,surface_pressure"
-            f"&temperature_unit=fahrenheit&wind_speed_unit=mph"
-        )
-        resp = requests.get(url, headers=HEADERS, timeout=5)
-        if resp.status_code == 200:
-            data = resp.json().get("current", {})
-            weather_payload["temperature_f"] = data.get("temperature_2m", 54.0)
-            weather_payload["wind_mph"] = data.get("wind_speed_10m", 6.5)
-            weather_payload["pressure_hpa"] = data.get("surface_pressure", 1013.25)
-            WEATHER_CACHE[cache_key] = dict(weather_payload)
-    except Exception:
-        pass
+                    const bdTotObj = calcReportCalibratedTotalSafe(vegasLine, baseProjectedLine, envPayload, circPayload, elevBd);
+                    bdProjectedLine = bdTotObj.ballsDeepTotal;
+                    const bdTotalDiff = bdProjectedLine - vegasLine;
+                    bdModelProb = calcPointGapWinProb(Math.abs(bdTotalDiff));
 
-    return weather_payload
+                    const bdDirSign = bdTotalDiff >= 0 ? 1 : -1;
+                    const totalArc = isActiveMomentumArc ? calcMomentumArc(sliderVal, 1.15) : 0.0;
 
-def fetch_espn_scores():
-    score_lookup = {}
-    now_utc = datetime.now(timezone.utc)
-    start_str = (now_utc - timedelta(days=10)).strftime("%Y%m%d")
-    end_str = (now_utc + timedelta(days=7)).strftime("%Y%m%d")
-
-    endpoints = [
-        ("NFL", f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=100&dates={start_str}-{end_str}"),
-        ("NFL", "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"),
-        ("NCAA", f"https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?groups=80&limit=200&dates={start_str}-{end_str}"),
-        ("NCAA", "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?groups=80&limit=150")
-    ]
-
-    for lg, url in endpoints:
-        try:
-            resp = requests.get(url, headers=HEADERS, timeout=8)
-            if resp.status_code == 200:
-                events = resp.json().get("events", [])
-                for ev in events:
-                    event_id = ev.get("id")
-                    comps = ev.get("competitions", [])
-                    if not comps:
-                        continue
-                    comp = comps[0]
-                    status_type = comp.get("status", {}).get("type", {})
-                    state = status_type.get("state", "pre")
-                    completed = bool(status_type.get("completed", False))
-
-                    competitors = comp.get("competitors", [])
-                    home_c = next((c for c in competitors if c.get("homeAway") == "home"), None)
-                    away_c = next((c for c in competitors if c.get("homeAway") == "away"), None)
-                    if not home_c or not away_c:
-                        continue
-
-                    h_team_obj = home_c.get("team", {})
-                    a_team_obj = away_c.get("team", {})
-                    h_abbr = ESPN_CODE_MAP.get(h_team_obj.get("abbreviation", ""), h_team_obj.get("abbreviation", ""))
-                    a_abbr = ESPN_CODE_MAP.get(a_team_obj.get("abbreviation", ""), a_team_obj.get("abbreviation", ""))
-                    h_full_espn = normalize_team_key(h_team_obj.get("displayName") or h_team_obj.get("name") or "")
-                    a_full_espn = normalize_team_key(a_team_obj.get("displayName") or a_team_obj.get("name") or "")
-                    h_score = int(float(home_c.get("score", 0) or 0))
-                    a_score = int(float(away_c.get("score", 0) or 0))
-
-                    rec_payload = {
-                        "event_id": event_id,
-                        "league": lg,
-                        "state": state,
-                        "completed": completed,
-                        "home_score": h_score,
-                        "away_score": a_score
+                    if (mode === "balls_deep") {
+                        finalCalculatedLine = bdProjectedLine;
+                        activeModelProb = bdModelProb;
+                    } else if (mode === "davinci") {
+                        const dvTotal = bdProjectedLine + (bdDirSign * totalArc);
+                        finalCalculatedLine = Number(dvTotal.toFixed(1));
+                        activeModelProb = calcPointGapWinProb(Math.abs(finalCalculatedLine - vegasLine));
+                    } else {
+                        finalCalculatedLine = baseProjectedLine;
+                        activeModelProb = tipModelProb;
                     }
-                    score_lookup[f"{a_abbr}_{h_abbr}"] = rec_payload
-                    if a_full_espn and h_full_espn:
-                        score_lookup[f"name:{a_full_espn}__{h_full_espn}"] = rec_payload
-        except Exception as e:
-            print(f"[ESPN Scoreboard Notice] {e}")
 
-    return score_lookup
+                    const isUnderActive = finalCalculatedLine < vegasLine;
 
-def calc_ten_zone_elevation(env_weather, away_elev_m):
-    h_venue_m = float(env_weather.get("elevation_m", 0))
-    h_away_m = float(away_elev_m if away_elev_m is not None else 150)
-    delta_ft = (h_venue_m - h_away_m) * 3.28084
-    venue_ft = h_venue_m * 3.28084
-    abs_ft = abs(delta_ft)
-    zones = [
-        (100,   0.1, -0.03, -0.01),
-        (200,   0.2, -0.06, -0.02),
-        (300,   0.3, -0.10, -0.03),
-        (500,   0.5, -0.16, -0.05),
-        (800,   0.8, -0.26, -0.09),
-        (1300,  1.3, -0.42, -0.14),
-        (2100,  2.1, -0.68, -0.23),
-        (3400,  3.4, -1.10, -0.37),
-        (5500,  5.5, -1.78, -0.60),
-        (99999, 8.9, -2.88, -0.97),
-    ]
-    z_idx, z_wz, asc_pt, desc_pt = 1, 0.1, -0.03, -0.01
-    for idx, (mft, wz, ap, dp) in enumerate(zones, start=1):
-        if abs_ft <= mft:
-            z_idx, z_wz, asc_pt, desc_pt = idx, wz, ap, dp
-            break
-    is_ascent = (delta_ft >= 0)
-    raw_base_pt = asc_pt if is_ascent else desc_pt
-    high_alt_mult = (GOLDEN_RATIO_PHI if venue_ft >= 6000 else 1.382) if (is_ascent and z_idx >= 7) else 1.0
-    psi_elev = round(raw_base_pt * high_alt_mult, 3)
-    hypoxic = bool(is_ascent and (z_idx >= 7 or (venue_ft >= 6000 and delta_ft >= 1000)))
-    elev_tot_drag = 0.0
-    if is_ascent and z_idx >= 7:
-        elev_tot_drag = round(max(-3.8, -(0.70 * z_wz) - (0.85 if venue_ft >= 6500 else 0.0)), 2)
-    elif is_ascent and venue_ft >= 5000 and delta_ft >= 500:
-        elev_tot_drag = round(-0.55 * z_wz, 2)
-    return {
-        "zone": z_idx, "wz": z_wz, "psi_elev": psi_elev,
-        "hypoxic": hypoxic, "elev_tot_drag": elev_tot_drag
-    }
+                    // Organic Continuous Momentum Arc on Total Floor & Ceiling (zero .5 snapping while sliding)
+                    const baseSafeTotal = isUnderActive
+                        ? (Math.floor(vegasLine + 3.5) + 0.5)
+                        : (Math.floor(vegasLine - 3.5) + 0.5);
+                    const safeTotalVal = isActiveMomentumArc
+                        ? Number((isUnderActive ? (baseSafeTotal - totalArc) : (baseSafeTotal + totalArc)).toFixed(1))
+                        : baseSafeTotal;
+                    safeFloorHookNum = safeTotalVal;
+                    const safeTotalEdge = isUnderActive
+                        ? (safeTotalVal - finalCalculatedLine)
+                        : (finalCalculatedLine - safeTotalVal);
+                    const safeTotalProb = Math.min(0.96, Math.max(0.05, calcPointGapWinProb(safeTotalEdge)));
+                    safeFloorWinPct = Number((safeTotalProb * 100).toFixed(1));
+                    safeFloorLabel = `Alt ${isUnderActive ? 'U' : 'O'} ${safeTotalVal.toFixed(1)} (-175)`;
 
-def calc_coupled_balls_deep_psi(home_meta, away_meta, env_weather):
-    h = float(env_weather.get("elevation_m", 0))
-    re = 6371000.0
-    g_sea = 9.80665
-    g_alt = g_sea * ((re / (re + h)) ** 2)
-    delta_g = g_alt - g_sea
+                    const baseAltTotal = isUnderActive
+                        ? (Math.floor(vegasLine - 3.0) + 0.5)
+                        : (Math.floor(vegasLine + 3.0) + 0.5);
+                    const altTotalVal = isActiveMomentumArc
+                        ? Number((isUnderActive ? (baseAltTotal - totalArc) : (baseAltTotal + totalArc)).toFixed(1))
+                        : baseAltTotal;
+                    ceilingHookNum = altTotalVal;
+                    bdAltLineLabel = `Alt ${isUnderActive ? 'U' : 'O'} ${altTotalVal.toFixed(1)} (+155)`;
+                    bdLongerOdds = 155;
+                    const altTotalEdge = isUnderActive
+                        ? (altTotalVal - finalCalculatedLine)
+                        : (finalCalculatedLine - altTotalVal);
+                    bdReachProb = calcPointGapWinProb(altTotalEdge);
 
-    temp_f = float(env_weather.get("temperature_f", 72.0))
-    temp_k = ((temp_f - 32.0) * 5.0 / 9.0) + 273.15
-    p_pa = float(env_weather.get("pressure_hpa", 1013.25)) * 100.0
-    pv_pa = 1000.0
-    pd_pa = max(0.0, p_pa - pv_pa)
-    rho_air = 1.204 if env_weather.get("is_dome") else ((pd_pa / (287.058 * temp_k)) + (pv_pa / (461.495 * temp_k)))
+                } else {
+                    const gatedMu = gatekeeper.adjustedMu > 0 ? gatekeeper.adjustedMu : (prop.projected_mean_mu || vegasLine || 50);
+                    baseProjectedLine = Number(gatedMu.toFixed(1));
+                    const varianceSigma2 = prop.projected_variance_sigma2 || 225;
+                    const gammaRes = calcGammaSurvivalProb(baseProjectedLine, varianceSigma2, vegasLine || 45.5);
+                    tipModelProb = gammaRes.trueOverProb;
 
-    f_h2o = 0.62
-    f_lean = 1.0 - f_h2o - 0.015
-    trace_sum = (0.00006 / 7874) + (0.0005 / 1738) + (0.012 / 1550) + (0.002 / 862) + (0.0015 / 968)
-    inv_base = (f_h2o / 997.0) + (f_lean / 1100.0) + trace_sum
-    rho_player_h = (1.0 / inv_base) - rho_air
-    rho_player_0 = (1.0 / inv_base) - 1.225
+                    const m13PropMult = isUnderdogPlayer ? (m13Details.propMeanMultDog || 1.0) : (m13Details.propMeanMultFav || 1.0);
+                    bdProjectedLine = Number((baseProjectedLine * m13PropMult).toFixed(1));
+                    const gammaBdRes = calcGammaSurvivalProb(bdProjectedLine, varianceSigma2, vegasLine || 45.5);
+                    bdModelProb = Math.max(0.01, Math.min(0.99, gammaBdRes.trueOverProb));
 
-    delta_fg_bio = 95.0 * (f_h2o + 0.014) * delta_g
-    po2_drop = 1.0 - math.exp(-h / 8500.0)
-    phi_bio_raw = (100.0 * (delta_fg_bio / (95.0 * g_sea))) + (10.0 * ((rho_player_h / rho_player_0) - 1.0)) + (2.5 * 1.45 * po2_drop)
+                    const propArcPct = isActiveMomentumArc ? (calcMomentumArc(sliderVal, 0.085)) : 0.0;
 
-    h_rank = home_meta["close_pct"]
-    a_rank = away_meta["close_pct"]
-    close_mult = 0.786 if h_rank >= 0.53 else 0.618
-    phi_bio = phi_bio_raw * close_mult
+                    if (mode === "tip") {
+                        finalCalculatedLine = baseProjectedLine;
+                        activeModelProb = tipModelProb;
+                    } else if (mode === "balls_deep") {
+                        finalCalculatedLine = bdProjectedLine;
+                        activeModelProb = bdModelProb;
+                    } else {
+                        const dvMu = Math.max(1, Number((bdProjectedLine * (1.0 + propArcPct)).toFixed(1)));
+                        finalCalculatedLine = dvMu;
+                        activeModelProb = calcGammaSurvivalProb(dvMu, varianceSigma2, vegasLine || 45.5).trueOverProb;
+                    }
 
-    h_4q = 0.786 if h_rank >= 0.53 else 0.618
-    a_4q = 0.786 if a_rank >= 0.53 else 0.618
+                    // Organic continuous prop floor & ceiling flow in DaVinci (no 5-yard snapping during drag)
+                    const baseFloorMilestone = Math.max(5, Math.round((baseProjectedLine * 0.70) / 5) * 5);
+                    const safeFloorMilestone = isActiveMomentumArc
+                        ? Math.max(1, Number((finalCalculatedLine * 0.70).toFixed(1)))
+                        : baseFloorMilestone;
+                    safeFloorHookNum = safeFloorMilestone;
+                    const gammaFloorRes = calcGammaSurvivalProb(finalCalculatedLine, varianceSigma2, safeFloorMilestone);
+                    safeFloorWinPct = Number((Math.min(0.97, Math.max(0.05, gammaFloorRes.trueOverProb)) * 100).toFixed(1));
+                    safeFloorLabel = `${safeFloorMilestone}+ Safe Floor (-190)`;
 
-    h_tov = 3.85 * (1.0 - away_meta["rz_dvoa"]) * ((0.382 + h_4q) * h_rank)
-    a_tov = 3.85 * (1.0 - home_meta["rz_dvoa"]) * ((0.382 + a_4q) * a_rank)
-    net_tov = h_tov - a_tov
-
-    sum_val = phi_bio + net_tov
-    sign = 1.0 if sum_val > 0 else (-1.0 if sum_val < 0 else 0.0)
-    return round(max(-2.85, min(2.85, -(sign * math.sqrt(abs(phi_bio * net_tov))))), 3)
-
-def calc_report_calibrated_bd_spread(og_tip_home_spread, vegas_home_spread, home_meta, away_meta, injury_diff, psi_11_12, elev_info, kickoff_local_hour, game_league):
-    home_is_dog = vegas_home_spread > 0
-    dog_m = home_meta if home_is_dog else away_meta
-    fav_m = away_meta if home_is_dog else home_meta
-    n_scale = 25.0 if game_league == "NCAA" else 16.0
-    dog_streak = int(dog_m.get("streak", 0))
-    fav_streak = int(fav_m.get("streak", 0))
-    fav_poll = fav_m.get("poll_rank")
-    fav_epa_rk = fav_m.get("epa_rank")
-    if fav_poll is not None and fav_epa_rk is not None:
-        norm_div = max(-1.35, min(1.35, (float(fav_epa_rk) - float(fav_poll)) / n_scale))
-    else:
-        streak_diff = max(-4, min(5, dog_streak - fav_streak))
-        norm_div = max(-1.10, min(1.35, (0.22 * streak_diff) + (0.35 if home_is_dog else 0.0)))
-
-    dog_havoc = max(0.75, min(1.35, 1.0 - float(dog_m.get("rz_dvoa", 0.0)) + ((float(dog_m.get("close_pct", 0.5)) - 0.5) * 0.45)))
-    passive_damp = 0.35 if (dog_havoc < 0.85 and norm_div > 0 and dog_streak < 3) else 1.0
-    spot_scalar = 1.25 if int(kickoff_local_hour or 13) >= 19 else 1.0
-    delta_ctx = max(-1.618, min(1.618, norm_div * dog_havoc * passive_damp * spot_scalar))
-    if (not home_is_dog) and elev_info["hypoxic"] and delta_ctx > 0:
-        delta_ctx = 0.0
-
-    fn = 34.0 if abs(vegas_home_spread) <= 7.5 else 21.0
-    m_rise_delta = (GOLDEN_RATIO_PHI / math.pi) * (fn / 76.0) * delta_ctx
-    rise_home_adj = round((-1.0 if home_is_dog else 1.0) * (m_rise_delta * 3.5), 2)
-
-    fund_gap = max(-8.0, min(8.0, og_tip_home_spread - vegas_home_spread))
-    fund_pull = 0.20 * fund_gap
-    inj_overlay = 0.65 * injury_diff
-    eff_psi = psi_11_12 * (0.25 if (elev_info["hypoxic"] and psi_11_12 > 0) else 0.65)
-    raw_bd_delta = fund_pull + inj_overlay + eff_psi + elev_info["psi_elev"] + rise_home_adj
-    clamped_delta = max(-5.8, min(5.8, raw_bd_delta))
-    return round(vegas_home_spread + clamped_delta, 2)
-
-def calc_report_calibrated_bd_total(vegas_total, og_tip_total, env_weather, tz_shift, elev_info):
-    is_dome = bool(env_weather.get("is_dome", False))
-    temp_f = 72.0 if is_dome else float(env_weather.get("temperature_f", 59.0))
-    wind_mph = 0.0 if is_dome else float(env_weather.get("wind_mph", 0.0))
-    abs_tz = abs(int(tz_shift or 0))
-
-    cold_drag = 0.0 if is_dome else -max(0.0, (42.0 - temp_f) * 0.14)
-    wind_drag = 0.0 if is_dome else -max(0.0, (wind_mph - 10.0) * 0.30)
-    tz_drag = -1.65 if abs_tz >= 3 else (-0.75 if abs_tz == 2 else 0.0)
-    elev_tot_drag = float(elev_info.get("elev_tot_drag", 0.0))
-    eff_lean = 0.25 * max(-8.0, min(8.0, float(og_tip_total) - float(vegas_total)))
-    total_delta = max(-6.5, min(6.5, eff_lean + cold_drag + wind_drag + tz_drag + elev_tot_drag))
-    return round(float(vegas_total) + total_delta, 1)
-
-def calc_independent_total_tip(home_meta, away_meta, game_league, wind_mph):
-    """
-    100% Vegas-independent Total projection:
-      - NFL: Real nflverse Offensive EPA/play + Defensive EPA/play allowed (pure EPA physics)
-      - NCAA: Real ESPN FPI Offensive Efficiency (0-100) minus Defensive Efficiency (0-100)
-      - Hard physical guardrail [28.0, 78.0] guarantees zero corrupted totals.
-    """
-    wind_penalty = max(0.0, (wind_mph - 10.0) * 0.25)
-    total_intercept = NCAA_TOTAL_INTERCEPT if game_league == "NCAA" else MODEL_TOTAL_INTERCEPT
-
-    if game_league == "NFL":
-        h_off = home_meta.get("off_epa_per_play")
-        h_def = home_meta.get("def_epa_per_play")
-        a_off = away_meta.get("off_epa_per_play")
-        a_def = away_meta.get("def_epa_per_play")
-        if all(v is not None for v in (h_off, h_def, a_off, a_def)):
-            delta = (GOLDEN_PLAY_SCALER * 0.5) * (h_off + h_def + a_off + a_def)
-            return round(max(28.0, min(65.0, total_intercept + delta - wind_penalty)), 1)
-
-    h_oe = home_meta.get("off_eff")
-    h_de = home_meta.get("def_eff")
-    a_oe = away_meta.get("off_eff")
-    a_de = away_meta.get("def_eff")
-    if all(v is not None for v in (h_oe, h_de, a_oe, a_de)):
-        scaler = 0.16 if game_league == "NCAA" else 0.12
-        eff_delta = scaler * ((h_oe - 50.0) + (a_oe - 50.0) - (h_de - 50.0) - (a_de - 50.0))
-        return round(max(28.0, min(78.0, total_intercept + eff_delta - wind_penalty)), 1)
-
-    # Pure OG fallback
-    epa_sum = max(-0.20, min(0.20, home_meta["epa"] + away_meta["epa"]))
-    epa_total_pts = epa_sum * GOLDEN_PLAY_SCALER
-    rz_total_pts = (home_meta["rz_dvoa"] + away_meta["rz_dvoa"]) * 10.0
-    return round(max(28.0, min(78.0, total_intercept + epa_total_pts + rz_total_pts - wind_penalty)), 1)
-
-def calc_ev_pct(win_prob, american_odds=-110):
-    dec = (american_odds / 100.0) + 1.0 if american_odds > 0 else (100.0 / abs(american_odds)) + 1.0
-    b = dec - 1.0
-    return round(((win_prob * b) - (1.0 - win_prob)) * 100.0, 2)
-
-def load_existing_ledger():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                old_data = json.load(f)
-                if "historical_ledger" in old_data and isinstance(old_data["historical_ledger"], dict):
-                    return old_data["historical_ledger"]
-        except Exception:
-            pass
-    return {"entries": {}, "summary": {}}
-
-def fetch_live_odds_for_sport(sport_key, league_label):
-    if not ODDS_API_KEY or ODDS_API_KEY == "PASTE_YOUR_API_KEY_HERE":
-        print("[Notice] No valid ODDS_API_KEY set.")
-        return []
-    url = (
-        f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/"
-        f"?apiKey={ODDS_API_KEY}&regions=us&markets=spreads,totals&oddsFormat=american"
-    )
-    try:
-        req = urllib.request.Request(url, headers=HEADERS)
-        with urllib.request.urlopen(req, timeout=12) as resp:
-            remaining = resp.headers.get("x-requests-remaining", "Unknown")
-            data = json.loads(resp.read().decode("utf-8"))
-            print(f"[Odds API - {league_label}] Pulled {len(data)} matchups | Credits Remaining: {remaining}")
-            for item in data:
-                item["_league"] = league_label
-            return data
-    except Exception as e:
-        print(f"[Odds API Error - {league_label}] {e}")
-        return []
-
-LEGACY_CODE_MAP = {
-    "TCHO": "TCU", "KAJA": "KAN", "KAST": "KSU", "IOST": "ISU", "WEVI": "WVU",
-    "BABE": "BAY", "TETE": "TTU", "BYCO": "BYU", "UTUT": "UTAH", "ARWI": "ARIZ",
-    "ARST": "ASU", "COBU": "COLO", "UCKN": "UCF", "CIBE": "CIN", "HOCO": "HOU",
-    "NECO": "NEB", "IOHA": "IOWA", "ILFI": "ILL", "NOWI": "NW", "WIBA": "WIS",
-    "MIGO": "MINN", "PUBO": "PUR", "INHO": "IND", "OHST": "OSU", "MIWO": "MICH",
-    "MIST": "MSU", "PEST": "PSU", "RUSC": "RUTG", "MATE": "MD", "ORDU": "ORE",
-    "WAHU": "WASH", "USTR": "USC", "UCBR": "UCLA", "ALCR": "ALA", "GEBU": "UGA",
-    "TELO": "TEX", "OKSO": "OU", "TEVO": "TENN", "OLMI": "MISS", "LSTI": "LSU",
-    "MITI": "MIZZ", "KEWI": "UK", "SOCA": "SCAR", "FLGA": "FLA", "AUTI": "AUB",
-    "ARRA": "ARK", "VACO": "VAN", "NODA": "NDSU", "MIHU": "MIA", "CLTI": "CLEM",
-    "SMMU": "SMU", "PIPA": "PITT", "LOCA": "LOU", "GETE": "GT", "WAFO": "WAKE",
-    "DUBL": "DUKE", "NOCA": "UNC", "VATE": "VT", "VICA": "UVA", "BOCO": "BC",
-    "SYOR": "SYR", "FLST": "FSU", "CAGO": "CAL", "STCA": "STAN", "UCHU": "CONN",
-    "UMMI": "MASS", "WOTE": "WOF", "CHMO": "UTC", "NEME": "UNM", "BOST": "BSU",
-    "UNRE": "UNLV", "COST": "CSU", "FRST": "FRES", "SADI": "SDSU", "SAJO": "SJSU",
-    "AIFO": "AFA", "UTST": "USU", "NEWO": "NEV", "HARA": "HAW", "WAST": "WSU",
-    "ARBL": "ARMY", "NAMI": "NAVY", "TUGR": "TULN", "METI": "MEM", "SOFL": "USF",
-    "EACA": "ECU", "UTRO": "UTSA", "LIFL": "LIB", "SABU": "SAM", "VITE": "VT",
-    "MI(O": "MIOH"
-}
-
-def _is_corrupted_live_entry(entry):
-    s_rec = entry.get("spread_record") or {}
-    t_rec = entry.get("total_record") or {}
-    s_odds = abs(int(s_rec.get("odds", -110) or -110))
-    t_odds = abs(int(t_rec.get("odds", -110) or -110))
-    return (s_odds >= 220 or t_odds >= 220)
-
-def deduplicate_ledger_entries(entries):
-    """Purges legacy duplicate keys (e.g. IND_HOU_2026 vs NFL_IND_HOU_2026, NCAA_ORE_MIST_2026 vs NCAA_ORE_MSU_2026)
-    so every matchup has exactly ONE canonical record and summary counts never double-tally.
-    """
-    grouped = {}
-    for gid, e in entries.items():
-        if not isinstance(e, dict):
-            continue
-        lg = e.get("league") or ("NCAA" if gid.startswith("NCAA_") else "NFL")
-        e["league"] = lg
-        a_clean = LEGACY_CODE_MAP.get(e.get("away_team", ""), e.get("away_team", ""))
-        h_clean = LEGACY_CODE_MAP.get(e.get("home_team", ""), e.get("home_team", ""))
-        # Distinguish teams with identical matchups in different weeks by week bucket (commence_time // 5 days)
-        wk_tag = ""
-        c_str = e.get("commence_time", "")
-        if c_str:
-            try:
-                dt = datetime.strptime(c_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                wk_tag = str(int(dt.timestamp() // (5 * 86400)))
-            except Exception:
-                pass
-        canon_key = (lg, a_clean, h_clean, wk_tag)
-        grouped.setdefault(canon_key, []).append((gid, e))
-
-    cleaned = {}
-    for canon_key, items in grouped.items():
-        if len(items) == 1:
-            gid, e = items[0]
-            cleaned[gid] = e
-            continue
-
-        def rank_candidate(pair):
-            gid, e = pair
-            score = 0
-            if gid.startswith("NFL_") or gid.startswith("NCAA_"):
-                score += 40
-            if not _is_corrupted_live_entry(e):
-                score += 30
-            if e.get("status") == "FINAL":
-                score += 20
-            if e.get("home_full_name") or e.get("away_full_name"):
-                score += 15
-            if (e.get("spread_record") or {}).get("result_tip", "PENDING") != "PENDING":
-                score += 10
-            return score
-
-        items.sort(key=rank_candidate, reverse=True)
-        best_gid, best_e = items[0]
-        best_e = dict(best_e)
-
-        # Merge best metadata across duplicates: preserve FINAL score, canonical names/codes, AND clean pre-game closing odds
-        for alt_gid, alt_e in items[1:]:
-            if not best_e.get("final_score") and alt_e.get("final_score"):
-                best_e["final_score"] = alt_e["final_score"]
-                best_e["status"] = "FINAL"
-                best_e["is_locked"] = True
-            if not best_e.get("home_full_name") and alt_e.get("home_full_name"):
-                best_e["home_full_name"] = alt_e["home_full_name"]
-            if not best_e.get("away_full_name") and alt_e.get("away_full_name"):
-                best_e["away_full_name"] = alt_e["away_full_name"]
-            if _is_corrupted_live_entry(best_e) and not _is_corrupted_live_entry(alt_e) and alt_e.get("spread_record"):
-                best_e["spread_record"] = dict(alt_e["spread_record"])
-                best_e["spread_record"]["result_tip"] = "PENDING"
-                best_e["spread_record"]["result_balls_deep"] = "PENDING"
-                best_e["spread_record"]["miss_by_pts"] = None
-                if alt_e.get("total_record"):
-                    best_e["total_record"] = dict(alt_e["total_record"])
-                    best_e["total_record"]["result_tip"] = "PENDING"
-                    best_e["total_record"]["result_balls_deep"] = "PENDING"
-                    best_e["total_record"]["miss_by_pts"] = None
-
-        # Normalize team codes on the surviving canonical key
-        a_norm = LEGACY_CODE_MAP.get(best_e.get("away_team", ""), best_e.get("away_team", ""))
-        h_norm = LEGACY_CODE_MAP.get(best_e.get("home_team", ""), best_e.get("home_team", ""))
-        best_e["away_team"] = a_norm
-        best_e["home_team"] = h_norm
-        best_e["matchup"] = f"{a_norm} @ {h_norm}"
-        if best_e.get("spread_record") and best_e["spread_record"].get("pick_team"):
-            pt = best_e["spread_record"]["pick_team"]
-            best_e["spread_record"]["pick_team"] = LEGACY_CODE_MAP.get(pt, pt)
-        canon_gid = f"{best_e['league']}_{a_norm}_{h_norm}_2026"
-        best_e["game_id"] = canon_gid
-        cleaned[canon_gid] = best_e
-    return cleaned
-
-def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by_gid=None):
-    entries = deduplicate_ledger_entries(ledger.get("entries", {}))
-    porkys_by_gid = porkys_by_gid or {}
-
-    for g in games_slate:
-        gid = g["game_id"]
-        commence_str = g.get("commence_time", "")
-        is_past_kickoff = False
-        if commence_str:
-            try:
-                dt_kick = datetime.strptime(commence_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                is_past_kickoff = (now_utc >= dt_kick)
-            except Exception:
-                pass
-
-        spread_props = [p for p in g.get("props_board", []) if p.get("market_type") == "spread"]
-        total_props = [p for p in g.get("props_board", []) if p.get("market_type") == "total"]
-        if not spread_props:
-            continue
-
-        best_spread = max(spread_props, key=lambda x: x.get("ev_pct", -100.0))
-        best_total = total_props[0] if total_props else None
-
-        # Reject live in-game garbage juice (e.g. +430 / -1000 during a 45-7 blowout) from poisoning pre-game ledger snapshots!
-        has_live_garbage_odds = (
-            abs(int(best_spread.get("base_odds_over", -110) or -110)) >= 220 or
-            (best_total is not None and abs(int(best_total.get("base_odds_over", -110) or -110)) >= 220)
-        )
-
-        existing = entries.get(gid)
-        if not existing:
-            # NEVER create a brand-new closing-line ledger entry after kickoff with in-game live odds!
-            if is_past_kickoff or has_live_garbage_odds:
-                continue
-            existing = {
-                "game_id": gid,
-                "league": g.get("league", "NFL"),
-                "matchup": f"{g['away_team']} @ {g['home_team']}",
-                "home_team": g["home_team"],
-                "away_team": g["away_team"],
-                "home_full_name": g.get("home_full_name", ""),
-                "away_full_name": g.get("away_full_name", ""),
-                "commence_time": commence_str,
-                "is_locked": False,
-                "status": "PRE_GAME",
-                "final_score": None,
-                "spread_record": None,
-                "total_record": None
-            }
-        else:
-            if not existing.get("home_full_name") and g.get("home_full_name"):
-                existing["home_full_name"] = g.get("home_full_name", "")
-            if not existing.get("away_full_name") and g.get("away_full_name"):
-                existing["away_full_name"] = g.get("away_full_name", "")
-            # If the game already kicked off, lock the existing pre-game snapshot WITHOUT overwriting its closing odds!
-            if is_past_kickoff or has_live_garbage_odds:
-                existing["is_locked"] = True
-                if existing.get("status") == "PRE_GAME":
-                    existing["status"] = "IN_PLAY"
-                entries[gid] = existing
-                continue
-
-        if not existing.get("is_locked", False):
-            existing["commence_time"] = commence_str
-            existing["is_locked"] = is_past_kickoff
-            existing["status"] = "IN_PLAY" if is_past_kickoff else "PRE_GAME"
-            existing["spread_record"] = {
-                "pick_label": best_spread["player"],
-                "pick_team": g["home_team"] if best_spread["player"].startswith(f"{g['home_team']} ") else g["away_team"],
-                "vegas_closing_line": best_spread["base_line"],
-                "odds": best_spread["base_odds_over"],
-                "tip_proj": best_spread["projected_mean_mu"],
-                "tip_win_pct": round(best_spread["model_win_prob"] * 100, 2),
-                "tip_ev_pct": best_spread.get("ev_pct", 0.0),
-                "balls_deep_proj": best_spread.get("balls_deep_proj", best_spread["projected_mean_mu"]),
-                "balls_deep_win_pct": round(best_spread.get("balls_deep_win_prob", best_spread["model_win_prob"]) * 100, 2),
-                "balls_deep_ev_pct": best_spread.get("balls_deep_ev_pct", best_spread.get("ev_pct", 0.0)),
-                "tier_badge": best_spread.get("tier_badge", "PASS"),
-                "flagship_slot": best_spread.get("flagship_slot", ""),
-                "result_tip": "PENDING",
-                "result_balls_deep": "PENDING"
-            }
-            if best_total:
-                existing["total_record"] = {
-                    "pick_label": best_total["player"],
-                    "vegas_closing_line": best_total["base_line"],
-                    "odds": best_total["base_odds_over"],
-                    "tip_proj": best_total["projected_mean_mu"],
-                    "tip_direction": "U" if best_total["projected_mean_mu"] < best_total["base_line"] else "O",
-                    "tip_win_pct": round(best_total["model_win_prob"] * 100, 2),
-                    "tip_ev_pct": best_total.get("ev_pct", 0.0),
-                    "balls_deep_proj": best_total.get("balls_deep_proj", best_total["projected_mean_mu"]),
-                    "balls_deep_direction": "U" if best_total.get("balls_deep_proj", best_total["projected_mean_mu"]) < best_total["base_line"] else "O",
-                    "balls_deep_win_pct": round(best_total.get("balls_deep_win_prob", best_total["model_win_prob"]) * 100, 2),
-                    "balls_deep_ev_pct": best_total.get("balls_deep_ev_pct", best_total.get("ev_pct", 0.0)),
-                    "tier_badge": best_total.get("tier_badge", "PASS"),
-                    "flagship_slot": best_total.get("flagship_slot", ""),
-                    "result_tip": "PENDING",
-                    "result_balls_deep": "PENDING"
+                    const baseCeilMilestone = Math.max(10, Math.round((baseProjectedLine * 1.25) / 5) * 5);
+                    const ceilingMilestone = isActiveMomentumArc
+                        ? Math.max(5, Number((finalCalculatedLine * 1.25).toFixed(1)))
+                        : baseCeilMilestone;
+                    ceilingHookNum = ceilingMilestone;
+                    bdAltLineLabel = `${ceilingMilestone}+ Escalator (+160)`;
+                    bdLongerOdds = 160;
+                    const gammaCeilRes = calcGammaSurvivalProb(finalCalculatedLine, varianceSigma2, ceilingMilestone);
+                    bdReachProb = Math.max(0.05, gammaCeilRes.trueOverProb);
                 }
 
-        if not existing.get("is_locked", False):
-            if gid in porkys_by_gid:
-                existing["porkys_record"] = porkys_by_gid[gid]
-            elif "porkys_record" in existing:
-                existing.pop("porkys_record", None)
+                let tipDisplayLabel = cleanLabelCodes(prop.player);
+                let activeDisplayLabel = cleanLabelCodes(prop.player);
+                if (prop.market_type === "total") {
+                    const isUnderTip = baseProjectedLine < vegasLine;
+                    const isUnderActive = finalCalculatedLine < vegasLine;
+                    tipDisplayLabel = `${cleanAway}@${cleanHome} Total (${isUnderTip ? "U" : "O"} ${vegasLine})`;
+                    activeDisplayLabel = `${cleanAway}@${cleanHome} Total (${isUnderActive ? "U" : "O"} ${vegasLine})`;
+                }
 
-        entries[gid] = existing
+                let bdSideOdds = prop.base_odds_over || -110;
+                let activeSideOdds = prop.base_odds_over || -110;
+                if (prop.market_type === "total") {
+                    const tipIsUnder = baseProjectedLine < vegasLine;
+                    const bdIsUnder = bdProjectedLine < vegasLine;
+                    const activeIsUnder = finalCalculatedLine < vegasLine;
+                    if (bdIsUnder !== tipIsUnder && prop.base_odds_under) bdSideOdds = prop.base_odds_under;
+                    if (activeIsUnder !== tipIsUnder && prop.base_odds_under) activeSideOdds = prop.base_odds_under;
+                }
+                const m2Tip = calcExpectedValueAndKelly(tipModelProb, prop.base_odds_over || -110);
+                const m2Bd = calcExpectedValueAndKelly(bdModelProb, bdSideOdds);
+                const m2BdAlt = calcExpectedValueAndKelly(bdReachProb, bdLongerOdds);
+                const m2Active = calcExpectedValueAndKelly(activeModelProb, activeSideOdds);
 
-    for gid, entry in entries.items():
-        espn_info = None
-        a_fn = normalize_team_key(entry.get("away_full_name", ""))
-        h_fn = normalize_team_key(entry.get("home_full_name", ""))
-        if a_fn and h_fn:
-            espn_info = espn_scores.get(f"name:{a_fn}__{h_fn}")
-        if not espn_info:
-            match_key = f"{entry['away_team']}_{entry['home_team']}"
-            espn_info = espn_scores.get(match_key)
-        if not espn_info:
-            a_c = LEGACY_CODE_MAP.get(entry["away_team"], entry["away_team"])
-            h_c = LEGACY_CODE_MAP.get(entry["home_team"], entry["home_team"])
-            espn_info = espn_scores.get(f"{a_c}_{h_c}")
-        if not espn_info:
-            continue
+                const tipWinPct = Number((tipModelProb * 100).toFixed(2));
+                const tipEvPct = Number(m2Tip.evPercentage.toFixed(2));
+                const activeWinPct = Number((activeModelProb * 100).toFixed(2));
+                const activeEvPct = Number(m2Active.evPercentage.toFixed(2));
 
-        if espn_info["state"] == "in" and entry["status"] == "PRE_GAME":
-            entry["is_locked"] = True
-            entry["status"] = "IN_PLAY"
+                const tipBadge = gatekeeper.blocked ? "PASS" : getTierFromEv(tipEvPct);
+                const activeBadge = gatekeeper.blocked ? "PASS" : getTierFromEv(activeEvPct);
 
-        if espn_info["completed"] or espn_info["state"] == "post":
-            h_pts = espn_info["home_score"]
-            a_pts = espn_info["away_score"]
-            entry["is_locked"] = True
-            entry["status"] = "FINAL"
-            entry["final_score"] = f"{entry['away_team']} {a_pts} - {entry['home_team']} {h_pts}"
+                AppState.processedProps.push({
+                    propKey,
+                    commenceTime: game.commence_time,
+                    isCurrentWeek,
+                    weekLabel: gameRecord.weekLabel,
+                    gameId: game.game_id,
+                    league: gameLeague,
+                    matchup: gameRecord.matchup,
+                    homeTeam: cleanHome,
+                    awayTeam: cleanAway,
+                    player: tipDisplayLabel,
+                    activePlayerLabel: activeDisplayLabel,
+                    marketType: prop.market_type,
+                    baseLine: vegasLine,
+                    baseOdds: prop.base_odds_over || -110,
+                    isHomeSpread,
+                    tipProjectedMean: baseProjectedLine,
+                    tipModelPct: tipWinPct,
+                    tipEvPct: tipEvPct,
+                    tipBadge: tipBadge,
+                    projectedMean: finalCalculatedLine,
+                    bdProjectedMean: bdProjectedLine,
+                    vigFreePct: Number((vigFreeOver * 100).toFixed(2)),
+                    bdModelPct: Number((bdModelProb * 100).toFixed(2)),
+                    bdEvPct: Number(m2Bd.evPercentage.toFixed(2)),
+                    safeFloorHookNum,
+                    safeFloorLabel,
+                    safeFloorWinPct,
+                    ceilingHookNum,
+                    bdAltLabel: bdAltLineLabel,
+                    bdAltEvPct: Number(m2BdAlt.evPercentage.toFixed(2)),
+                    activeModelPct: activeWinPct,
+                    activeModelProbRaw: activeModelProb,
+                    evPct: activeEvPct,
+                    quarterKellyPct: gatekeeper.blocked ? 0.0 : Number(m2Active.quarterKellyStakePct.toFixed(2)),
+                    isKellyCapped: Boolean(m2Active.isKellyCapped && !gatekeeper.blocked),
+                    tierBadge: activeBadge,
+                    gatekeeperBlocked: gatekeeper.blocked,
+                    gatekeeperAction: gatekeeper.action,
+                    gatekeeperFlags: gatekeeper.flags,
+                    flagshipSlot: "",
+                    porkysSlot: "",
+                    psiBd,
+                    psiActive: psi11_12
+                });
+            });
+        }
+      } catch (gameErr) {
+        console.error("DixPix Game Render Skip:", game && game.game_id, gameErr);
+      }
+    });
 
-            s_rec = entry.get("spread_record")
-            if s_rec and (s_rec.get("result_tip") == "PENDING" or s_rec.get("miss_by_pts") is None):
-                pick_team = s_rec["pick_team"]
-                line = float(s_rec["vegas_closing_line"])
-                team_margin = (h_pts - a_pts) if pick_team == entry["home_team"] else (a_pts - h_pts)
-                cover_diff = team_margin + line
-                miss_pts = round(abs(cover_diff), 1) if cover_diff < 0 else 0.0
-                if cover_diff > 0:
-                    grade = "HIT"
-                elif cover_diff == 0:
-                    grade = "PUSH"
-                elif miss_pts <= 3.0:
-                    grade = "BLUE_BALLS"
-                else:
-                    grade = "MISS"
-                s_rec["result_tip"] = grade
-                s_rec["miss_by_pts"] = miss_pts
+    // 1. Lock Main Stage Flagship 5-Pack Selection STRICTLY to THIS WEEK'S active/upcoming & non-gated plays (thru MNF)
+    AppState.processedProps.forEach(p => {
+        p.flagshipSlot = "";
+        p.porkysSlot = "";
+    });
+    const bestPlayPerGame = [];
+    const trapPairsPool = [];
 
-                bd_proj = float(s_rec.get("balls_deep_proj", s_rec["tip_proj"]))
-                bd_same_side = (line - bd_proj) >= 0
-                if bd_same_side:
-                    s_rec["result_balls_deep"] = grade
-                else:
-                    s_rec["result_balls_deep"] = "MISS" if grade == "HIT" else ("HIT" if grade in ("MISS", "BLUE_BALLS") else "PUSH")
+    const nowMs = Date.now();
+    const isPreKickoffGame = (g) => {
+        if (!g.commenceTime) return true;
+        const kickMs = new Date(g.commenceTime).getTime();
+        return isNaN(kickMs) || kickMs > nowMs;
+    };
+    const currentWeekGames = AppState.processedGames.filter(g => g.isCurrentWeek && isPreKickoffGame(g));
+    const activeWeekPool = currentWeekGames.length > 0 ? currentWeekGames : AppState.processedGames.filter(isPreKickoffGame);
 
-            t_rec = entry.get("total_record")
-            if t_rec and (t_rec.get("result_tip") == "PENDING" or t_rec.get("miss_by_pts") is None):
-                total_pts = h_pts + a_pts
-                t_line = float(t_rec["vegas_closing_line"])
-                for mode_key, dir_key in [("result_tip", "tip_direction"), ("result_balls_deep", "balls_deep_direction")]:
-                    direction = t_rec.get(dir_key, "O")
-                    if total_pts == t_line:
-                        t_rec[mode_key] = "PUSH"
-                        if mode_key == "result_tip":
-                            t_rec["miss_by_pts"] = 0.0
-                    else:
-                        c_diff = (total_pts - t_line) if direction == "O" else (t_line - total_pts)
-                        t_miss = round(abs(c_diff), 1) if c_diff < 0 else 0.0
-                        if c_diff > 0:
-                            t_rec[mode_key] = "HIT"
-                        elif t_miss <= 3.0:
-                            t_rec[mode_key] = "BLUE_BALLS"
-                        else:
-                            t_rec[mode_key] = "MISS"
-                        if mode_key == "result_tip":
-                            t_rec["miss_by_pts"] = t_miss
+    activeWeekPool.forEach(g => {
+        const gameSpreads = AppState.processedProps.filter(
+            p => p.gameId === g.gameId && p.marketType === "spread" && Math.abs(p.baseLine) <= 28.5 && Math.abs(p.baseOdds || -110) < 220
+        );
+        const gameTotals = AppState.processedProps.filter(
+            p => p.gameId === g.gameId && p.marketType === "total" && !p.gatekeeperBlocked && Math.abs(p.baseOdds || -110) < 220
+        );
 
-            p_rec = entry.get("porkys_record")
-            if p_rec and (p_rec.get("result_floor") == "PENDING" or p_rec.get("result_straight") == "PENDING"):
-                fade_team = p_rec.get("fade_team", entry["home_team"])
-                team_margin = (h_pts - a_pts) if fade_team == entry["home_team"] else (a_pts - h_pts)
-                floor_hook = float(p_rec.get("safe_floor_hook", float(p_rec.get("fade_line", 0.0)) + 3.5))
-                straight_line = float(p_rec.get("fade_line", 0.0))
+        const gameCandidates = [];
+        if (gameSpreads.length > 0) {
+            gameSpreads.sort((a, b) => b.tipEvPct - a.tipEvPct);
+            const bestSide = gameSpreads[0];
+            const worstSide = gameSpreads[gameSpreads.length - 1];
+            if (!bestSide.gatekeeperBlocked) {
+                gameCandidates.push(bestSide);
+            }
 
-                fl_diff = team_margin + floor_hook
-                fl_miss = round(abs(fl_diff), 1) if fl_diff < 0 else 0.0
-                p_rec["result_floor"] = "HIT" if fl_diff > 0 else ("PUSH" if fl_diff == 0 else ("BLUE_BALLS" if fl_miss <= 3.0 else "MISS"))
-                p_rec["floor_miss_by"] = fl_miss
+            if (gameSpreads.length > 1 && worstSide.tipEvPct <= PASS_EV_CUTOFF) {
+                trapPairsPool.push({
+                    trapProp: worstSide,
+                    fadeProp: bestSide
+                });
+            }
+        }
+        if (gameTotals.length > 0) {
+            gameTotals.sort((a, b) => b.tipEvPct - a.tipEvPct);
+            gameCandidates.push(gameTotals[0]);
+        }
 
-                st_diff = team_margin + straight_line
-                st_miss = round(abs(st_diff), 1) if st_diff < 0 else 0.0
-                p_rec["result_straight"] = "HIT" if st_diff > 0 else ("PUSH" if st_diff == 0 else ("BLUE_BALLS" if st_miss <= 3.0 else "MISS"))
-                p_rec["straight_miss_by"] = st_miss
-                p_rec["trap_dodged"] = (p_rec["result_straight"] == "HIT")
+        // Strict 1-pick-per-game rule: highest-EV Spread OR O/U Total per stadium for clean x2/x3 Round Robins
+        if (gameCandidates.length > 0) {
+            gameCandidates.sort((a, b) => b.tipEvPct - a.tipEvPct);
+            bestPlayPerGame.push(gameCandidates[0]);
+        }
+    });
 
-    counters = {
-        "overall_smash": {"hits": 0, "total": 0},
-        "spread_smash": {"hits": 0, "total": 0},
-        "total_smash": {"hits": 0, "total": 0},
-        "flagship_5pack": {"hits": 0, "total": 0},
-        "menage_a_trois": {"hits": 0, "total": 0},
-        "pass_audit": {"hits": 0, "total": 0},
-        "tip_all": {"hits": 0, "total": 0},
-        "balls_deep_all": {"hits": 0, "total": 0}
+    bestPlayPerGame.sort((a, b) => b.tipEvPct - a.tipEvPct);
+    // Balanced Blended 5-Pack: strict 1-pick-per-game + max 3 of any single market (guarantees Spread + O/U blend)
+    const selectedFive = [];
+    const usedGameIds = new Set();
+    let spreadCount = 0;
+    let totalCount = 0;
+    for (const p of bestPlayPerGame) {
+        if (selectedFive.length >= 5) break;
+        if (usedGameIds.has(p.gameId)) continue;
+        if (p.marketType === "spread" && spreadCount >= 3) continue;
+        if (p.marketType === "total" && totalCount >= 3) continue;
+        selectedFive.push(p);
+        usedGameIds.add(p.gameId);
+        if (p.marketType === "spread") spreadCount++;
+        else if (p.marketType === "total") totalCount++;
+    }
+    // Fallback fill if slate has <5 games with balanced markets
+    if (selectedFive.length < 5) {
+        for (const p of bestPlayPerGame) {
+            if (selectedFive.length >= 5) break;
+            if (usedGameIds.has(p.gameId)) continue;
+            selectedFive.push(p);
+            usedGameIds.add(p.gameId);
+        }
+    }
+    selectedFive.sort((a, b) => b.tipEvPct - a.tipEvPct);
+    const menageTop3 = selectedFive.slice(0, 3);
+    menageTop3.forEach((p, idx) => { p.flagshipSlot = `MÉNAGE À TROIS #${idx + 1}`; });
+
+    const flexTop2 = selectedFive.slice(3, 5);
+    flexTop2.forEach((p, idx) => { p.flagshipSlot = `5-PACK FLEX #${idx + 4}`; });
+
+    AppState.flagshipFivePack = [...menageTop3, ...flexTop2];
+
+    // 2. Build "Wednesday Night at Porky's" Top 5 Public Traps & Safe Floor Fades
+    trapPairsPool.sort((a, b) => a.trapProp.tipEvPct - b.trapProp.tipEvPct);
+    AppState.porkysFivePack = trapPairsPool.slice(0, 5).map((pair, idx) => {
+        const slotLabel = idx < 3
+            ? `DAY-SHIFT TRAP #${idx + 1}`
+            : `KEEP IT IN YOUR PANTS #${idx + 1}`;
+        pair.trapProp.porkysSlot = slotLabel;
+        return {
+            slotLabel,
+            isTopThreeTrap: idx < 3,
+            trapProp: pair.trapProp,
+            fadeProp: pair.fadeProp
+        };
+    });
+
+    const isVisible = (id) => {
+        const el = document.getElementById(id);
+        return Boolean(el && el.offsetParent !== null);
+    };
+
+    if (isSliderDrag) {
+        // Fast-path during active DaVinci slider drag: repaint ONLY visible panels; skip closed cards, Ledger & Live Ticker
+        if (isVisible("flagship-five-pack-container")) renderFlagshipFivePack();
+
+        const hasOpenGameCards = Array.from(openCardMemory).some(
+            k => k !== "FLAGSHIP_5_PACK_DRAWER" && k !== "MASTER_BOARD_LEGEND_DRAWER" && k !== "LEDGER_LEGEND_DRAWER"
+        );
+        if (hasOpenGameCards && isVisible("master-board-body")) render_game_cards(AppState.rawPayload);
+
+        if (isVisible("combinatorics-container")) renderCombinatoricsDeck();
+        if (isVisible("compendium-board-body")) renderCompendiumBoard();
+        if (isVisible("telemetry-container")) renderTelemetryInspector();
+        if (isVisible("biolab-container")) renderBioWeatherLab();
+
+        if (window.scrollY !== savedScrollY) {
+            window.scrollTo(savedScrollX, savedScrollY);
+        }
+    } else {
+        renderFlagshipFivePack();
+        render_game_cards(AppState.rawPayload);
+        renderCombinatoricsDeck();
+        renderCompendiumBoard();
+        renderTelemetryInspector();
+        renderBioWeatherLab();
+        renderHistoricalLedger();
+        renderLiveBottomTicker();
+
+        window.scrollTo(savedScrollX, savedScrollY);
+        requestAnimationFrame(() => {
+            window.scrollTo(savedScrollX, savedScrollY);
+        });
+    }
+}
+
+// Single Lightning Bolt Rule + Compendium Safe Floor (-2φ) & Ceiling Escalator (+φ) Bracket + Quarter-Kelly Cap
+function buildBallsDeepBoxHTML(engineProp, isSpread) {
+    if (AppState.activeMode === "tip") {
+        return "";
     }
 
-    def tally(bucket, result_str):
-        if result_str in ("HIT", "MISS", "BLUE_BALLS"):
-            counters[bucket]["total"] += 1
-            if result_str == "HIT":
-                counters[bucket]["hits"] += 1
+    const activeTier = engineProp.gatekeeperBlocked ? "PASS" : getTierFromEv(engineProp.evPct);
+    let boxBg = "rgba(148, 163, 184, 0.08)";
+    let boxBorder = "rgba(148, 163, 184, 0.35)";
+    let activeColor = "var(--text-secondary)";
 
-    for entry in entries.values():
-        for m_type, rec in [("spread", entry.get("spread_record")), ("total", entry.get("total_record"))]:
-            if not rec:
-                continue
-            res_tip = rec.get("result_tip", "PENDING")
-            res_bd = rec.get("result_balls_deep", "PENDING")
-            if res_tip not in ("HIT", "MISS", "BLUE_BALLS"):
-                continue
+    if (activeTier === "SMASH") {
+        boxBg = "rgba(16, 185, 129, 0.09)";
+        boxBorder = "rgba(16, 185, 129, 0.42)";
+        activeColor = "var(--accent-emerald)";
+    } else if (activeTier === "PASS") {
+        boxBg = "rgba(239, 68, 68, 0.09)";
+        boxBorder = "rgba(239, 68, 68, 0.42)";
+        activeColor = "var(--accent-danger)";
+    }
 
-            tally("tip_all", res_tip)
-            tally("balls_deep_all", res_bd)
+    const activeLabel = AppState.activeMode === "davinci" ? "DAVINCI PROJ" : "BALLS DEEP PROJ";
+    const activeProj = (isSpread && Number(engineProp.projectedMean) > 0) ? `+${engineProp.projectedMean}` : `${engineProp.projectedMean}`;
+    const activeEvStr = `${engineProp.evPct > 0 ? '+' : ''}${engineProp.evPct}% EV`;
+    const altEvStr = `${engineProp.bdAltEvPct > 0 ? '+' : ''}${engineProp.bdAltEvPct}% EV`;
+    const kellyStr = engineProp.quarterKellyPct > 0
+        ? ` | f*: ${engineProp.quarterKellyPct}%${engineProp.isKellyCapped ? ' (CAP)' : ''}`
+        : "";
 
-            if rec.get("tier_badge") == "SMASH":
-                tally("overall_smash", res_tip)
-                tally("spread_smash" if m_type == "spread" else "total_smash", res_tip)
-            else:
-                tally("pass_audit", res_tip)
+    const showLightningBolt = !isSpread || (engineProp.tipModelPct >= 50.0);
 
-            slot = rec.get("flagship_slot", "")
-            if slot:
-                tally("flagship_5pack", res_tip)
-                if "MÉNAGE" in slot.upper():
-                    tally("menage_a_trois", res_tip)
+    const boltRowHTML = showLightningBolt
+        ? `
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 4px;">
+                <span style="color: ${activeColor}; font-weight: 800;">⚡ ${activeLabel}: ${activeProj} | Win: ${engineProp.activeModelPct}% (${activeEvStr}${kellyStr})</span>
+                <span style="color: var(--text-secondary); font-size: 10.5px;">Ψ_11,12: <strong>${engineProp.psiActive > 0 ? '+' : ''}${engineProp.psiActive} pts</strong></span>
+            </div>
+        `
+        : "";
 
-    summary_out = {}
-    for k, v in counters.items():
-        h, t = v["hits"], v["total"]
-        pct = round((h / t) * 100.0, 1) if t > 0 else 0.0
-        summary_out[k] = {"hits": h, "total": t, "fraction": f"{h} / {t}", "win_pct": pct}
+    const floorOdds = (engineProp.marketType === "spread" || engineProp.marketType === "total") ? -175 : -190;
+    const floorEv = calcExpectedValueAndKelly((engineProp.safeFloorWinPct || 0) / 100.0, floorOdds).evPercentage;
+    const safeSmashBadge = (!engineProp.gatekeeperBlocked && floorEv >= SMASH_EV_CUTOFF)
+        ? ` <span style="background:rgba(6,182,212,0.18); color:var(--accent-cyan); border:1px solid rgba(6,182,212,0.55); padding:1px 5px; border-radius:4px; font-size:9.5px; font-weight:800;">🛡️ SAFE SMASH (+${floorEv.toFixed(1)}% EV)</span>`
+        : "";
 
-    return {"entries": entries, "summary": summary_out}
+    return `
+        <div class="bd-preview-unlocked" style="background: ${boxBg}; border: 1px solid ${boxBorder}; flex-direction: column; align-items: stretch; gap: 4px;">
+            ${boltRowHTML}
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 10.5px;">
+                <span style="color: var(--accent-cyan); font-weight: 700;">🛡️ Safe Floor (-2&phi;): ${engineProp.safeFloorLabel} (${engineProp.safeFloorWinPct}% Win)${safeSmashBadge}</span>
+                <span style="color: var(--accent-gold); font-weight: 700;">🎯 Ceiling (+&phi;): ${engineProp.bdAltLabel} (${altEvStr})</span>
+            </div>
+        </div>
+    `;
+}
 
-def build_master_payload():
-    now_utc = datetime.now(timezone.utc)
-    now_iso = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-    season_year = now_utc.year if now_utc.month >= 8 else (now_utc.year - 1)
+// Collapsible Master Pick Board Decoder Ring & Betting Guide (VIP Club & Wingman Edition)
+function buildMasterBoardLegendHTML() {
+    const legendKey = "MASTER_BOARD_LEGEND_DRAWER";
+    const isLegendOpen = openCardMemory.has(legendKey);
 
-    # Pull all live 2026 telemetry feeds + Odds API concurrently (~4 seconds total)
-    with ThreadPoolExecutor(max_workers=9) as pool:
-        f_nv = pool.submit(fetch_nflverse_live_team_epa, season_year)
-        f_nfpi = pool.submit(fetch_espn_fpi, "NFL")
-        f_cfpi = pool.submit(fetch_espn_fpi, "NCAA")
-        f_nst = pool.submit(fetch_espn_standings, "NFL")
-        f_cst = pool.submit(fetch_espn_standings, "NCAA")
-        f_rk = pool.submit(fetch_espn_ncaa_rankings)
-        f_sc = pool.submit(fetch_espn_scores)
-        f_nodd = pool.submit(fetch_live_odds_for_sport, "americanfootball_nfl", "NFL")
-        f_codd = pool.submit(fetch_live_odds_for_sport, "americanfootball_ncaaf", "NCAA")
+    return `
+        <div style="margin-bottom: 14px; border: 1px solid rgba(6, 182, 212, 0.45); border-radius: 8px; background: #0f172a; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); overflow: hidden;">
+            <div onclick="window.toggleLegendDrawer('${legendKey}', 'fivePack', event)" style="cursor: pointer; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(90deg, rgba(6, 182, 212, 0.14), rgba(15, 23, 42, 0.9)); user-select: none;">
+                <span style="font-family: var(--font-mono); font-size: 12px; font-weight: 800; color: var(--accent-cyan); letter-spacing: 0.03em;">
+                    👙 NEW TO THE CLUB? THE DIXPIX HOUSE RULES &amp; 15-SECOND BETTING GUIDE (v313 GUARDRAILS ACTIVE)
+                </span>
+                <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); text-decoration: underline;">
+                    ${isLegendOpen ? 'Hide House Rules ▲' : 'Click to Expand ▼'}
+                </span>
+            </div>
 
-        nflverse_epa = f_nv.result()
-        nfl_fpi = f_nfpi.result()
-        ncaa_fpi = f_cfpi.result()
-        nfl_standings = f_nst.result()
-        ncaa_standings = f_cst.result()
-        ncaa_poll_map, live_ranked_ncaa = f_rk.result()
-        espn_scores = f_sc.result()
-        nfl_odds = f_nodd.result()
-        ncaa_odds = f_codd.result()
+            <div style="display: ${isLegendOpen ? 'block' : 'none'}; padding: 14px 18px; border-top: 1px solid var(--border-subtle); font-size: 12px; line-height: 1.55; color: var(--text-secondary);">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px;">
+                    <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
+                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">1. COVER CHARGE vs. REAL MEASUREMENTS</div>
+                        <div>• <strong>Bold Top Line</strong> (e.g. <em>OSU Spread -3.5</em> or <em>Total U 54.5</em>) is the <strong>Vegas Sportsbook Line</strong>—the cover charge on your betting slip.</div>
+                        <div style="margin-top: 4px;">• <strong>Proj:</strong> is what our 13-Module Engine says is <em>actually</em> under the hood once the stage lights come on. Single-bet Quarter-Kelly sizing is hard-capped at <strong>4.0%</strong>.</div>
+                    </div>
 
-    combined_odds = nfl_odds + ncaa_odds
-    combined_odds.sort(key=lambda g: g.get("commence_time", ""))
+                    <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
+                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">2. THE VIP FLOOR CODE (SYMMETRIC 3-TIER EV)</div>
+                        <div>• <span class="badge-smash" style="font-size:10px;">SMASH</span> <strong style="color:var(--accent-emerald);">(&ge;+10.0% EV):</strong> <em>Green-Light Money Shot.</em> Full-contact value (57.6%+ win rate). Pull your stack out and make it rain.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:#94a3b8;">Neutral Slate / No Badge (-18.9% to +9.9% EV):</strong> <em>All Tease, No Squeeze.</em> Priced too tight to drop cash on. Keep your wallet holstered.</div>
+                        <div style="margin-top: 4px;">• <span class="badge-pass" style="background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);font-size:10px;font-weight:800;">PASS</span> <strong style="color:var(--accent-danger);">(&le;-19.0% EV or Gated):</strong> <em>Grenades Dodged.</em> Public trap or v313 guardrail stop (M4 TOP, M5 Sack-Trauma, M9 3rd-String QB).</div>
+                    </div>
 
-    # Prefetch all outdoor stadium weather in 2 batched calls + upcoming NFL injuries concurrently
-    home_metas_for_weather = []
-    nfl_injury_event_ids = []
-    for game in combined_odds:
-        lg = game.get("_league", "NFL")
-        h_full = game.get("home_team", "")
-        a_full = game.get("away_team", "")
-        hm = get_team_meta(h_full, lg, nflverse_epa if lg == "NFL" else None, nfl_fpi if lg == "NFL" else ncaa_fpi, nfl_standings if lg == "NFL" else ncaa_standings, None if lg == "NFL" else ncaa_poll_map)
-        home_metas_for_weather.append(hm)
-        if lg == "NFL":
-            am = get_team_meta(a_full, "NFL", nflverse_epa, nfl_fpi, nfl_standings, None)
-            c_str = game.get("commence_time", "")
-            try:
-                dt_u = datetime.strptime(c_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                if -timedelta(hours=4) <= (dt_u - now_utc) <= timedelta(days=8):
-                    ev = espn_scores.get(f"{am['code']}_{hm['code']}")
-                    if ev and ev.get("event_id"):
-                        nfl_injury_event_ids.append((f"{am['code']}_{hm['code']}", ev["event_id"]))
-            except Exception:
-                pass
+                    <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
+                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-gold); margin-bottom: 4px;">3. FLOOR-TO-CEILING VIP PASS &amp; OVERRIDES</div>
+                        <div>• <strong style="color:var(--accent-cyan);">Just the Tip:</strong> Pure M1–M9 baseline efficiency, weather ballistics, and circadian travel drag.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:var(--accent-emerald);">Balls Deep &amp; DaVinci:</strong> Unleashes M11–M13 (&Psi;_11,12 + 10-Zone Elevation <strong>M11&gt;M13</strong> + Fixed Objective <strong>M_rise</strong>) with an organic continuous momentum arc across our <strong>🛡️ Safe Floor (-2&phi;)</strong> &amp; <strong>🎯 Ceiling (+&phi;)</strong> bracket.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
 
-    prefetch_all_stadium_weather(home_metas_for_weather)
-    prefetched_nfl_injuries = {}
-    if nfl_injury_event_ids:
-        with ThreadPoolExecutor(max_workers=8) as inj_pool:
-            fut_map = {k: inj_pool.submit(fetch_espn_game_injuries, eid, "NFL") for k, eid in nfl_injury_event_ids}
-            for k, fut in fut_map.items():
-                try:
-                    prefetched_nfl_injuries[k] = fut.result()
-                except Exception:
-                    prefetched_nfl_injuries[k] = {}
+// Flagship 5-Pack Banner with Responsive Mobile/Desktop Corner Toggle for "Wednesday Night at Porky's"
+function renderFlagshipFivePack() {
+    ensureTickerStylesInjected();
 
-    games_slate = []
-    seen_matchups = set()
+    const container = document.getElementById("flagship-five-pack-container");
+    if (!container) return;
 
-    for game in combined_odds:
-        game_league = game.get("_league", "NFL")
-        home_full = game.get("home_team", "Unknown Home")
-        away_full = game.get("away_team", "Unknown Away")
+    if (AppState.flagshipFivePack.length === 0) {
+        container.innerHTML = "";
+        return;
+    }
 
-        if game_league == "NFL":
-            home_meta = get_team_meta(home_full, "NFL", nflverse_epa, nfl_fpi, nfl_standings, None)
-            away_meta = get_team_meta(away_full, "NFL", nflverse_epa, nfl_fpi, nfl_standings, None)
-        else:
-            home_meta = get_team_meta(home_full, "NCAA", None, ncaa_fpi, ncaa_standings, ncaa_poll_map)
-            away_meta = get_team_meta(away_full, "NCAA", None, ncaa_fpi, ncaa_standings, ncaa_poll_map)
+    container.style.maxWidth = "920px";
+    container.style.margin = "0 auto 24px auto";
+    container.style.border = "none";
+    container.style.backgroundColor = "transparent";
+    container.style.boxShadow = "none";
 
-        home_code, away_code = home_meta["code"], away_meta["code"]
+    const bannerKey = "FLAGSHIP_5_PACK_DRAWER";
+    const isExpanded = openCardMemory.has(bannerKey);
+    const isPorkys = (AppState.fivePackView === "porkys");
 
-        matchup_pair = (game_league, tuple(sorted([home_code, away_code])))
-        if matchup_pair in seen_matchups:
-            continue
-        seen_matchups.add(matchup_pair)
-        game_id = f"{game_league}_{away_code}_{home_code}_{season_year}"
+    const modeTitle = AppState.activeMode === "tip"
+        ? "Just the Tip Baseline (M1–M9)"
+        : (AppState.activeMode === "balls_deep" ? "Balls Deep v313 Guardrails & Floor/Ceiling (M1–M13)" : "DaVinci Organic Momentum Flow Mode");
 
-        travel_miles = calc_haversine_miles(away_meta["lat"], away_meta["lon"], home_meta["lat"], home_meta["lon"])
-        tz_shift = home_meta["tz"] - away_meta["tz"]
+    const singleLockedStatusHTML = AppState.activeMode === "tip"
+        ? `
+            <div onclick="window.unlockBallsDeepMode(event)" style="margin: 10px auto 4px auto; max-width: 480px; padding: 7px 14px; border-radius: 6px; background: rgba(9, 13, 22, 0.78); border: 1px solid rgba(245, 158, 11, 0.45); opacity: 0.85; font-family: var(--font-mono); font-size: 11px; color: var(--accent-gold); font-weight: 700; text-align: center; cursor: pointer; user-select: none;">
+                🔒 BALLS DEEP — "You gotta pay to go balls deep..." (Click to Unlock)
+            </div>
+        `
+        : `
+            <div style="margin: 10px auto 4px auto; max-width: 540px; padding: 6px 14px; border-radius: 6px; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.4); font-family: var(--font-mono); font-size: 11px; color: var(--accent-emerald); font-weight: 700; text-align: center;">
+                🔓 BALLS DEEP FLOOR (-2&phi;) &amp; CEILING (+&phi;) BRACKET UNLOCKED (v313 Ψ_11,12 + M13 ACTIVE)
+            </div>
+        `;
 
-        commence_str = game.get("commence_time", "")
-        kickoff_local_hour = 13
-        is_upcoming_soon = False
-        if commence_str:
-            try:
-                dt_utc = datetime.strptime(commence_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                dt_local = dt_utc + timedelta(hours=home_meta["tz"])
-                kickoff_local_hour = dt_local.hour
-                is_upcoming_soon = (-timedelta(hours=4) <= (dt_utc - now_utc) <= timedelta(days=8))
-            except Exception:
-                pass
+    const outerBorderColor = isPorkys ? "rgba(239, 68, 68, 0.65)" : "rgba(245, 158, 11, 0.55)";
+    const headerGradient = isPorkys
+        ? "linear-gradient(90deg, rgba(239, 68, 68, 0.22), rgba(236, 72, 153, 0.14), rgba(239, 68, 68, 0.22))"
+        : "linear-gradient(90deg, rgba(245, 158, 11, 0.16), rgba(6, 182, 212, 0.10), rgba(245, 158, 11, 0.16))";
 
-        # Pull live NFL injury reports for upcoming week's games via ESPN event summary
-        home_inj = {"qb_replacement_delta": 0.0, "lt_or_rb_pass_pro_out": False, "is_third_string_qb": False, "injuries_summary": []}
-        away_inj = {"qb_replacement_delta": 0.0, "lt_or_rb_pass_pro_out": False, "is_third_string_qb": False, "injuries_summary": []}
-        if game_league == "NFL" and is_upcoming_soon:
-            inj_map = prefetched_nfl_injuries.get(f"{away_code}_{home_code}", {})
-            if home_code in inj_map:
-                home_inj = inj_map[home_code]
-            if away_code in inj_map:
-                away_inj = inj_map[away_code]
+    const cornerToggleHTML = isPorkys
+        ? `
+            <button class="five-pack-corner-btn" onclick="window.toggleFivePackView(event)" title="Back to Flagship 5-Pack" style="cursor:pointer; font-family:var(--font-mono); font-size:10.5px; font-weight:800; padding:4px 10px; border-radius:6px; background:rgba(15,23,42,0.88); color:var(--accent-gold); border:1px solid rgba(245,158,11,0.65); box-shadow:0 2px 8px rgba(0,0,0,0.4); transition:all 0.15s ease;">
+                👑 Main Stage ➔
+            </button>
+        `
+        : `
+            <button class="five-pack-corner-btn" onclick="window.toggleFivePackView(event)" title="Flip to Wednesday Night at Porky's (Top 5 Fades)" style="cursor:pointer; font-family:var(--font-mono); font-size:10.5px; font-weight:800; padding:4px 10px; border-radius:6px; background:rgba(15,23,42,0.88); color:#f87171; border:1px solid rgba(239,68,68,0.65); box-shadow:0 2px 8px rgba(0,0,0,0.4); transition:all 0.15s ease;">
+                🐷 Porky's Fades ➔
+            </button>
+        `;
 
-        env_weather = fetch_live_stadium_weather(home_meta)
-        wind_mph = 0.0 if env_weather.get("is_dome") else float(env_weather.get("wind_mph", 0.0))
+    const mainStageRowsHTML = AppState.flagshipFivePack.map((p, idx) => {
+        const isMenage = p.flagshipSlot.includes("MÉNAGE");
+        const isSpread = p.marketType === "spread";
+        const fmtTipProj = (isSpread && Number(p.tipProjectedMean) > 0) ? `+${p.tipProjectedMean}` : `${p.tipProjectedMean}`;
+        const tipEvStr = `${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV`;
+        const kellyTag = p.quarterKellyPct > 0 ? ` • f*: <strong>${p.quarterKellyPct}%</strong>` : "";
 
-        abs_tz = abs(tz_shift)
-        omega_dir = 1.35 if tz_shift > 0 else (0.85 if tz_shift < 0 else 1.0)
-        body_clock = kickoff_local_hour - tz_shift
-        trough_pen = max(0.0, 13.0 - body_clock)
-        phi_circ = round(0.45 * (abs_tz * omega_dir * math.exp(-0.35 * 1.0)) + (0.30 * trough_pen), 3)
+        return `
+            <div style="padding: 10px 0; ${idx < AppState.flagshipFivePack.length - 1 ? 'border-bottom: 1px solid #1e293b;' : ''}">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <span class="${isMenage ? 'badge-menage' : 'badge-flex'}">${p.flagshipSlot}</span>
+                        <strong style="font-size: 13px; color: var(--text-primary);">${p.player}</strong>
+                        ${renderTierBadgeHTML(p.tipBadge)}
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 12px;">
+                        <span style="color: ${getTierColor(p.tipBadge)};">
+                            Proj: <strong>${fmtTipProj}</strong> | Win: <strong>${p.tipModelPct}%</strong> (${tipEvStr})${kellyTag}
+                        </span>
+                    </div>
+                </div>
+                ${renderGatekeeperPillsHTML(p.gatekeeperFlags, p.gatekeeperAction)}
+                ${buildBallsDeepBoxHTML(p, isSpread)}
+            </div>
+        `;
+    }).join("");
 
-        hfa_base = NCAA_HFA_BASE if game_league == "NCAA" else PI_OVER_PHI_HFA
+    const porkysRowsHTML = AppState.porkysFivePack.length === 0
+        ? `<div style="padding: 16px; text-align: center; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary);">No true &le;-19.0% EV public grenades flagged on this week's board yet.</div>`
+        : AppState.porkysFivePack.map((item, idx) => {
+        const trap = item.trapProp;
+        const fade = item.fadeProp;
+        const fmtTrapProj = Number(trap.tipProjectedMean) > 0 ? `+${trap.tipProjectedMean}` : `${trap.tipProjectedMean}`;
+        const fmtFadeProj = Number(fade.tipProjectedMean) > 0 ? `+${fade.tipProjectedMean}` : `${fade.tipProjectedMean}`;
+        const trapEvStr = `${trap.tipEvPct > 0 ? '+' : ''}${trap.tipEvPct}% EV`;
 
-        # PURE UNTOUCHED OG M1–M9 FAIR SPREAD (v205 LOCKED — ZERO DELTA_RZ, ZERO INJURY, ZERO VEGAS, ZERO M11–M13)
-        epa_diff = away_meta["epa"] - home_meta["epa"]
-        delta_to = away_meta["to_reg"] - home_meta["to_reg"]
-        injury_diff = away_inj["qb_replacement_delta"] - home_inj["qb_replacement_delta"]
-        psi_11_12 = calc_coupled_balls_deep_psi(home_meta, away_meta, env_weather)
-        elev_info = calc_ten_zone_elevation(env_weather, away_meta.get("elev_m", 150))
+        // Safe Floor (-2φ) Counter-Strike Fade metrics
+        const fadeTeamCode = fade.isHomeSpread ? fade.homeTeam : fade.awayTeam;
+        const safeFloorProbRaw = (fade.safeFloorWinPct || 82.0) / 100.0;
+        const m2SafeFloor = calcExpectedValueAndKelly(safeFloorProbRaw, -175);
+        const safeFloorEvPct = Number(m2SafeFloor.evPercentage.toFixed(2));
+        const safeFloorEvStr = `${safeFloorEvPct > 0 ? '+' : ''}${safeFloorEvPct}% EV`;
+        const safeFloorTier = getTierFromEv(safeFloorEvPct);
+        const fmtBaseSpread = fade.baseLine > 0 ? `+${fade.baseLine}` : `${fade.baseLine}`;
 
-        fair_home_tip = round((GOLDEN_PLAY_SCALER * epa_diff) + delta_to - hfa_base - phi_circ, 2)
+        const slotBadgeStyle = item.isTopThreeTrap
+            ? "background:rgba(239,68,68,0.18); color:#f87171; border:1px solid rgba(239,68,68,0.55);"
+            : "background:rgba(236,72,153,0.16); color:#f472b6; border:1px solid rgba(236,72,153,0.5);";
 
-        props_board = []
-        book = next((b for b in game.get("bookmakers", []) if b["key"] == "fanduel"), None) or \
-               next((b for b in game.get("bookmakers", []) if b["key"] == "draftkings"), None) or \
-               (game.get("bookmakers")[0] if game.get("bookmakers") else None)
+        return `
+            <div style="padding: 12px 0; ${idx < AppState.porkysFivePack.length - 1 ? 'border-bottom: 1px solid #1e293b;' : ''}">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; align-items: center;">
+                    <div style="background: rgba(239, 68, 68, 0.07); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 6px; padding: 8px 10px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; margin-bottom: 3px;">
+                            <span style="font-family:var(--font-mono); font-size:10px; font-weight:800; padding:2px 6px; border-radius:4px; ${slotBadgeStyle}">
+                                🐷 ${item.slotLabel}
+                            </span>
+                            ${renderTierBadgeHTML("PASS")}
+                        </div>
+                        <div style="font-size: 12.5px; font-weight: 800; color: var(--text-primary); margin-bottom: 2px;">
+                            🚫 TRAP: ${trap.player}
+                        </div>
+                        <div style="font-family: var(--font-mono); font-size: 11.5px; color: var(--accent-danger);">
+                            Proj: <strong>${fmtTrapProj}</strong> | Win: <strong>${trap.tipModelPct}%</strong> (${trapEvStr})
+                        </div>
+                    </div>
 
-        if book:
-            spread_market = next((m for m in book.get("markets", []) if m["key"] == "spreads"), None)
-            if spread_market:
-                vegas_home_sp = None
-                for o_chk in spread_market.get("outcomes", []):
-                    if o_chk.get("name") == home_full:
-                        vegas_home_sp = float(o_chk.get("point", 0.0))
-                    elif o_chk.get("name") == away_full and vegas_home_sp is None:
-                        vegas_home_sp = -float(o_chk.get("point", 0.0))
-                if vegas_home_sp is None:
-                    vegas_home_sp = fair_home_tip
-                fair_home_bd = calc_report_calibrated_bd_spread(
-                    fair_home_tip, vegas_home_sp, home_meta, away_meta,
-                    injury_diff, psi_11_12, elev_info, kickoff_local_hour, game_league
-                )
-                for out in spread_market.get("outcomes", []):
-                    point = float(out.get("point", 0.0))
-                    price = int(out.get("price", -110))
-                    team_name = out.get("name")
-                    is_away = (team_name == away_full)
-                    t_code = away_code if is_away else home_code
-                    opp_code = home_code if is_away else away_code
-                    prefix = "@" if is_away else "vs"
+                    <div style="background: rgba(6, 182, 212, 0.09); border: 1px solid rgba(16, 185, 129, 0.45); border-radius: 6px; padding: 8px 10px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; margin-bottom: 3px;">
+                            <span style="font-family:var(--font-mono); font-size:10px; font-weight:800; color:var(--accent-cyan);">
+                                🛡️ RECOMMENDED SAFE FLOOR FADE (-2&phi;)
+                            </span>
+                            ${renderTierBadgeHTML(safeFloorTier)}
+                        </div>
+                        <div style="font-size: 12.5px; font-weight: 800; color: var(--text-primary); margin-bottom: 2px;">
+                            ✅ FADE TO FLOOR: ${fadeTeamCode} ${fade.safeFloorLabel} <span style="font-weight:600; font-size:11px; color:var(--text-secondary);">[Base: ${fmtBaseSpread}]</span>
+                        </div>
+                        <div style="font-family: var(--font-mono); font-size: 11.5px; color: ${getTierColor(safeFloorTier)};">
+                            Proj: <strong>${fmtFadeProj}</strong> | Floor Win: <strong>${fade.safeFloorWinPct}%</strong> (${safeFloorEvStr})
+                        </div>
+                    </div>
+                </div>
+                ${buildBallsDeepBoxHTML(fade, true)}
+            </div>
+        `;
+    }).join("");
 
-                    model_tip_spread = round(-fair_home_tip if is_away else fair_home_tip, 2)
-                    model_bd_spread = round(-fair_home_bd if is_away else fair_home_bd, 2)
+    container.innerHTML = `
+        ${buildMasterBoardLegendHTML()}
 
-                    tip_edge_pts = point - model_tip_spread
-                    bd_edge_pts = point - model_bd_spread
+        <div style="border: 1px solid ${outerBorderColor}; border-radius: 8px; background-color: #111827; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); overflow: hidden;">
+            <div id="flagship-banner-toggle" style="background: ${headerGradient};">
+                ${cornerToggleHTML}
 
-                    win_prob_tip = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * tip_edge_pts))))
-                    win_prob_bd = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * bd_edge_pts))))
+                <div style="font-size: 15px; font-weight: 800; color: ${isPorkys ? '#f87171' : 'var(--accent-gold)'}; letter-spacing: 0.03em; line-height: 1.35;">
+                    ${isPorkys
+                        ? '🐷 WEDNESDAY NIGHT AT PORKY\'S // TOP 5 B-SQUAD TRAPS &amp; SAFE FLOOR FADES'
+                        : '👑 THE DIXPIX FLAGSHIP 5-PACK // FEATURING "THE MÉNAGE À TROIS"'}
+                </div>
 
-                    ev_tip = calc_ev_pct(win_prob_tip, price)
-                    ev_bd = calc_ev_pct(win_prob_bd, price)
-                    badge = "SMASH" if ev_tip >= SMASH_EV_THRESHOLD else ("PASS" if ev_tip <= -19.0 else "TOO_CLOSE")
+                <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 4px; line-height: 1.4;">
+                    ${isPorkys
+                        ? '💣 Wingman Grenade Alert: <strong style="color:#f87171;">1:45 AM Public Grenade on Left</strong> ➔ <strong style="color:var(--accent-cyan);">🛡️ Safe Floor Counter-Strike (-2&phi;) on Right</strong>'
+                        : `Active Engine: <strong style="color: var(--accent-cyan);">${modeTitle}</strong> • <span style="color: var(--accent-emerald);">Current Week Slate (Thru MNF)</span>`}
+                </div>
 
-                    props_board.append({
-                        "player": f"{t_code} Spread ({'+' if point > 0 else ''}{point}) ({t_code} {prefix} {opp_code})",
-                        "market_type": "spread",
-                        "model_win_prob": round(win_prob_tip, 4),
-                        "projected_mean_mu": model_tip_spread,
-                        "balls_deep_proj": model_bd_spread,
-                        "balls_deep_win_prob": round(win_prob_bd, 4),
-                        "ev_pct": ev_tip,
-                        "balls_deep_ev_pct": ev_bd,
-                        "tier_badge": badge,
-                        "flagship_slot": "",
-                        "projected_variance_sigma2": 0,
-                        "base_line": point,
-                        "base_odds_over": price,
-                        "base_odds_under": -110,
-                        "alt_line": point - 2.5,
-                        "alt_odds_over": 145
-                    })
+                ${singleLockedStatusHTML}
 
-            total_market = next((m for m in book.get("markets", []) if m["key"] == "totals"), None)
-            if total_market:
-                over_out = next((o for o in total_market.get("outcomes", []) if o.get("name") == "Over"), None)
-                under_out = next((o for o in total_market.get("outcomes", []) if o.get("name") == "Under"), None)
-                if over_out and under_out:
-                    t_point = float(over_out.get("point", 0.0))
-                    o_price = int(over_out.get("price", -110))
-                    u_price = int(under_out.get("price", -110))
+                <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); text-decoration: underline; margin-top: 6px;">
+                    ${isExpanded
+                        ? (isPorkys ? 'Click to collapse Porky\'s Safe Floor Fades ▲' : 'Click to collapse 5-Pack ▲')
+                        : (isPorkys ? 'Click to expand all 5 Porky\'s Traps &amp; Safe Floor Fades ▼' : 'Click to unlock &amp; expand all 5 Flagship Plays ▼')}
+                </div>
+            </div>
 
-                    proj_total_tip = calc_independent_total_tip(home_meta, away_meta, game_league, wind_mph)
-                    proj_total_bd = calc_report_calibrated_bd_total(t_point, proj_total_tip, env_weather, tz_shift, elev_info)
+            <div id="flagship-banner-drawer" style="display: ${isExpanded ? 'block' : 'none'}; padding: 14px 18px; border-top: 1px solid var(--border-subtle); background: var(--bg-surface);">
+                ${isPorkys ? porkysRowsHTML : mainStageRowsHTML}
+            </div>
+        </div>
+    `;
 
-                    is_under = proj_total_tip < t_point
-                    is_under_bd = proj_total_bd < t_point
-                    active_price = u_price if is_under else o_price
-                    bd_price = u_price if is_under_bd else o_price
+    const toggleHeader = document.getElementById("flagship-banner-toggle");
+    const drawer = document.getElementById("flagship-banner-drawer");
+    if (toggleHeader && drawer) {
+        toggleHeader.addEventListener("click", () => {
+            const savedY = window.scrollY;
+            const closing = drawer.style.display === "block";
+            drawer.style.display = closing ? "none" : "block";
+            if (closing) openCardMemory.delete(bannerKey);
+            else openCardMemory.add(bannerKey);
+            renderFlagshipFivePack();
+            window.scrollTo(window.scrollX, savedY);
+        });
+    }
+}
 
-                    total_diff_tip = abs(proj_total_tip - t_point)
-                    total_diff_bd = abs(proj_total_bd - t_point)
+// ==========================================
+// INDEPENDENT MASONRY FLEX COLUMNS WITH AUTO-SWEEP & v313 GUARDRAIL CHIPS
+// ==========================================
+function buildMasonryGridForGames(gamesSlice, numCols, cardSubtitle) {
+    const rowWrapper = document.createElement("div");
+    rowWrapper.style.display = "flex";
+    rowWrapper.style.alignItems = "flex-start";
+    rowWrapper.style.gap = "15px";
+    rowWrapper.style.width = "100%";
 
-                    calc_prob_tip = max(0.50, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * total_diff_tip))))
-                    calc_prob_bd = max(0.50, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * total_diff_bd))))
+    const colElements = [];
+    for (let c = 0; c < numCols; c++) {
+        const colDiv = document.createElement("div");
+        colDiv.style.flex = "1";
+        colDiv.style.minWidth = "0";
+        colDiv.style.display = "flex";
+        colDiv.style.flexDirection = "column";
+        colDiv.style.gap = "15px";
+        rowWrapper.appendChild(colDiv);
+        colElements.push(colDiv);
+    }
 
-                    ev_tip = calc_ev_pct(calc_prob_tip, active_price)
-                    ev_bd = calc_ev_pct(calc_prob_bd, bd_price)
-                    badge = "SMASH" if ev_tip >= SMASH_EV_THRESHOLD else ("PASS" if ev_tip <= -19.0 else "TOO_CLOSE")
+    const processedMap = new Map(AppState.processedGames.map(g => [g.gameId, g]));
 
-                    props_board.append({
-                        "player": f"{away_code}@{home_code} Total ({'U' if is_under else 'O'} {t_point}) ({away_code} @ {home_code})",
-                        "market_type": "total",
-                        "model_win_prob": round(calc_prob_tip, 4),
-                        "projected_mean_mu": proj_total_tip,
-                        "balls_deep_proj": proj_total_bd,
-                        "balls_deep_win_prob": round(calc_prob_bd, 4),
-                        "ev_pct": ev_tip,
-                        "balls_deep_ev_pct": ev_bd,
-                        "tier_badge": badge,
-                        "flagship_slot": "",
-                        "projected_variance_sigma2": 0,
-                        "base_line": t_point,
-                        "base_odds_over": active_price,
-                        "base_odds_under": o_price if is_under else u_price,
-                        "alt_line": t_point - 3.5 if is_under else t_point + 3.5,
-                        "alt_odds_over": 155
-                    })
+    gamesSlice.forEach((game, gameIndex) => {
+        const cardKey = game.game_id || `${game.away_team}@${game.home_team}`;
+        const cleanHome = cleanTeamCode(game.home_team);
+        const cleanAway = cleanTeamCode(game.away_team);
+        const matchupKey = `${cleanAway} @ ${cleanHome}`;
+        const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[matchupKey];
+        const isLiveInPlay = Boolean(espnMatch && espnMatch.state === "in");
+        const gameRecord = processedMap.get(game.game_id);
 
-        if not props_board:
-            continue
-
-        home_tel_obj = {
-            "net_epa_per_play": home_meta["epa"],
-            "qb_replacement_delta": home_inj["qb_replacement_delta"],
-            "turnover_reg_delta": home_meta["to_reg"],
-            "closing_rank_pct": home_meta["close_pct"],
-            "active_win_streak": home_meta["streak"],
-            "opp_rz_dvoa": home_meta["rz_dvoa"],
-            "lt_or_rb_pass_pro_out": home_inj["lt_or_rb_pass_pro_out"],
-            "is_third_string_qb": home_inj["is_third_string_qb"],
-            "injuries_summary": home_inj["injuries_summary"],
-            "telemetry_source": home_meta["telemetry_source"]
-        }
-        away_tel_obj = {
-            "net_epa_per_play": away_meta["epa"],
-            "qb_replacement_delta": away_inj["qb_replacement_delta"],
-            "turnover_reg_delta": away_meta["to_reg"],
-            "closing_rank_pct": away_meta["close_pct"],
-            "active_win_streak": away_meta["streak"],
-            "opp_rz_dvoa": away_meta["rz_dvoa"],
-            "lt_or_rb_pass_pro_out": away_inj["lt_or_rb_pass_pro_out"],
-            "is_third_string_qb": away_inj["is_third_string_qb"],
-            "injuries_summary": away_inj["injuries_summary"],
-            "telemetry_source": away_meta["telemetry_source"]
-        }
-
-        for tel_obj, meta_obj in ((home_tel_obj, home_meta), (away_tel_obj, away_meta)):
-            if meta_obj.get("epa_rank") is not None:
-                tel_obj["epa_rank"] = meta_obj["epa_rank"]
-            if meta_obj.get("poll_rank") is not None:
-                tel_obj["poll_rank"] = meta_obj["poll_rank"]
-            if meta_obj.get("off_eff") is not None:
-                tel_obj["off_eff"] = meta_obj["off_eff"]
-            if meta_obj.get("def_eff") is not None:
-                tel_obj["def_eff"] = meta_obj["def_eff"]
-            if meta_obj.get("off_epa_per_play") is not None:
-                tel_obj["off_epa_per_play"] = meta_obj["off_epa_per_play"]
-            if meta_obj.get("def_epa_per_play") is not None:
-                tel_obj["def_epa_per_play"] = meta_obj["def_epa_per_play"]
-            if meta_obj.get("is_fcs"):
-                tel_obj["is_fcs"] = True
-
-        games_slate.append({
-            "game_id": game_id,
-            "league": game_league,
-            "home_team": home_code,
-            "away_team": away_code,
-            "home_full_name": home_full,
-            "away_full_name": away_full,
-            "commence_time": commence_str,
-            "kickoff_local_hour": kickoff_local_hour,
-            "expected_plays": 134 if game_league == "NCAA" else 126,
-            "hfa_base": hfa_base,
-            "environmental_payload": env_weather,
-            "circadian_payload": {
-                "away_travel_miles": travel_miles,
-                "away_tz_shift": tz_shift,
-                "away_elev_m": away_meta.get("elev_m", 150),
-                "rest_differential_days": 0,
-                "short_week_flag": 0
-            },
-            "team_telemetry": {
-                "home": home_tel_obj,
-                "away": away_tel_obj
-            },
-            "props_board": props_board
-        })
-
-    # Compute Tuesday 5:00 AM EST (10:00 UTC) post-MNF cutoff matching app_controller.js 1:1
-    # Only Pre-Kickoff, Current-Week, NFL or Ranked Top-25 NCAA games enter Flagship 5-Pack & Porky's 5-Pack!
-    def is_eligible_flagship_game(g):
-        if g["league"] == "NCAA":
-            ht = g.get("team_telemetry", {}).get("home", {})
-            at = g.get("team_telemetry", {}).get("away", {})
-            h_rk = ht.get("poll_rank")
-            a_rk = at.get("poll_rank")
-            if not ((h_rk and h_rk <= 25) or (a_rk and a_rk <= 25)):
-                return False
-        c_str = g.get("commence_time", "")
-        if c_str:
-            try:
-                dt_g = datetime.strptime(c_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                if dt_g <= now_utc:
-                    return False  # Exclude already-started / live in-game lines!
-            except Exception:
-                pass
-        return True
-
-    pre_kick_eligible = [g for g in games_slate if is_eligible_flagship_game(g)]
-    anchor_times = []
-    for g in pre_kick_eligible:
-        try:
-            anchor_times.append(datetime.strptime(g["commence_time"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc))
-        except Exception:
-            pass
-    anchor_dt = min(anchor_times) if anchor_times else now_utc
-    anchor_est = anchor_dt - timedelta(hours=5)
-    # Python weekday(): Mon=0, Tue=1, ..., Sun=6
-    days_to_tue = 7 if anchor_est.weekday() == 1 else ((1 - anchor_est.weekday()) % 7)
-    mnf_cutoff_utc = (anchor_est + timedelta(days=days_to_tue)).replace(hour=5, minute=0, second=0, microsecond=0) + timedelta(hours=5)
-
-    current_week_eligible = []
-    for g in pre_kick_eligible:
-        try:
-            dt_g = datetime.strptime(g["commence_time"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-            if dt_g <= mnf_cutoff_utc:
-                current_week_eligible.append(g)
-        except Exception:
-            current_week_eligible.append(g)
-
-    # Blended Top-5 Flagship Selection (Strict 1-pick-per-game, max 3 per market, Current Week + Ranked NCAA/NFL ONLY)
-    best_per_game = []
-    for g in current_week_eligible:
-        cands = []
-        g_spreads = [p for p in g["props_board"] if p["market_type"] == "spread" and abs(p["base_line"]) <= 28.5 and abs(int(p.get("base_odds_over", -110))) < 220]
-        g_totals = [p for p in g["props_board"] if p["market_type"] == "total" and abs(int(p.get("base_odds_over", -110))) < 220]
-        if g_spreads:
-            cands.append(max(g_spreads, key=lambda x: x["ev_pct"]))
-        if g_totals:
-            cands.append(max(g_totals, key=lambda x: x["ev_pct"]))
-        if cands:
-            best_per_game.append((g["game_id"], max(cands, key=lambda x: x["ev_pct"])))
-
-    best_per_game.sort(key=lambda x: x[1]["ev_pct"], reverse=True)
-    selected_five = []
-    sp_cnt = tot_cnt = 0
-    for gid, p in best_per_game:
-        if len(selected_five) >= 5:
-            break
-        if p["market_type"] == "spread" and sp_cnt >= 3:
-            continue
-        if p["market_type"] == "total" and tot_cnt >= 3:
-            continue
-        selected_five.append(p)
-        if p["market_type"] == "spread":
-            sp_cnt += 1
-        else:
-            tot_cnt += 1
-
-    for idx, p in enumerate(selected_five[:3], start=1):
-        p["flagship_slot"] = f"MÉNAGE À TROIS #{idx}"
-    for idx, p in enumerate(selected_five[3:5], start=4):
-        p["flagship_slot"] = f"5-PACK FLEX #{idx}"
-
-    # Build Porky's 5-Pack (3 Core Day-Shift Traps + 2 Keep-It-In-Your-Pants Flex — Current Week + Ranked NCAA/NFL ONLY)
-    porkys_candidates = []
-    for g in current_week_eligible:
-        g_spreads = [p for p in g["props_board"] if p["market_type"] == "spread" and abs(p["base_line"]) <= 28.5 and abs(int(p.get("base_odds_over", -110))) < 220]
-        if len(g_spreads) >= 2:
-            g_spreads_sorted = sorted(g_spreads, key=lambda x: x["ev_pct"], reverse=True)
-            best_side = g_spreads_sorted[0]
-            worst_side = g_spreads_sorted[-1]
-            if worst_side["ev_pct"] <= -19.0:
-                porkys_candidates.append((worst_side["ev_pct"], g, worst_side, best_side))
-
-    porkys_candidates.sort(key=lambda x: x[0])
-    porkys_by_gid = {}
-    for idx, (_, g, trap_p, fade_p) in enumerate(porkys_candidates[:5], start=1):
-        slot_lbl = f"DAY-SHIFT TRAP #{idx}" if idx <= 3 else f"KEEP IT IN YOUR PANTS #{idx}"
-        trap_p["porkys_slot"] = slot_lbl
-        fade_line = float(fade_p["base_line"])
-        floor_hook = math.floor(fade_line + 3.5) + 0.5
-        floor_gap = floor_hook - float(fade_p["projected_mean_mu"])
-        floor_prob = max(0.05, min(0.96, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * floor_gap))))
-        fade_team = g["home_team"] if fade_p["player"].startswith(f"{g['home_team']} ") else g["away_team"]
-        porkys_by_gid[g["game_id"]] = {
-            "porkys_slot": slot_lbl,
-            "is_core_three": (idx <= 3),
-            "trap_label": trap_p["player"],
-            "trap_line": float(trap_p["base_line"]),
-            "trap_proj": float(trap_p["projected_mean_mu"]),
-            "trap_ev_pct": float(trap_p["ev_pct"]),
-            "fade_label": fade_p["player"],
-            "fade_team": fade_team,
-            "fade_line": fade_line,
-            "fade_proj": float(fade_p["projected_mean_mu"]),
-            "fade_ev_pct": float(fade_p["ev_pct"]),
-            "safe_floor_hook": floor_hook,
-            "safe_floor_label": f"Alt {'+' if floor_hook > 0 else ''}{floor_hook:.1f} (-175)",
-            "safe_floor_win_pct": round(floor_prob * 100.0, 1),
-            "result_floor": "PENDING",
-            "result_straight": "PENDING",
-            "floor_miss_by": 0.0,
-            "straight_miss_by": 0.0,
-            "trap_dodged": None
+        let gameDate = "TBD", gameTime = "TBD";
+        if (game.commence_time) {
+            const dt = new Date(game.commence_time);
+            gameDate = dt.toLocaleDateString("en-US", { weekday: 'short', month: 'short', day: 'numeric' });
+            gameTime = dt.toLocaleTimeString("en-US", { hour: 'numeric', minute: '2-digit' });
         }
 
-    existing_ledger = load_existing_ledger()
-    updated_ledger = update_and_grade_ledger(existing_ledger, games_slate, espn_scores, now_utc, porkys_by_gid)
+        const env = game.environmental_payload || {};
+        const weatherString = env.is_dome
+            ? "Dome (72°F)"
+            : `${env.temperature_f || "--"}°F | Wind: ${env.wind_mph || "--"} mph`;
 
-    return {
-        "slate_info": {
-            "league": "NFL_NCAA",
-            "week": 12,
-            "last_updated": now_iso,
-            "telemetry_version": "v218_live_feeds",
-            "ranked_ncaa_teams": live_ranked_ncaa
+        const card = document.createElement("div");
+        card.className = "game-card";
+        card.style.border = isLiveInPlay ? "1px solid rgba(245, 158, 11, 0.75)" : "1px solid #334155";
+        card.style.borderRadius = "8px";
+        card.style.backgroundColor = "#1e293b";
+        card.style.padding = "15px";
+        card.style.cursor = "pointer";
+        card.style.color = "#e2e8f0";
+        card.style.width = "100%";
+
+        const liveScoreBanner = isLiveInPlay
+            ? `<div style="font-family:var(--font-mono); font-size:0.8em; color:var(--accent-gold); font-weight:800; text-align:center; margin-bottom:6px;">🔴 LIVE (${espnMatch.shortDetail || 'IN-PLAY'}): ${espnMatch.scoreStr}</div>`
+            : "";
+
+        const guardrailChipsHTML = gameRecord ? renderGameGuardrailChipsHTML(gameRecord) : "";
+
+        card.innerHTML = `
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #334155; padding-bottom: 10px; margin-bottom: 10px;">
+                <span style="font-size: 0.85em; color: #94a3b8;">${gameDate} @ ${gameTime}</span>
+                <span style="font-size: 0.85em; color: #94a3b8;">${weatherString}</span>
+            </div>
+            ${liveScoreBanner}
+            <div style="font-size: 1.25em; font-weight: bold; text-align: center; margin-bottom: 8px;">
+                ${cleanAway} @ ${cleanHome}
+            </div>
+            ${guardrailChipsHTML}
+            <div style="font-size: 0.85em; text-align: center; color: #cbd5e1;">
+                ${cardSubtitle}
+            </div>
+        `;
+
+        const drawer = document.createElement("div");
+        drawer.style.display = openCardMemory.has(cardKey) ? "block" : "none";
+        drawer.style.marginTop = "15px";
+        drawer.style.borderTop = "1px solid #334155";
+        drawer.style.paddingTop = "10px";
+
+        const allGameProps = AppState.processedProps.filter(ep => ep.gameId === game.game_id);
+
+        const visibleGameProps = (AppState.activeMode === "tip")
+            ? allGameProps.filter(ep => {
+                if (ep.marketType !== "spread") return true;
+                if (ep.baseLine < 0) return true;
+                if (ep.baseLine === 0 && ep.isHomeSpread) return true;
+                return false;
+            })
+            : allGameProps;
+
+        if (visibleGameProps.length === 0) {
+            drawer.innerHTML = `<div style="font-size: 0.85em; color: #94a3b8;">No active lines available yet.</div>`;
+        } else {
+            visibleGameProps.forEach((engineData) => {
+                const isSpread = engineData.marketType === "spread";
+                const lineColorHex = getTierColor(engineData.tipBadge, true);
+                const displayTipProj = (isSpread && Number(engineData.tipProjectedMean) > 0)
+                    ? `+${engineData.tipProjectedMean}`
+                    : `${engineData.tipProjectedMean}`;
+                const tipEvStr = `${engineData.tipEvPct > 0 ? '+' : ''}${engineData.tipEvPct}% EV`;
+                const slotBadge = (AppState.activeMode !== "tip" && engineData.flagshipSlot)
+                    ? `<span class="${engineData.flagshipSlot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}" style="margin-right:6px;">${engineData.flagshipSlot}</span>`
+                    : (engineData.flagshipSlot && (engineData.marketType !== "spread" || engineData.baseLine <= 0) ? `<span class="${engineData.flagshipSlot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}" style="margin-right:6px;">${engineData.flagshipSlot}</span>` : "");
+
+                const propBlock = document.createElement("div");
+                propBlock.style.padding = "8px 0";
+                propBlock.style.borderBottom = "1px solid #0f172a";
+
+                propBlock.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.85em; margin-bottom: 4px;">
+                        <span>${slotBadge}<strong>${engineData.player}</strong></span>
+                        ${renderTierBadgeHTML(engineData.tipBadge)}
+                    </div>
+                    <div style="font-family: var(--font-mono); font-size: 0.82em; color: ${lineColorHex};">
+                        Proj: ${displayTipProj} | Win: ${engineData.tipModelPct}% (${tipEvStr})
+                    </div>
+                    ${renderGatekeeperPillsHTML(engineData.gatekeeperFlags, engineData.gatekeeperAction)}
+                    ${buildBallsDeepBoxHTML(engineData, isSpread)}
+                `;
+                drawer.appendChild(propBlock);
+            });
+        }
+
+        card.appendChild(drawer);
+        card.addEventListener("click", () => {
+            const isClosing = drawer.style.display === "block";
+            drawer.style.display = isClosing ? "none" : "block";
+            if (isClosing) openCardMemory.delete(cardKey);
+            else openCardMemory.add(cardKey);
+        });
+
+        colElements[gameIndex % numCols].appendChild(card);
+    });
+
+    return rowWrapper;
+}
+
+function render_game_cards(data) {
+    const container = document.getElementById("master-board-body");
+    if (!container) return;
+
+    const defaultLeague = (data.slate_info && data.slate_info.league) || "NFL";
+    // Auto-sweep any game that has already ended (FINAL) off Tab 1 into the Historical Ledger Card Vaults
+    const games = (data.games || []).filter(g => shouldIncludeGame(g, defaultLeague) && !isGameCompletedFinal(g));
+
+    if (games.length === 0) {
+        const rawGames = Array.isArray(data.games) ? data.games : [];
+        const rawNfl = rawGames.filter(g => (g.league || defaultLeague) === "NFL").length;
+        const rawNcaa = rawGames.filter(g => (g.league || defaultLeague) === "NCAA").length;
+        const updatedAt = (data.slate_info && data.slate_info.last_updated) || "Unknown";
+        const reasonMsg = rawGames.length === 0
+            ? "data.json currently contains 0 games (The Odds API may be out of credits or returned an empty slate on the last scraper run)."
+            : `data.json has ${rawGames.length} games (${rawNfl} NFL, ${rawNcaa} NCAA), all of which are currently filtered out or marked FINAL (check NFL/NCAA toggles or Historical Ledger).`;
+        container.innerHTML = `
+            <div style="padding: 20px; border-radius: 8px; background: #0f172a; border: 1px solid rgba(245, 158, 11, 0.55); font-family: var(--font-mono); font-size: 12px; color: var(--accent-gold); text-align: center;">
+                <div style="font-weight: 800; margin-bottom: 6px;">⚠️ NO ACTIVE MATCHUPS DISPLAYED ON MASTER BOARD</div>
+                <div style="color: var(--text-secondary); line-height: 1.5;">${reasonMsg}</div>
+                <div style="color: var(--text-muted); font-size: 11px; margin-top: 6px;">Last Feed Timestamp: ${updatedAt}</div>
+            </div>
+        `;
+        return;
+    }
+
+    const containerWidth = container.clientWidth || window.innerWidth || 1200;
+    const numCols = Math.max(1, Math.min(4, Math.floor(containerWidth / 340)));
+
+    container.style.display = "flex";
+    container.style.flexDirection = "column";
+    container.style.gap = "20px";
+
+    const cardSubtitle = AppState.activeMode === "tip"
+        ? "Click to expand lines &amp; EV%"
+        : "Click to expand lines, Safe Floor (-2&phi;) &amp; Ceiling Escalator (+&phi;)";
+
+    const currentWeekGames = games.filter(g => isGameInCurrentWeek(g.commence_time, AppState.mnfCutoffMs));
+    const lookaheadGames = games.filter(g => !isGameInCurrentWeek(g.commence_time, AppState.mnfCutoffMs));
+
+    const fragment = document.createDocumentFragment();
+
+    if (currentWeekGames.length > 0) {
+        fragment.appendChild(buildMasonryGridForGames(currentWeekGames, numCols, cardSubtitle));
+    }
+
+    if (lookaheadGames.length > 0) {
+        const cutoffDt = new Date(AppState.mnfCutoffMs);
+        const cutoffLabel = cutoffDt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+
+        const dividerBanner = document.createElement("div");
+        dividerBanner.style.width = "100%";
+        dividerBanner.style.margin = "12px 0 4px 0";
+        dividerBanner.style.padding = "12px 18px";
+        dividerBanner.style.borderRadius = "8px";
+        dividerBanner.style.border = "1px solid rgba(245, 158, 11, 0.55)";
+        dividerBanner.style.background = "linear-gradient(90deg, rgba(245, 158, 11, 0.14), rgba(15, 23, 42, 0.95), rgba(245, 158, 11, 0.14))";
+        dividerBanner.style.boxShadow = "0 4px 14px rgba(0, 0, 0, 0.35)";
+        dividerBanner.style.textAlign = "center";
+        dividerBanner.innerHTML = `
+            <div style="font-family: var(--font-mono); font-size: 13px; font-weight: 800; color: var(--accent-gold); letter-spacing: 0.04em;">
+                🔭 AFTER MONDAY NIGHT FOOTBALL CUTOFF (${cutoffLabel}) // NEXT WEEK'S EARLY LOOKAHEAD SLATE (${lookaheadGames.length} GAMES)
+            </div>
+            <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 3px;">
+                Available for early browsing &amp; parlay building • Excluded from this week's Flagship 5-Pack until Tuesday morning
+            </div>
+        `;
+        fragment.appendChild(dividerBanner);
+        fragment.appendChild(buildMasonryGridForGames(lookaheadGames, numCols, cardSubtitle));
+    }
+
+    container.replaceChildren(fragment);
+}
+
+// ==========================================
+// COMBINATORICS & ROUND ROBIN DECK (WITH SAFE FLOOR PORKY'S FADE LOADER)
+// ==========================================
+function renderCombinatoricsDeck() {
+    const container = document.getElementById("combinatorics-container");
+    if (!container) return;
+
+    if (!AppState.safeFloorParlayLegs) AppState.safeFloorParlayLegs = new Set();
+
+    const isUnlockedMode = (AppState.activeMode === "balls_deep" || AppState.activeMode === "davinci");
+    const hasFloorLegs = AppState.safeFloorParlayLegs.size > 0;
+    const modeTag = hasFloorLegs
+        ? "🐷 PORKY'S SAFE FLOOR (-2φ) FADE SLIP ACTIVE (-175 ALT LINES)"
+        : (AppState.activeMode === "tip"
+            ? "JUST THE TIP BASELINE (M1–M9)"
+            : (AppState.activeMode === "balls_deep" ? "BALLS DEEP v313 GUARDRAILS ACTIVE" : "DAVINCI MOMENTUM ARC ACTIVE"));
+
+    const selectedProps = AppState.processedProps.filter(p => AppState.selectedParlayLegs.has(p.propKey));
+    const legsPayload = selectedProps.map(p => {
+        const useSafeFloor = AppState.safeFloorParlayLegs.has(p.propKey);
+        return {
+            americanOdds: useSafeFloor ? -175 : p.baseOdds,
+            trueProb: useSafeFloor ? ((p.safeFloorWinPct || 82.0) / 100.0) : p.activeModelProbRaw
+        };
+    });
+
+    const m10 = calcProfitBoostParlayEV(legsPayload, 1.30);
+    const rrTiers = (typeof calcRoundRobinMatrix === "function") ? calcRoundRobinMatrix(legsPayload) : [];
+    const baseStake = 10.00;
+    const rawPayout = (baseStake * m10.dRaw).toFixed(2);
+    const boostedPayout = (baseStake * m10.dBoost).toFixed(2);
+
+    const uniqueMatchups = Array.from(new Set(AppState.processedGames.map(g => g.matchup)));
+
+    const filteredPool = AppState.processedProps.filter(p => {
+        if (AppState.comboFilters.team !== "ALL" && p.matchup !== AppState.comboFilters.team) return false;
+        if (AppState.comboFilters.market !== "ALL" && p.marketType !== AppState.comboFilters.market) return false;
+        if (AppState.comboFilters.tier === "SMASH" && p.tierBadge !== "SMASH") return false;
+        return true;
+    });
+
+    const activeSlipStripHTML = selectedProps.length > 0 ? `
+        <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-subtle); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 11px;">
+            <span style="color: var(--accent-cyan); font-weight: 800; margin-right: 4px;">ACTIVE SLIP (${selectedProps.length}):</span>
+            ${selectedProps.map(p => {
+                const isFloor = AppState.safeFloorParlayLegs.has(p.propKey);
+                const pillLabel = isFloor
+                    ? `🛡️ ${p.isHomeSpread ? p.homeTeam : p.awayTeam} ${p.safeFloorLabel}`
+                    : (p.activePlayerLabel || p.player);
+                const pillOdds = isFloor ? "-175" : (p.baseOdds > 0 ? `+${p.baseOdds}` : `${p.baseOdds}`);
+                const pillWin = isFloor ? p.safeFloorWinPct : p.activeModelPct;
+                const pillBorder = isFloor ? "rgba(6, 182, 212, 0.55)" : getTierColor(p.tierBadge, true);
+
+                return `
+                    <span onclick="window.toggleParlayLeg('${p.propKey}')" title="Click to remove from slip" style="cursor: pointer; display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 5px; background: var(--bg-base); border: 1px solid ${pillBorder}; color: var(--text-primary); transition: all 0.15s ease;">
+                        <strong>${pillLabel}</strong>
+                        <span style="color: var(--text-secondary);">(${pillOdds} • ${pillWin}%)</span>
+                        <span style="color: #f87171; font-weight: 800; margin-left: 2px;">✕</span>
+                    </span>
+                `;
+            }).join("")}
+        </div>
+    ` : "";
+
+    container.innerHTML = `
+        <div class="combinatorics-embedded-calc">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 10px;">
+                <div>
+                    <span style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-cyan); font-size: 14px;">
+                        🧮 PARLAY &amp; ROUND ROBIN CALCULATOR // <span style="color: ${hasFloorLegs ? '#f87171' : 'var(--accent-gold)'};">${modeTag}</span>
+                    </span>
+                    <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-left: 10px;">
+                        Tap any pick below to stack legs (M10 Rule: 2–3 leg cap on 30% Boost SGPs)
+                    </span>
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button class="calc-action-btn" onclick="window.loadFlagshipPreset(true)" style="border-color: var(--accent-gold); color: var(--accent-gold);">
+                        👑 Load Ménage à Trois (3)
+                    </button>
+                    <button class="calc-action-btn" onclick="window.loadFlagshipPreset(false)" style="border-color: var(--accent-emerald); color: var(--accent-emerald);">
+                        🔥 Load Flagship 5-Pack (5)
+                    </button>
+                    <button class="calc-action-btn" onclick="window.loadPorkysPreset(event)" style="border-color: #f87171; color: #f87171;">
+                        🐷 Load Porky's Safe Floor Fades (5)
+                    </button>
+                    <button class="calc-action-btn" onclick="window.clearParlaySlip(event)">
+                        ✕ Clear Slip (${selectedProps.length})
+                    </button>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; font-family: var(--font-mono); font-size: 12px;">
+                <div style="background: var(--bg-base); padding: 10px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+                    <div style="color: var(--text-secondary); font-size: 10px;">SELECTED LEGS</div>
+                    <div style="font-size: 16px; font-weight: 800; color: var(--text-primary);">${selectedProps.length} Legs ${hasFloorLegs ? '<span style="font-size:11px;color:var(--accent-cyan);">(-2&phi; Floor)</span>' : ''}</div>
+                </div>
+                <div style="background: var(--bg-base); padding: 10px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+                    <div style="color: var(--text-secondary); font-size: 10px;">JOINT WIN PROBABILITY</div>
+                    <div style="font-size: 16px; font-weight: 800; color: var(--accent-cyan);">${selectedProps.length ? m10.trueParlayProb : '0.00'}%</div>
+                </div>
+                <div style="background: var(--bg-base); padding: 10px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+                    <div style="color: var(--text-secondary); font-size: 10px;">RAW PARLAY ($10 STAKE)</div>
+                    <div style="font-size: 16px; font-weight: 800; color: var(--text-primary);">${selectedProps.length ? m10.dRaw + 'x ($' + rawPayout + ')' : '--'}</div>
+                </div>
+                <div style="background: var(--bg-base); padding: 10px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+                    <div style="color: var(--text-secondary); font-size: 10px;">30% BOOSTED PAYOUT</div>
+                    <div style="font-size: 16px; font-weight: 800; color: var(--accent-gold);">${selectedProps.length ? m10.dBoost + 'x ($' + boostedPayout + ')' : '--'}</div>
+                </div>
+                <div style="background: var(--bg-base); padding: 10px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+                    <div style="color: var(--text-secondary); font-size: 10px;">COMPOUND PARLAY EV%</div>
+                    <div style="font-size: 16px; font-weight: 800; color: ${getTierColor(getTierFromEv(m10.evBoostPct))};">
+                        ${selectedProps.length ? (m10.evBoostPct > 0 ? '+' : '') + m10.evBoostPct + '%' : '0.00%'}
+                    </div>
+                </div>
+            </div>
+
+            ${activeSlipStripHTML}
+
+            ${rrTiers.length > 0 ? `
+                <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-subtle); display: flex; gap: 16px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 11px;">
+                    <span style="color: var(--accent-gold); font-weight: 700;">ROUND ROBIN MATRIX:</span>
+                    ${rrTiers.map(t => `
+                        <span>
+                            <strong>${t.legSize}:</strong> Avg ${t.avgMultiplier}x | Win ${t.avgWinProbPct}% |
+                            <span style="color: ${getTierColor(getTierFromEv(t.expectedRoiPct))};">
+                                EV ${t.expectedRoiPct > 0 ? '+' : ''}${t.expectedRoiPct}%
+                            </span>
+                        </span>
+                    `).join(" • ")}
+                </div>
+            ` : ""}
+        </div>
+
+        <div class="panel-card">
+            <div class="panel-header">
+                <h2 class="panel-title">Interactive Parlay &amp; Round Robin Pick Builder</h2>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                    <select onchange="window.setComboFilter('team', this.value)" style="background: var(--bg-base); color: var(--text-primary); border: 1px solid var(--border-subtle); padding: 6px 10px; border-radius: 5px; font-family: var(--font-mono); font-size: 11px;">
+                        <option value="ALL" ${AppState.comboFilters.team === 'ALL' ? 'selected' : ''}>All Matchups (${AppState.processedGames.length})</option>
+                        ${uniqueMatchups.map(m => `<option value="${m}" ${AppState.comboFilters.team === m ? 'selected' : ''}>${m}</option>`).join("")}
+                    </select>
+
+                    <button class="calc-action-btn" onclick="window.setComboFilter('market', 'ALL')" style="${AppState.comboFilters.market === 'ALL' ? 'border-color:var(--accent-cyan);color:var(--accent-cyan);' : ''}">All Markets</button>
+                    <button class="calc-action-btn" onclick="window.setComboFilter('market', 'spread')" style="${AppState.comboFilters.market === 'spread' ? 'border-color:var(--accent-cyan);color:var(--accent-cyan);' : ''}">Spreads</button>
+                    <button class="calc-action-btn" onclick="window.setComboFilter('market', 'total')" style="${AppState.comboFilters.market === 'total' ? 'border-color:var(--accent-cyan);color:var(--accent-cyan);' : ''}">Totals (O/U)</button>
+                    <button class="calc-action-btn" onclick="window.setComboFilter('tier', AppState.comboFilters.tier === 'SMASH' ? 'ALL' : 'SMASH')" style="${AppState.comboFilters.tier === 'SMASH' ? 'border-color:var(--accent-emerald);color:var(--accent-emerald);' : ''}">
+                        SMASH Only (&ge;+10% EV)
+                    </button>
+                </div>
+            </div>
+
+            <div style="padding: 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px;">
+                ${filteredPool.map(p => {
+                    const isSelected = AppState.selectedParlayLegs.has(p.propKey);
+                    const isFloorSelected = AppState.safeFloorParlayLegs.has(p.propKey);
+                    const isSpread = p.marketType === "spread";
+                    const tierColor = getTierColor(p.tierBadge);
+                    const fmtProj = (isSpread && Number(p.projectedMean) > 0) ? `+${p.projectedMean}` : `${p.projectedMean}`;
+                    const evStr = `${p.evPct > 0 ? '+' : ''}${p.evPct}% EV`;
+                    const altEvStr = `${p.bdAltEvPct > 0 ? '+' : ''}${p.bdAltEvPct}% EV`;
+                    const kellyBit = p.quarterKellyPct > 0 ? ` • f* ${p.quarterKellyPct}%` : "";
+
+                    return `
+                        <div onclick="window.toggleParlayLeg('${p.propKey}')" style="cursor: pointer; padding: 12px 14px; border-radius: 8px; background: ${isSelected ? 'rgba(6, 182, 212, 0.14)' : 'var(--bg-elevated)'}; border: 1px solid ${isSelected ? 'var(--accent-cyan)' : 'var(--border-subtle)'}; transition: all 0.15s ease;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <span style="font-family: var(--font-mono); font-size: 11px; color: ${isFloorSelected ? 'var(--accent-cyan)' : 'var(--text-secondary)'}; font-weight: ${isFloorSelected ? '800' : '400'};">
+                                    ${isFloorSelected ? '🛡️ SAFE FLOOR IN SLIP // ' : (isSelected ? '✅ IN SLIP // ' : '')}${p.matchup} ${!p.isCurrentWeek ? '🔭' : ''}
+                                </span>
+                                <div style="display: flex; gap: 6px;">
+                                    ${p.flagshipSlot ? `<span class="${p.flagshipSlot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}">${p.flagshipSlot}</span>` : ''}
+                                    ${renderTierBadgeHTML(p.tierBadge)}
+                                </div>
+                            </div>
+                            <div style="font-weight: 700; font-size: 13px; color: var(--text-primary); margin-bottom: 4px;">
+                                ${isFloorSelected ? `${p.isHomeSpread ? p.homeTeam : p.awayTeam} ${p.safeFloorLabel}` : (p.activePlayerLabel || p.player)}
+                                <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);">(${isFloorSelected ? '-175' : (p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds)})</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 12px; color: ${isFloorSelected ? 'var(--accent-cyan)' : tierColor};">
+                                <span>Proj: <strong>${fmtProj}</strong>${kellyBit}</span>
+                                <span>Win: <strong>${isFloorSelected ? p.safeFloorWinPct : p.activeModelPct}%</strong> (${isFloorSelected ? 'Safe Floor -2φ' : evStr})</span>
+                            </div>
+                            ${renderGatekeeperPillsHTML(p.gatekeeperFlags, p.gatekeeperAction)}
+                            ${(isUnlockedMode || isFloorSelected) ? `
+                                <div style="margin-top: 6px; padding-top: 5px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px; font-family: var(--font-mono); font-size: 10.5px;">
+                                    <span style="color: var(--accent-cyan);">🛡️ ${p.safeFloorLabel} (${p.safeFloorWinPct}%)</span>
+                                    <span style="color: var(--accent-gold);">🎯 ${p.bdAltLabel} (${altEvStr})</span>
+                                </div>
+                            ` : ""}
+                        </div>
+                    `;
+                }).join("")}
+            </div>
+        </div>
+    `;
+}
+
+// ==========================================
+// 13-MODULE COMPENDIUM BOARD (WIRED TO calcMasterFibonacciAggregate v313)
+// ==========================================
+function renderCompendiumBoard() {
+    const tbody = document.getElementById("compendium-board-body");
+    if (!tbody || AppState.processedGames.length === 0) return;
+
+    const tableEl = tbody.closest("table");
+    if (tableEl) {
+        const thead = tableEl.querySelector("thead");
+        if (thead) {
+            thead.innerHTML = `
+                <tr>
+                    <th>Matchup</th>
+                    <th>M7 Air Density (&rho;)</th>
+                    <th>M8 Circadian (CSI / Delay)</th>
+                    <th>M11 Bio + 10-Zone (&Psi;_elev)</th>
+                    <th>M12 Turnover EPA</th>
+                    <th>M13 Fixed Sacred Geometry (M_rise)</th>
+                    <th>Master Score (&Omega;_fib,rise)</th>
+                    <th>Unified Home Win &amp; Cover Prob (P_agg)</th>
+                </tr>
+            `;
+        }
+    }
+
+    const isLocked = (AppState.activeMode === "tip");
+    const sliderForAgg = (AppState.activeMode === "davinci") ? AppState.intensitySlider : 0.618;
+
+    tbody.innerHTML = AppState.processedGames.map(g => {
+        if (isLocked) {
+            const lockHTML = renderLockCellHTML();
+            return `
+                <tr>
+                    <td><strong>${g.matchup}</strong></td>
+                    <td>${lockHTML}</td>
+                    <td>${lockHTML}</td>
+                    <td>${lockHTML}</td>
+                    <td>${lockHTML}</td>
+                    <td>${lockHTML}</td>
+                    <td>${lockHTML}</td>
+                    <td>${lockHTML}</td>
+                </tr>
+            `;
+        }
+
+        const em = g.elevActive || g.elevMatrix || { zoneNumber: 1, direction: "ASCENT", psiElevPts: 0, hypoxicOverrideM13: false };
+        const m13 = g.m13Details || { mRiseMultiplier: 1.0, mRiseSignedHomeDelta: 0, m11OverrideApplied: false, coachSyncBlocked: false };
+        const tovVal = g.m12.netTurnoverEPA || 0;
+
+        const fibRes = calcMasterFibonacciAggregate({
+            m1: (g.vegasHomeSpread - g.m9Base.fairHomeSpread) * 0.08,
+            m5: -(g.m9Base.epaContribution || 0) * 0.05,
+            m7: (1.225 - g.m7.airDensityRho) * 2.0,
+            m6: (g.m9Base.deltaRzFin || 0) * -0.08,
+            m10: 0,
+            m12: tovVal * 0.12,
+            m2: 0,
+            m3: 0,
+            m11: (g.m11.phiBioScore + Math.abs(em.psiElevPts)) * 0.25,
+            m4: 0,
+            m8: g.m8.circadianStrainIndex * 0.12
+        }, 13, sliderForAgg, m13.mRiseMultiplier);
+
+        const m12Color = tovVal >= 0 ? "var(--accent-emerald)" : "var(--accent-danger)";
+        const m13Color = m13.m11OverrideApplied || m13.coachSyncBlocked
+            ? "var(--accent-gold)"
+            : (m13.mRiseSignedHomeDelta >= 0 ? "var(--accent-emerald)" : "var(--accent-danger)");
+        const omegaColor = fibRes.omegaFibScore >= 0 ? "var(--accent-emerald)" : "var(--accent-danger)";
+        const probColor = fibRes.liveAdjustedProb >= 52.4 ? "var(--accent-emerald)" : "var(--accent-danger)";
+
+        const overrideTag = m13.m11OverrideApplied
+            ? `<br><small style="color:var(--accent-gold);">🏔️ M11&gt;M13 ZEROED</small>`
+            : (m13.coachSyncBlocked ? `<br><small style="color:#f87171;">🔒 COACH LOCK</small>` : "");
+
+        const delayTag = g.m8.charterDelayShock > 0
+            ? `<br><small style="color:#d8b4fe;">✈️ Delay: ${g.m8.delayTotalDragPts} tot</small>`
+            : "";
+
+        return `
+            <tr>
+                <td><strong>${g.matchup}</strong></td>
+                <td>${g.m7.airDensityRho} kg/m³</td>
+                <td style="color:${g.m8.circadianStrainIndex > 0.8 ? 'var(--accent-danger)' : 'var(--text-primary)'};">${g.m8.circadianStrainIndex}${delayTag}</td>
+                <td style="color:var(--accent-cyan); font-weight:700;">Z${em.zoneNumber} ${em.direction.slice(0, 4)} (${em.psiElevPts} pts)<br><small style="color:var(--text-secondary);">&Phi;_bio: ${g.m11.phiBioScore}</small></td>
+                <td style="color:${m12Color}; font-weight:700;">${tovVal > 0 ? '+' : ''}${tovVal}</td>
+                <td style="color:${m13Color}; font-weight:700;">${m13.mRiseMultiplier.toFixed(4)}x (${m13.mRiseSignedHomeDelta > 0 ? '+' : ''}${m13.mRiseSignedHomeDelta})${overrideTag}</td>
+                <td style="font-family:var(--font-mono); font-weight:700; color:${omegaColor};">${fibRes.omegaFibScore > 0 ? '+' : ''}${fibRes.omegaFibScore.toFixed(4)}</td>
+                <td style="font-weight:800; color:${probColor};">${fibRes.liveAdjustedProb.toFixed(1)}%</td>
+            </tr>
+        `;
+    }).join("");
+}
+
+// ==========================================
+// TELEMETRY INSPECTOR (SHOWS M9 ΔRZ_FIN, M8 DELAY, M12 TOV, Ψ_11,12 & FAIR MARGIN)
+// ==========================================
+function renderTelemetryInspector() {
+    const container = document.getElementById("telemetry-container");
+    if (!container || AppState.processedGames.length === 0) return;
+
+    const showCoupledPsi = (AppState.activeMode === "balls_deep" || AppState.activeMode === "davinci");
+    const modeDisplay = AppState.activeMode === "tip"
+        ? "JUST THE TIP (M1–M9)"
+        : (AppState.activeMode === "balls_deep" ? "BALLS DEEP (v313 M1–M13)" : "DAVINCI");
+
+    container.className = "table-responsive";
+    container.innerHTML = `
+        <table class="quant-table">
+            <thead>
+                <tr>
+                    <th>Matchup</th>
+                    <th>Mode Active</th>
+                    <th>M8 Circadian / Delay</th>
+                    <th>M9 Red-Zone (&Delta;RZ_fin)</th>
+                    <th>M12 Turnover EPA</th>
+                    <th>Coupled Escalator (&Psi;_11,12)</th>
+                    <th>Model Fair Home Spread (M9)</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${AppState.processedGames.map(g => {
+                    const tipSpreadStr = `${g.homeTeam} ${g.m9Base.fairHomeSpread > 0 ? '+' + g.m9Base.fairHomeSpread : g.m9Base.fairHomeSpread}`;
+                    const activeSpreadStr = `${g.homeTeam} ${g.m9.fairHomeSpread > 0 ? '+' + g.m9.fairHomeSpread : g.m9.fairHomeSpread}`;
+                    const tovColor = g.m12.netTurnoverEPA >= 0 ? "var(--accent-emerald)" : "var(--accent-danger)";
+                    const rzVal = g.m9Base.deltaRzFin || 0;
+                    const rzColor = rzVal <= 0 ? "var(--accent-emerald)" : "var(--accent-danger)";
+                    const qbTag = g.thirdStringQbAlert ? `<br><small style="color:var(--accent-cyan);">🔄 3rd-QB: ${g.thirdStringTeam} TT Under</small>` : "";
+
+                    return `
+                        <tr>
+                            <td><strong>${g.matchup}</strong>${qbTag}</td>
+                            <td style="color:var(--accent-cyan); font-weight:700;">${modeDisplay}</td>
+                            <td>CSI: ${g.m8.circadianStrainIndex} (&Phi;: ${g.m8.phiCircadianPenalty})${g.m8.charterDelayShock > 0 ? `<br><small style="color:#d8b4fe;">✈️ I_delay: ${g.m8.charterDelayShock}</small>` : ""}</td>
+                            <td style="color:${rzColor}; font-weight:700;">${rzVal > 0 ? '+' : ''}${rzVal} pts</td>
+                            <td style="color:${tovColor}; font-weight:700;">${g.m12.netTurnoverEPA > 0 ? '+' : ''}${g.m12.netTurnoverEPA}</td>
+                            <td>${showCoupledPsi ? `<span style="color:var(--accent-gold); font-weight:700;">${g.psi11_12 > 0 ? '+' : ''}${g.psi11_12} pts</span>` : renderLockCellHTML()}</td>
+                            <td>
+                                ${showCoupledPsi
+                                    ? `<span style="color:var(--text-secondary); margin-right:10px;">Tip: ${tipSpreadStr}</span> <strong style="color:var(--accent-emerald);">Active: ${activeSpreadStr}</strong>`
+                                    : `<strong>${tipSpreadStr}</strong>`
+                                }
+                            </td>
+                        </tr>
+                    `;
+                }).join("")}
+            </tbody>
+        </table>
+    `;
+}
+
+// ==========================================
+// BIOPHYSICAL & WEATHER LAB (WITH 10-ZONE 0.1*Fz ASCENT/DESCENT Q1-Q4 CURVE)
+// ==========================================
+function renderBioWeatherLab() {
+    const container = document.getElementById("biolab-container");
+    if (!container || AppState.processedGames.length === 0) return;
+
+    const isLocked = (AppState.activeMode === "tip");
+    const modeScale = AppState.activeMode === "davinci"
+        ? (1.0 + AppState.intensitySlider * 0.382)
+        : 1.0;
+
+    const fmtShiftCell = (val, unit = "yds") => {
+        if (isLocked) return renderLockCellHTML();
+        const scaled = Number((val * modeScale).toFixed(2));
+        const color = scaled > 0 ? "var(--accent-emerald)" : (scaled < 0 ? "var(--accent-danger)" : "var(--text-secondary)");
+        return `<span style="color:${color}; font-weight:700;">${scaled > 0 ? '+' : ''}${scaled} ${unit}</span>`;
+    };
+
+    container.className = "table-responsive";
+    container.innerHTML = `
+        <table class="quant-table">
+            <thead>
+                <tr>
+                    <th>Matchup</th>
+                    <th>10-Zone Elevation (&Delta;h / Curve)</th>
+                    <th>Local Gravity g(h)</th>
+                    <th>Air Density &rho; (kg/m³)</th>
+                    <th>FG Shift (&Delta;D_FG)</th>
+                    <th>Pass Carry (&Delta;D_Pass)</th>
+                    <th>Pass Mod (&Delta;Y_Total)</th>
+                    <th>Somatic Density (&rho;_player)</th>
+                    <th>Bio + 10-Zone (&Phi;_bio &amp; &Psi;_elev)</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${AppState.processedGames.map(g => {
+                    const em = g.elevActive || g.elevMatrix || { zoneNumber: 1, wzWeight: 0.1, deltaFeet: 0, direction: "ASCENT", qCurve: [0.382, 0.618, 1.618, 1.618], psiElevPts: 0, hypoxicOverrideM13: false };
+                    const scaledBio = Number((g.m11CombinedDisplay * modeScale).toFixed(4));
+                    const bioColor = em.hypoxicOverrideM13 ? "var(--accent-gold)" : (scaledBio >= 0.025 ? "var(--accent-emerald)" : "var(--accent-cyan)");
+                    const zoneStr = `Zone ${em.zoneNumber} (0.1×F=${em.wzWeight}) ${em.direction}<br><small style="color:var(--text-secondary);">${em.deltaFeet > 0 ? '+' : ''}${em.deltaFeet} ft | Q1–Q4: ${em.qCurve.join("→")}</small>`;
+
+                    return `
+                        <tr>
+                            <td><strong>${g.matchup}</strong></td>
+                            <td>${isLocked ? `${g.elevationM}m` : zoneStr}</td>
+                            <td>${g.m11.localGravityG} m/s²</td>
+                            <td>${g.m7.airDensityRho}</td>
+                            <td>${fmtShiftCell(g.m7.fgRangeShiftYards, "yds")}</td>
+                            <td>${fmtShiftCell(g.m7.deepPassShiftYards, "yds")}</td>
+                            <td>${fmtShiftCell(g.m7.passGameModifierYards, "yds")}</td>
+                            <td>${isLocked ? renderLockCellHTML() : `${g.m11.rhoPlayerDensity} kg/m³`}</td>
+                            <td>${isLocked ? renderLockCellHTML() : `<span style="color:${bioColor}; font-weight:700;">&Psi;_elev: ${em.psiElevPts} pts | &Phi;_bio: ${g.m11.phiBioScore} (x${g.m11.closingMultiplier})</span>`}</td>
+                        </tr>
+                    `;
+                }).join("")}
+            </tbody>
+        </table>
+    `;
+}
+
+// ==========================================
+// PERMANENT ARCHIVE SEED + ZERO-TOKEN ESPN SCOREBOARD SYNC & 6 CLICKABLE VAULT CARDS
+// ==========================================
+const BLUE_BALLS_MARGIN = 3.0; // <= 3.0 pts miss from Vegas line = BLUE BALLS
+
+const PERMANENT_LEDGER_ARCHIVE = {
+    "nfl_mnf_lac_bal_2026_w10": {
+        league: "NFL",
+        week_label: "Week 10",
+        matchup: "LAC @ BAL",
+        status: "FINAL",
+        final_score: "LAC 23 - BAL 20",
+        is_locked: true,
+        trap_avoided: true,
+        trap_pick_label: "LAC Spread (-6.5) (LAC @ BAL)",
+        trap_vegas_line: -6.5,
+        trap_tip_proj: -2.1,
+        trap_tip_ev_pct: -27.62,
+        porkys_record: {
+            porkys_slot: "DAY-SHIFT TRAP #1",
+            is_core_three: true,
+            trap_label: "LAC Spread (-6.5) (LAC @ BAL)",
+            trap_line: -6.5,
+            trap_proj: -2.1,
+            trap_ev_pct: -27.62,
+            fade_label: "BAL Spread (+6.5) (BAL vs LAC)",
+            fade_team: "BAL",
+            fade_line: 6.5,
+            fade_proj: 2.1,
+            fade_ev_pct: 27.62,
+            safe_floor_hook: 10.5,
+            safe_floor_label: "Alt +10.5 (-175)",
+            safe_floor_win_pct: 88.4,
+            result_floor: "HIT",
+            result_straight: "HIT",
+            floor_miss_by: 0,
+            straight_miss_by: 0,
+            trap_dodged: true
         },
-        "games": games_slate,
-        "historical_ledger": updated_ledger
+        spread_record: {
+            pick_label: "BAL Spread (+6.5) (BAL vs LAC)",
+            vegas_line: 6.5,
+            odds: -110,
+            tip_proj: 2.1,
+            tip_win_pct: 66.85,
+            tip_ev_pct: 27.62,
+            tip_badge: "SMASH",
+            bd_proj: 1.4,
+            bd_win_pct: 69.25,
+            bd_ev_pct: 32.20,
+            safe_floor_label: "Alt +10.5 (-175)",
+            safe_floor_win_pct: 88.4,
+            bd_alt_label: "Alt +3.5 (+145)",
+            bd_alt_ev_pct: 41.80,
+            flagship_slot: "MÉNAGE À TROIS #2",
+            result_tip: "HIT",
+            result_bd: "HIT",
+            result_floor: "HIT",
+            result_ceiling: "HIT",
+            miss_by_pts: 0
+        },
+        total_record: {
+            pick_label: "LAC@BAL Total (O 44.5)",
+            vegas_line: 44.5,
+            odds: -110,
+            tip_proj: 46.1,
+            tip_win_pct: 55.80,
+            tip_ev_pct: 6.53,
+            tip_badge: "TOO_CLOSE",
+            bd_proj: 46.8,
+            bd_win_pct: 58.10,
+            bd_ev_pct: 10.92,
+            safe_floor_label: "Alt O 40.5 (-175)",
+            safe_floor_win_pct: 84.2,
+            bd_alt_label: "Alt O 47.5 (+155)",
+            bd_alt_ev_pct: 14.20,
+            flagship_slot: "",
+            result_tip: "BLUE_BALLS",
+            result_bd: "BLUE_BALLS",
+            result_floor: "HIT",
+            result_ceiling: "MISS",
+            miss_by_pts: 1.5
+        }
+    }
+};
+
+const ESPN_SCORE_CACHE = {
+    lastFetchMs: 0,
+    gamesByMatchup: {}
+};
+
+async function syncEspnLiveScores() {
+    const now = Date.now();
+    if (now - ESPN_SCORE_CACHE.lastFetchMs < 60000) return;
+    ESPN_SCORE_CACHE.lastFetchMs = now;
+
+    const endpoints = [
+        { league: "NFL", url: "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard" },
+        { league: "NCAA", url: "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?groups=80&limit=100" }
+    ];
+
+    for (const ep of endpoints) {
+        try {
+            const res = await fetch(ep.url, { cache: "no-store" });
+            if (!res.ok) continue;
+            const data = await res.json();
+            (data.events || []).forEach(ev => {
+                const comp = (ev.competitions && ev.competitions[0]) || {};
+                const competitors = comp.competitors || [];
+                const homeObj = competitors.find(c => c.homeAway === "home");
+                const awayObj = competitors.find(c => c.homeAway === "away");
+                if (!homeObj || !awayObj) return;
+
+                const homeCode = cleanTeamCode((homeObj.team && homeObj.team.abbreviation) || "");
+                const awayCode = cleanTeamCode((awayObj.team && awayObj.team.abbreviation) || "");
+                const homeScore = parseFloat(homeObj.score || "0");
+                const awayScore = parseFloat(awayObj.score || "0");
+
+                const state = (ev.status && ev.status.type && ev.status.type.state) || "pre";
+                const shortDetail = (ev.status && ev.status.type && ev.status.type.shortDetail) || "";
+                const key = `${awayCode} @ ${homeCode}`;
+                ESPN_SCORE_CACHE.gamesByMatchup[key] = {
+                    league: ep.league,
+                    homeCode,
+                    awayCode,
+                    homeScore,
+                    awayScore,
+                    state,
+                    shortDetail,
+                    scoreStr: `${awayCode} ${awayScore} - ${homeCode} ${homeScore}`
+                };
+            });
+        } catch (e) {
+            // Silent fallback
+        }
     }
 
-def write_atomic_json(payload, filepath=DATA_FILE):
-    temp_path = f"{filepath}.tmp"
-    with open(temp_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
-    os.replace(temp_path, filepath)
+    if (AppState.rawPayload) {
+        render_game_cards(AppState.rawPayload);
+    }
+    renderHistoricalLedger();
+    renderLiveBottomTicker();
+}
 
-def run_daemon():
-    print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v218)")
-    print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
-    print("=========================================================")
+function isRankedLedgerEntry(matchupStr, league, entryObj = null) {
+    if (league === "NFL") return AppState.filters.nfl;
+    if (league === "NCAA") {
+        if (!AppState.filters.ncaa) return false;
+        if (AppState.ledgerShowAllCompleted) return true;
+        if (AppState.processedGames.some(g => g.league === "NCAA" && g.matchup === matchupStr)) return true;
+        const liveRanked = (AppState.rawPayload && AppState.rawPayload.slate_info && Array.isArray(AppState.rawPayload.slate_info.ranked_ncaa_teams))
+            ? AppState.rawPayload.slate_info.ranked_ncaa_teams
+            : [];
+        if (entryObj && liveRanked.length >= 20) {
+            const hFull = entryObj.home_full_name || "";
+            const aFull = entryObj.away_full_name || "";
+            if (hFull || aFull) {
+                return liveRanked.includes(hFull) || liveRanked.includes(aFull);
+            }
+        }
+        if (AppState.rawPayload && Array.isArray(AppState.rawPayload.games)) {
+            const rawMatch = AppState.rawPayload.games.find(g => g.league === "NCAA" && `${cleanTeamCode(g.away_team)} @ ${cleanTeamCode(g.home_team)}` === matchupStr);
+            if (rawMatch) return isRankedNCAAGame(rawMatch);
+        }
+        const parts = (matchupStr || "").split("@").map(s => cleanTeamCode(s.trim()));
+        return parts.some(code => RANKED_NCAA_CODES.has(code) && code !== "UNM" && code !== "SMU" && code !== "OKST" && code !== "LSU");
+    }
+    return true;
+}
 
-    while True:
-        try:
-            payload = build_master_payload()
-            write_atomic_json(payload, DATA_FILE)
-            timestamp = payload["slate_info"]["last_updated"]
-            print(f"[{timestamp}] Synced {len(payload['games'])} NFL/NCAA matchups + graded ledger to {DATA_FILE}")
-        except Exception as err:
-            print(f"[Scraper Error] {err}")
-        time.sleep(POLL_INTERVAL_SECONDS)
+function gradeSpreadPick(isHomeSpread, baseLine, homeScore, awayScore) {
+    const teamMargin = isHomeSpread ? (homeScore - awayScore) : (awayScore - homeScore);
+    const coverDiff = teamMargin + Number(baseLine);
+    if (coverDiff > 0) return { outcome: "HIT", missBy: 0 };
+    if (coverDiff === 0) return { outcome: "PUSH", missBy: 0 };
+    const missPts = Number(Math.abs(coverDiff).toFixed(1));
+    if (missPts <= BLUE_BALLS_MARGIN) return { outcome: "BLUE_BALLS", missBy: missPts };
+    return { outcome: "MISS", missBy: missPts };
+}
 
-if __name__ == "__main__":
-    if os.environ.get("GITHUB_ACTIONS") == "true":
-        payload = build_master_payload()
-        write_atomic_json(payload, DATA_FILE)
-        print(f"[Cloud Scraper] Successfully synced {len(payload['games'])} NFL + NCAA games to {DATA_FILE}")
-    else:
-        run_daemon()
+function gradeTotalPick(projectedTotal, vegasTotal, homeScore, awayScore) {
+    const actualTotal = homeScore + awayScore;
+    const line = Number(vegasTotal);
+    if (actualTotal === line) return { outcome: "PUSH", missBy: 0 };
+    const takingUnder = Number(projectedTotal) < line;
+    const coverDiff = takingUnder ? (line - actualTotal) : (actualTotal - line);
+    if (coverDiff > 0) return { outcome: "HIT", missBy: 0 };
+    const missPts = Number(Math.abs(coverDiff).toFixed(1));
+    if (missPts <= BLUE_BALLS_MARGIN) return { outcome: "BLUE_BALLS", missBy: missPts };
+    return { outcome: "MISS", missBy: missPts };
+}
+
+// Collapsible Ledger Legend Drawer (VIP Club & Wingman Edition — "left the money on the dresser")
+function buildLedgerLegendHTML() {
+    const legendKey = "LEDGER_LEGEND_DRAWER";
+    const isLegendOpen = openCardMemory.has(legendKey);
+
+    return `
+        <div style="margin-bottom: 16px; border: 1px solid rgba(59, 130, 246, 0.45); border-radius: 8px; background: #0f172a; overflow: hidden;">
+            <div onclick="window.toggleLegendDrawer('${legendKey}', 'ledger', event)" style="cursor: pointer; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(90deg, rgba(59, 130, 246, 0.16), rgba(15, 23, 42, 0.9)); user-select: none;">
+                <span style="font-family: var(--font-mono); font-size: 12px; font-weight: 800; color: #60a5fa; letter-spacing: 0.03em;">
+                    💣 LEDGER DECODER: HOW WE GRADE MONEY SHOTS (W), BLUE BALLS (BB) &amp; GRENADES DODGED
+                </span>
+                <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); text-decoration: underline;">
+                    ${isLegendOpen ? 'Hide Decoder ▲' : 'Click to Expand ▼'}
+                </span>
+            </div>
+
+            <div style="display: ${isLegendOpen ? 'block' : 'none'}; padding: 14px 18px; border-top: 1px solid var(--border-subtle); font-size: 12px; line-height: 1.55; color: var(--text-secondary);">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px;">
+                    <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
+                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">THE MORNING-AFTER SCORECARD (W - L - BB)</div>
+                        <div>• <strong style="color:var(--accent-emerald);">✅ HIT (W):</strong> <em>The Money Shot.</em> Covered the Vegas closing number, walked out, and left the money on the dresser.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:#60a5fa;">🔵 BLUE BALLS (BB):</strong> <em>Robbed at the Two-Minute Warning.</em> Missed the Vegas line by <strong>&le;3.0 points (one field goal or less)</strong>—when she had you 99% of the way to the finish line and then Mom walks in.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:var(--accent-danger);">❌ MISS (L):</strong> <em>Walk of Shame.</em> Missed the closing line by more than 3.0 points. No excuses—we post every receipt.</div>
+                    </div>
+
+                    <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
+                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">MAIN STAGE vs. LAP-DANCE COIN FLIPS</div>
+                        <div>• <strong style="color:var(--accent-emerald);">🔥 Official SMASH (&ge;+10.0% EV):</strong> Our headline earners that clear the +10% EV velvet rope, tracked alongside the <strong>Flagship 5-Pack</strong> and <strong>Ménage à Trois</strong>.</div>
+                        <div style="margin-top: 4px;">• <strong style="color:#60a5fa;">🔵 All Tease, No Squeeze (-18.9% to +9.9% EV):</strong> Tight toss-ups inside the -18.9% to +9.9% EV buffer—quarantined in their own booth so 50/50 bar-bet variance never waters down our Official SMASH record.</div>
+                    </div>
+
+                    <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
+                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-danger); margin-bottom: 4px;">💣 GRENADES DODGED (&le;-19.0% EV)</div>
+                        <div>• <strong>Wingman Intervention:</strong> <em>You were a little too drunk to make that call last night.</em> Tracks the 1:45 AM beer-goggle public favorites we stamped with a red <strong>PASS (&le;-19.0% EV)</strong>—the ones that look like a 10 on TV after six drinks, right before they wreck your life.</div>
+                        <div style="margin-top: 4px;">• Every time a casual-bait favorite blows up and fails to cover, <strong>Grenades Dodged</strong> ticks up—counting how many times your wingman jumped on the grenade so you didn't wake up chewing your own arm off on Monday morning.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderHistoricalLedger() {
+    const container = document.getElementById("ledger-container");
+    if (!container) return;
+
+    if (Date.now() - ESPN_SCORE_CACHE.lastFetchMs >= 60000) {
+        syncEspnLiveScores();
+    }
+
+    const ledgerObj = (AppState.rawPayload && AppState.rawPayload.historical_ledger) || {};
+    const rawEntries = ledgerObj.entries || {};
+    const showBallsDeep = (AppState.activeMode === "balls_deep" || AppState.activeMode === "davinci");
+
+    const entriesMap = Object.assign({}, rawEntries, PERMANENT_LEDGER_ARCHIVE);
+    Object.keys(rawEntries).forEach(k => {
+        const rawE = rawEntries[k];
+        if (!rawE) return;
+        const cleanM = cleanLabelCodes(rawE.matchup || "");
+        if (cleanM === "LAC @ BAL" && rawE.spread_record && rawE.spread_record.flagship_slot) {
+            if (entriesMap["nfl_mnf_lac_bal_2026_w10"] && entriesMap["nfl_mnf_lac_bal_2026_w10"].spread_record) {
+                entriesMap["nfl_mnf_lac_bal_2026_w10"].spread_record.flagship_slot = rawE.spread_record.flagship_slot;
+            }
+        }
+    });
+
+    const renderGradeBadge = (res, missBy = 0) => {
+        if (res === "HIT") {
+            return `<span class="badge-smash" style="font-size:11px;">✅ HIT</span>`;
+        }
+        if (res === "BLUE_BALLS") {
+            const marginTag = missBy > 0 ? ` (-${missBy} pts)` : "";
+            return `<span class="badge-pass" style="background:rgba(59,130,246,0.18);color:#60a5fa;border:1px solid rgba(59,130,246,0.55);font-size:11px;font-weight:800;">🔵 BLUE BALLS${marginTag}</span>`;
+        }
+        if (res === "MISS") {
+            return `<span class="badge-pass" style="background:rgba(239,68,68,0.18);color:var(--accent-danger);border-color:rgba(239,68,68,0.45);font-size:11px;">❌ MISS</span>`;
+        }
+        if (res === "PUSH") {
+            return `<span class="badge-pass" style="font-size:11px;">➖ PUSH</span>`;
+        }
+        return `<span class="badge-pass" style="color:var(--accent-cyan);border-color:rgba(6,182,212,0.4);font-size:11px;">⏳ LOCKED / PENDING</span>`;
+    };
+
+    const makeBucket = () => ({ hits: 0, misses: 0, blueBalls: 0, total: 0 });
+    const buckets = {
+        flagship_5pack: makeBucket(),
+        menage_a_trois: makeBucket(),
+        porkys_5pack:   makeBucket(),
+        porkys_core3:   makeBucket(),
+        porkys_flex2:   makeBucket(),
+        overall_smash:  makeBucket(),
+        spread_smash:   makeBucket(),
+        total_smash:    makeBucket(),
+        all_tease:      makeBucket(),
+        champagne_room: { dodged: 0, total: 0 },
+        safe_floors:    makeBucket(),
+        ceilings:       makeBucket(),
+        tip_all:        makeBucket(),
+        balls_deep_all: makeBucket()
+    };
+
+    const fivePackByWeek = {};
+    const ensureWeekFivePackBucket = (wk) => {
+        if (!fivePackByWeek[wk]) {
+            fivePackByWeek[wk] = {
+                hits: 0,
+                misses: 0,
+                blueBalls: 0,
+                total: 0,
+                menage: makeBucket(),
+                rows: []
+            };
+        }
+        return fivePackByWeek[wk];
+    };
+
+    const porkysByWeek = {};
+    const ensureWeekPorkysBucket = (wk) => {
+        if (!porkysByWeek[wk]) {
+            porkysByWeek[wk] = {
+                hits: 0,
+                misses: 0,
+                blueBalls: 0,
+                total: 0,
+                core3: makeBucket(),
+                flex2: makeBucket(),
+                coreLegs: [],
+                flexLegs: [],
+                rows: []
+            };
+        }
+        return porkysByWeek[wk];
+    };
+
+    const vaultRows = {
+        flagship_5pack: [],
+        porkys_5pack: [],
+        overall_smash: [],
+        all_tease: [],
+        grenades_dodged: [],
+        floors_ceilings: [],
+        tip_vs_bd: []
+    };
+
+    const tallyGradeToObj = (targetObj, res) => {
+        if (res !== "HIT" && res !== "MISS" && res !== "BLUE_BALLS") return;
+        targetObj.total += 1;
+        if (res === "HIT") targetObj.hits += 1;
+        else if (res === "BLUE_BALLS") targetObj.blueBalls += 1;
+        else if (res === "MISS") targetObj.misses += 1;
+    };
+
+    const tallyGrade = (bucketKey, res) => {
+        tallyGradeToObj(buckets[bucketKey], res);
+    };
+
+    let upcomingRowsHTML = "";
+    const renderedMatchups = new Set();
+    const activeSlateMatchups = new Set(AppState.processedGames.map(g => g.matchup));
+
+    const buildStandardVaultRowHTML = (weekLabel, cleanMatchup, statusLabel, type, slot, pickLabel, ledgerTier, vegasLine, baseOdds, tipColor, fmtTipProj, tipWinPct, tipEvPct, showBallsDeepFlag, bdColor, fmtBdProj, bdWinPct, bdEvPct, safeFloorLabel, safeFloorWinPct, bdAltLabel, bdAltEvPct, gradedTip, missByPts) => {
+        const floorInfoHTML = safeFloorLabel
+            ? `<small style="color:var(--accent-cyan);">🛡️ ${safeFloorLabel} (${safeFloorWinPct}%)</small> • `
+            : "";
+        return `
+            <tr>
+                <td><span style="font-family:var(--font-mono); font-size:10px; color:var(--accent-gold); font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+                <td>${type} ${slot ? `<br><span class="${slot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}">${slot}</span>` : ""}</td>
+                <td><strong>${pickLabel}</strong> ${renderTierBadgeHTML(ledgerTier)}</td>
+                <td>${vegasLine} (${baseOdds > 0 ? '+' + baseOdds : baseOdds})</td>
+                <td style="color:${tipColor};">Proj: <strong>${fmtTipProj}</strong> (${tipWinPct}% | ${tipEvPct > 0 ? '+' : ''}${tipEvPct}% EV)</td>
+                <td>${showBallsDeepFlag ? `<span style="color:${bdColor};">Proj: <strong>${fmtBdProj}</strong> (${bdWinPct}% | ${bdEvPct > 0 ? '+' : ''}${bdEvPct}% EV)<br>${floorInfoHTML}<small style="color:var(--accent-gold);">🎯 ${bdAltLabel} (${bdAltEvPct > 0 ? '+' : ''}${bdAltEvPct}% EV)</small></span>` : renderLockCellHTML()}</td>
+                <td>${renderGradeBadge(gradedTip, missByPts)}</td>
+            </tr>
+        `;
+    };
+
+    const buildFloorCeilingVaultRowHTML = (weekLabel, cleanMatchup, statusLabel, type, pickLabel, vegasLine, safeFloorLabel, safeFloorWinPct, gradedFloor, floorMissBy, bdAltLabel, bdAltEvPct, gradedCeiling, ceilingMissBy) => {
+        return `
+            <tr>
+                <td><span style="font-family:var(--font-mono); font-size:10px; color:var(--accent-gold); font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+                <td>${type}</td>
+                <td><strong>${pickLabel}</strong><br><span style="font-size:11px; color:var(--text-secondary);">Base Line: ${vegasLine}</span></td>
+                <td style="color:var(--accent-cyan); font-weight:700;">🛡️ ${safeFloorLabel || 'Safe Floor (-2φ)'}<br><small style="color:var(--text-secondary);">Floor Win Prob: ${safeFloorWinPct || 85.0}%</small></td>
+                <td>${renderGradeBadge(gradedFloor, floorMissBy)}</td>
+                <td style="color:var(--accent-gold); font-weight:700;">🎯 ${bdAltLabel || 'Ceiling Escalator (+φ)'}<br><small style="color:var(--text-secondary);">Alt EV: ${bdAltEvPct > 0 ? '+' : ''}${bdAltEvPct || 0}% EV</small></td>
+                <td>${renderGradeBadge(gradedCeiling, ceilingMissBy)}</td>
+            </tr>
+        `;
+    };
+
+    const buildPorkysVaultRowHTML = (weekLabel, cleanMatchup, statusLabel, slotLabel, isCore3, trapLabel, trapLine, trapProj, trapEvPct, fadeTeam, safeFloorLabel, safeFloorWinPct, fadeBaseLine, gradedFloor, floorMissBy, gradedStraight, straightMissBy) => {
+        const slotStyle = isCore3
+            ? "background:rgba(239,68,68,0.18); color:#f87171; border:1px solid rgba(239,68,68,0.55);"
+            : "background:rgba(236,72,153,0.16); color:#f472b6; border:1px solid rgba(236,72,153,0.5);";
+        const tierLabel = isCore3 ? "3-PICK CORE" : "2-PICK FLEX";
+        const fmtTrapLine = Number(trapLine) > 0 ? `+${trapLine}` : `${trapLine}`;
+        const fmtFadeLine = Number(fadeBaseLine) > 0 ? `+${fadeBaseLine}` : `${fadeBaseLine}`;
+        return `
+            <tr>
+                <td><span style="font-family:var(--font-mono); font-size:10px; color:#f87171; font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+                <td><span style="font-family:var(--font-mono); font-size:10px; font-weight:800; padding:2px 6px; border-radius:4px; ${slotStyle}">🐷 ${slotLabel}</span><br><small style="color:var(--text-secondary);">${tierLabel}</small></td>
+                <td><strong style="color:var(--accent-danger);">🚫 ${trapLabel}</strong><br><small style="color:var(--text-secondary);">Line: ${fmtTrapLine} | Proj: ${trapProj} (${trapEvPct}% EV)</small></td>
+                <td style="color:var(--accent-cyan); font-weight:700;">🛡️ ${fadeTeam} ${safeFloorLabel}<br><small style="color:var(--text-secondary);">Base Fade: ${fadeTeam} ${fmtFadeLine} • Floor Win: ${safeFloorWinPct}%</small></td>
+                <td>${renderGradeBadge(gradedFloor, floorMissBy)}</td>
+                <td>${renderGradeBadge(gradedStraight, straightMissBy)}</td>
+                <td>${gradedFloor === "HIT" ? '<span class="badge-smash" style="font-size:11px;">🐷 PARLAY LEG HIT</span>' : (gradedFloor === "PENDING" ? '<span class="badge-pass" style="color:var(--accent-cyan);border-color:rgba(6,182,212,0.4);font-size:11px;">⏳ ACTIVE LEG</span>' : '<span class="badge-pass" style="background:rgba(239,68,68,0.18);color:var(--accent-danger);font-size:11px;">💥 LEG BUSTED</span>')}</td>
+            </tr>
+        `;
+    };
+
+    const recordedPorkysMatchups = new Set();
+
+    // Helper: extract numeric {awayScore, homeScore} from ESPN live cache or archived final_score ("IND 3 - HOU 26")
+    const parseFinalScores = (entryObj, espnObj) => {
+        if (espnObj && espnObj.state === "post" && !isNaN(espnObj.homeScore) && !isNaN(espnObj.awayScore)) {
+            return { awayScore: Number(espnObj.awayScore), homeScore: Number(espnObj.homeScore) };
+        }
+        if (entryObj && typeof entryObj.final_score === "string") {
+            const m = entryObj.final_score.match(/\s(\d+)\s*-\s*[A-Za-z0-9()]+\s+(\d+)/);
+            if (m) {
+                return { awayScore: Number(m[1]), homeScore: Number(m[2]) };
+            }
+        }
+        return null;
+    };
+
+    // Prioritize permanent archive -> canonical prefixed FINAL/graded entries -> newer entries (fixes IND_HOU_2026 vs NFL_IND_HOU_2026 shadowing)
+    const sortedArchiveIds = Object.keys(entriesMap).sort((a, b) => {
+        const ea = entriesMap[a] || {};
+        const eb = entriesMap[b] || {};
+        const scoreEntry = (id, e) => {
+            let s = 0;
+            if (PERMANENT_LEDGER_ARCHIVE[id]) s += 100;
+            const sOdds = Math.abs(Number((e.spread_record && e.spread_record.odds) || -110));
+            const tOdds = Math.abs(Number((e.total_record && e.total_record.odds) || -110));
+            const isCorruptedLive = (sOdds >= 220 || tOdds >= 220);
+            if (!isCorruptedLive) s += 50;
+            if (e.status === "FINAL") s += 30;
+            if (e.spread_record && e.spread_record.result_tip && e.spread_record.result_tip !== "PENDING") s += 20;
+            if (id.startsWith("NFL_") || id.startsWith("NCAA_")) s += 10;
+            return s;
+        };
+        return scoreEntry(b, eb) - scoreEntry(a, ea);
+    });
+
+    // 1. Process COMPLETED/FINAL archived games and store them in their respective Clickable Card Vaults
+    sortedArchiveIds.forEach(archId => {
+        const entry = entriesMap[archId];
+        if (!entry) return;
+
+        const cleanMatchup = cleanLabelCodes(entry.matchup || "");
+        if (!cleanMatchup || renderedMatchups.has(cleanMatchup)) return;
+
+        const entryLeague = entry.league || "NFL";
+        if (!isRankedLedgerEntry(cleanMatchup, entryLeague, entry)) return;
+
+        const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[cleanMatchup];
+        const parsedScores = parseFinalScores(entry, espnMatch);
+        const isFinal = entry.status === "FINAL" || (espnMatch && espnMatch.state === "post");
+
+        if (activeSlateMatchups.has(cleanMatchup) && !isFinal) return;
+
+        const hasGradedResult = entry.spread_record && (
+            entry.spread_record.result_tip === "HIT" ||
+            entry.spread_record.result_tip === "MISS" ||
+            entry.spread_record.result_tip === "BLUE_BALLS" ||
+            entry.spread_record.result_tip === "PUSH"
+        );
+        if (!isFinal && !hasGradedResult) return;
+
+        renderedMatchups.add(cleanMatchup);
+
+        const weekLabel = inferFootballWeekLabel(entry, "Week 11");
+        const scoreDisplay = entry.final_score || (espnMatch ? espnMatch.scoreStr : "COMPLETED");
+        const statusLabel = `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${scoreDisplay})</span>`;
+
+        const matchupParts = cleanMatchup.split("@").map(s => cleanTeamCode(s.trim()));
+        const entryAwayCode = cleanTeamCode(entry.away_team || matchupParts[0] || "");
+        const entryHomeCode = cleanTeamCode(entry.home_team || matchupParts[1] || "");
+
+        // Detect Grenade Dodged from explicit archive metadata, Porky's record, OR any archived FINAL spread whose opposite side was <= -19.0% EV PASS
+        if (entry.trap_avoided) {
+            buckets.champagne_room.total += 1;
+            buckets.champagne_room.dodged += 1;
+            const trapLabel = cleanLabelCodes(entry.trap_pick_label || `${cleanMatchup} Public Favorite Trap`);
+            const trapLine = entry.trap_vegas_line !== undefined ? entry.trap_vegas_line : "--";
+            const trapProj = entry.trap_tip_proj !== undefined ? entry.trap_tip_proj : "--";
+            const trapEv = entry.trap_tip_ev_pct !== undefined ? `${entry.trap_tip_ev_pct}% EV` : "&le;-19.0% EV";
+            const fadeSideLabel = (entry.spread_record && entry.spread_record.pick_label) ? cleanLabelCodes(entry.spread_record.pick_label) : "Counter-Strike Dog";
+
+            vaultRows.grenades_dodged.push(`
+                <tr>
+                    <td><span style="font-family:var(--font-mono); font-size:10px; color:var(--accent-gold); font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+                    <td>PUBLIC GRENADE<br><span class="badge-pass" style="background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);font-size:10px;font-weight:800;">PASS</span></td>
+                    <td><strong style="color:var(--accent-danger);">🚫 TRAP: ${trapLabel}</strong></td>
+                    <td>${trapLine} (-110)</td>
+                    <td style="color:var(--accent-danger);">Proj: <strong>${trapProj}</strong> (${trapEv})</td>
+                    <td style="color:var(--accent-emerald);"><strong>✅ FADE HIT:</strong> ${fadeSideLabel}</td>
+                    <td><span class="badge-smash" style="font-size:11px;">💣 GRENADE DODGED</span></td>
+                </tr>
+            `);
+        } else if (isFinal && entry.spread_record) {
+            const sr = entry.spread_record;
+            const fadeWinProb = Number(sr.tip_win_pct !== undefined ? sr.tip_win_pct : (sr.tipModelPct || 50)) / 100.0;
+            const oppWinProb = Math.max(0.01, Math.min(0.99, 1.0 - fadeWinProb));
+            const derivedTrapEv = Number((((oppWinProb * (100.0 / 110.0)) - (1.0 - oppWinProb)) * 100.0).toFixed(2));
+            const prTrapEv = (entry.porkys_record && entry.porkys_record.trap_ev_pct !== undefined) ? Number(entry.porkys_record.trap_ev_pct) : null;
+            const trapEvNum = prTrapEv !== null ? prTrapEv : derivedTrapEv;
+
+            if (trapEvNum <= PASS_EV_CUTOFF) {
+                const fadeLineNum = Number(sr.vegas_line !== undefined ? sr.vegas_line : (sr.vegas_closing_line !== undefined ? sr.vegas_closing_line : 0));
+                const fadeProjNum = Number(sr.tip_proj !== undefined ? sr.tip_proj : fadeLineNum);
+                const fadeTeamClean = cleanTeamCode(sr.pick_team || "");
+                const fadeIsHome = (fadeTeamClean && fadeTeamClean === entryHomeCode) || cleanLabelCodes(sr.pick_label || "").startsWith(`${entryHomeCode} `);
+                const trapTeamCode = fadeIsHome ? entryAwayCode : entryHomeCode;
+                const trapLineNum = -fadeLineNum;
+                const trapProjNum = Number((-fadeProjNum).toFixed(2));
+                const fmtTrapLine = trapLineNum > 0 ? `+${trapLineNum}` : `${trapLineNum}`;
+                const fmtTrapProj = trapProjNum > 0 ? `+${trapProjNum}` : `${trapProjNum}`;
+                const trapLabel = (entry.porkys_record && entry.porkys_record.trap_label)
+                    ? cleanLabelCodes(entry.porkys_record.trap_label)
+                    : `${trapTeamCode} Spread (${fmtTrapLine}) (${cleanMatchup})`;
+                const fadeSideLabel = cleanLabelCodes(sr.pick_label || `${fadeTeamClean || (fadeIsHome ? entryHomeCode : entryAwayCode)} Spread`);
+
+                let trapOutcome = null;
+                if (parsedScores) {
+                    trapOutcome = gradeSpreadPick(!fadeIsHome, trapLineNum, parsedScores.homeScore, parsedScores.awayScore).outcome;
+                } else if (sr.result_tip && sr.result_tip !== "PENDING") {
+                    trapOutcome = (sr.result_tip === "HIT" || sr.result_tip === "PUSH") ? "MISS" : "HIT";
+                }
+
+                if (trapOutcome) {
+                    buckets.champagne_room.total += 1;
+                    const dodgedSuccess = (trapOutcome !== "HIT");
+                    if (dodgedSuccess) {
+                        buckets.champagne_room.dodged += 1;
+                    }
+                    vaultRows.grenades_dodged.push(`
+                        <tr>
+                            <td><span style="font-family:var(--font-mono); font-size:10px; color:var(--accent-gold); font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+                            <td>PUBLIC GRENADE<br><span class="badge-pass" style="background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);font-size:10px;font-weight:800;">PASS</span></td>
+                            <td><strong style="color:var(--accent-danger);">🚫 TRAP: ${trapLabel}</strong></td>
+                            <td>${fmtTrapLine} (-110)</td>
+                            <td style="color:var(--accent-danger);">Proj: <strong>${fmtTrapProj}</strong> (${trapEvNum}% EV)</td>
+                            <td style="color:${dodgedSuccess ? 'var(--accent-emerald)' : 'var(--accent-danger)'};"><strong>${dodgedSuccess ? '✅ FADE HIT:' : '💥 TRAP COVERED:'}</strong> ${fadeSideLabel}</td>
+                            <td>${dodgedSuccess ? '<span class="badge-smash" style="font-size:11px;">💣 GRENADE DODGED</span>' : '<span class="badge-pass" style="background:rgba(239,68,68,0.18);color:var(--accent-danger);font-size:11px;">💥 BLEW UP</span>'}</td>
+                        </tr>
+                    `);
+                }
+            }
+        }
+
+        // Audit archived Porky's 5-Pack (3 Core Day-Shift Traps + 2 Keep-It-In-Your-Pants Flex)
+        if (entry.porkys_record && !recordedPorkysMatchups.has(cleanMatchup)) {
+            recordedPorkysMatchups.add(cleanMatchup);
+            const pr = entry.porkys_record;
+            const pSlot = pr.porkys_slot || "DAY-SHIFT TRAP #1";
+            const isCore3 = pr.is_core_three !== undefined ? Boolean(pr.is_core_three) : pSlot.toUpperCase().includes("DAY-SHIFT");
+            const pTrapLabel = cleanLabelCodes(pr.trap_label || `${cleanMatchup} Trap`);
+            const pFadeTeam = cleanTeamCode(pr.fade_team || entryHomeCode);
+            const isHomeFade = (pFadeTeam === entryHomeCode);
+            const pFadeLine = Number(pr.fade_line !== undefined ? pr.fade_line : 0);
+            const pFloorHook = pr.safe_floor_hook !== undefined ? Number(pr.safe_floor_hook) : snapToHalfPointHook(pFadeLine, +3.5);
+            const pFloorLabel = pr.safe_floor_label || `Alt ${pFloorHook > 0 ? '+' + pFloorHook.toFixed(1) : pFloorHook.toFixed(1)} (-175)`;
+            const pFloorWinPct = pr.safe_floor_win_pct || 85.0;
+
+            let pFloorRes = pr.result_floor || "PENDING";
+            let pFloorMiss = Number(pr.floor_miss_by || 0);
+            let pStraightRes = pr.result_straight || "PENDING";
+            let pStraightMiss = Number(pr.straight_miss_by || 0);
+
+            if (parsedScores && (pFloorRes === "PENDING" || pStraightRes === "PENDING")) {
+                const flObj = gradeSpreadPick(isHomeFade, pFloorHook, parsedScores.homeScore, parsedScores.awayScore);
+                const stObj = gradeSpreadPick(isHomeFade, pFadeLine, parsedScores.homeScore, parsedScores.awayScore);
+                if (pFloorRes === "PENDING") { pFloorRes = flObj.outcome; pFloorMiss = flObj.missBy; }
+                if (pStraightRes === "PENDING") { pStraightRes = stObj.outcome; pStraightMiss = stObj.missBy; }
+            }
+
+            const pRowHTML = buildPorkysVaultRowHTML(
+                weekLabel, cleanMatchup, statusLabel, pSlot, isCore3,
+                pTrapLabel, pr.trap_line !== undefined ? pr.trap_line : -pFadeLine,
+                pr.trap_proj !== undefined ? pr.trap_proj : "--",
+                pr.trap_ev_pct !== undefined ? pr.trap_ev_pct : "--",
+                pFadeTeam, pFloorLabel, pFloorWinPct, pFadeLine,
+                pFloorRes, pFloorMiss, pStraightRes, pStraightMiss
+            );
+
+            const pWkObj = ensureWeekPorkysBucket(weekLabel);
+            if (pFloorRes === "HIT" || pFloorRes === "MISS" || pFloorRes === "BLUE_BALLS") {
+                tallyGrade("porkys_5pack", pFloorRes);
+                tallyGrade(isCore3 ? "porkys_core3" : "porkys_flex2", pFloorRes);
+                tallyGradeToObj(pWkObj, pFloorRes);
+                tallyGradeToObj(isCore3 ? pWkObj.core3 : pWkObj.flex2, pFloorRes);
+            }
+            if (isCore3) pWkObj.coreLegs.push({ slot: pSlot, outcome: pFloorRes });
+            else pWkObj.flexLegs.push({ slot: pSlot, outcome: pFloorRes });
+            pWkObj.rows.push(pRowHTML);
+            vaultRows.porkys_5pack.push({ weekLabel, rowHTML: pRowHTML, isCore3, outcome: pFloorRes });
+        }
+
+        const archivedRecords = [
+            { type: "SPREAD", rec: entry.spread_record },
+            { type: "TOTAL (O/U)", rec: entry.total_record }
+        ].filter(x => x.rec);
+
+        archivedRecords.forEach(({ type, rec }) => {
+            const isSpread = type === "SPREAD";
+            const pickLabel = cleanLabelCodes(rec.pick_label || rec.player || cleanMatchup);
+            const vegasLine = rec.vegas_line !== undefined ? Number(rec.vegas_line) : (rec.vegas_closing_line !== undefined ? Number(rec.vegas_closing_line) : (rec.line !== undefined ? Number(rec.line) : Number(rec.baseLine || 0)));
+            const baseOdds = rec.odds !== undefined ? rec.odds : (rec.baseOdds || -110);
+            const tipProj = rec.tip_proj !== undefined ? Number(rec.tip_proj) : Number(rec.tipProjectedMean || vegasLine);
+            const tipWinPct = rec.tip_win_pct !== undefined ? rec.tip_win_pct : (rec.tipModelPct || 50);
+            const tipEvPct = rec.tip_ev_pct !== undefined ? rec.tip_ev_pct : (rec.tipEvPct || 0);
+            const ledgerTier = getTierFromEv(tipEvPct);
+            const tipColor = getTierColor(ledgerTier);
+
+            const bdProj = rec.bd_proj !== undefined ? Number(rec.bd_proj) : (rec.balls_deep_proj !== undefined ? Number(rec.balls_deep_proj) : Number(rec.bdProjectedMean || tipProj));
+            const bdWinPct = rec.bd_win_pct !== undefined ? rec.bd_win_pct : (rec.balls_deep_win_pct !== undefined ? rec.balls_deep_win_pct : (rec.bdModelPct || tipWinPct));
+            const bdEvPct = rec.bd_ev_pct !== undefined ? rec.bd_ev_pct : (rec.balls_deep_ev_pct !== undefined ? rec.balls_deep_ev_pct : (rec.bdEvPct || tipEvPct));
+            const bdTier = getTierFromEv(bdEvPct);
+            const bdColor = getTierColor(bdTier);
+
+            const pickTeamClean = cleanTeamCode(rec.pick_team || "");
+            const isHomeSpreadPick = isSpread && (
+                (pickTeamClean && pickTeamClean === entryHomeCode) ||
+                pickLabel.startsWith(`${entryHomeCode} `)
+            );
+
+            const isUnderTip = !isSpread && (rec.tip_direction ? rec.tip_direction === "U" : (tipProj < vegasLine));
+            const defaultFloorHook = isSpread
+                ? snapToHalfPointHook(vegasLine, +3.5)
+                : (isUnderTip ? (Math.floor(vegasLine + 3.5) + 0.5) : (Math.floor(vegasLine - 3.5) + 0.5));
+            const defaultCeilHook = isSpread
+                ? snapToHalfPointHook(vegasLine, -3.0)
+                : (isUnderTip ? (Math.floor(vegasLine - 3.0) + 0.5) : (Math.floor(vegasLine + 3.0) + 0.5));
+            const safeFloorLabel = rec.safe_floor_label || rec.safeFloorLabel || (isSpread
+                ? `Alt ${defaultFloorHook > 0 ? '+' + defaultFloorHook.toFixed(1) : defaultFloorHook.toFixed(1)} (-175)`
+                : `Alt ${isUnderTip ? 'U' : 'O'} ${defaultFloorHook.toFixed(1)} (-175)`);
+            const safeFloorWinPct = rec.safe_floor_win_pct || rec.safeFloorWinPct || 84.5;
+
+            const bdAltLabel = rec.bd_alt_label || rec.bdAltLabel || (isSpread
+                ? `Alt ${defaultCeilHook > 0 ? '+' + defaultCeilHook.toFixed(1) : defaultCeilHook.toFixed(1)} (+145)`
+                : `Alt ${isUnderTip ? 'U' : 'O'} ${defaultCeilHook.toFixed(1)} (+155)`);
+            const bdAltEvPct = rec.bd_alt_ev_pct !== undefined ? rec.bd_alt_ev_pct : (rec.bdAltEvPct || 0);
+            const slot = rec.flagship_slot || rec.flagshipSlot || "";
+
+            let gradedTip = rec.result_tip || rec.result || "PENDING";
+            let gradedBd = rec.result_bd || rec.result_balls_deep || gradedTip;
+            let missByPts = Number(rec.miss_by_pts || 0);
+            let gradedFloor = rec.result_floor || "";
+            let floorMissBy = 0;
+            let gradedCeiling = rec.result_ceiling || "";
+            let ceilingMissBy = 0;
+
+            // Live client-side auto-grading from final score (prevents black-hole PENDING drops & ensures exact BLUE_BALLS / Floor / Ceiling grades)
+            if (parsedScores) {
+                const { homeScore, awayScore } = parsedScores;
+                const liveTipObj = isSpread
+                    ? gradeSpreadPick(isHomeSpreadPick, vegasLine, homeScore, awayScore)
+                    : gradeTotalPick(tipProj, vegasLine, homeScore, awayScore);
+                const liveBdObj = isSpread
+                    ? gradeSpreadPick(isHomeSpreadPick, vegasLine, homeScore, awayScore)
+                    : gradeTotalPick(bdProj, vegasLine, homeScore, awayScore);
+                const liveFloorObj = isSpread
+                    ? gradeSpreadPick(isHomeSpreadPick, defaultFloorHook, homeScore, awayScore)
+                    : gradeTotalPick(tipProj, defaultFloorHook, homeScore, awayScore);
+                const liveCeilObj = isSpread
+                    ? gradeSpreadPick(isHomeSpreadPick, defaultCeilHook, homeScore, awayScore)
+                    : gradeTotalPick(tipProj, defaultCeilHook, homeScore, awayScore);
+
+                if (gradedTip === "PENDING" || (gradedTip === "MISS" && missByPts === 0)) {
+                    gradedTip = liveTipObj.outcome;
+                    missByPts = liveTipObj.missBy;
+                }
+                if (gradedBd === "PENDING" || (gradedBd === "MISS" && !rec.miss_by_pts)) {
+                    gradedBd = liveBdObj.outcome;
+                }
+                if (!gradedFloor) {
+                    gradedFloor = liveFloorObj.outcome;
+                    floorMissBy = liveFloorObj.missBy;
+                }
+                if (!gradedCeiling) {
+                    gradedCeiling = liveCeilObj.outcome;
+                    ceilingMissBy = liveCeilObj.missBy;
+                }
+            } else {
+                if (!gradedFloor) {
+                    if (gradedTip === "HIT" || gradedTip === "BLUE_BALLS") {
+                        gradedFloor = "HIT";
+                    } else if (gradedTip === "MISS") {
+                        const remMiss = Number((missByPts - 3.5).toFixed(1));
+                        if (missByPts > 0 && remMiss <= 0) gradedFloor = "HIT";
+                        else if (missByPts > 0 && remMiss <= BLUE_BALLS_MARGIN) { gradedFloor = "BLUE_BALLS"; floorMissBy = remMiss; }
+                        else { gradedFloor = "MISS"; floorMissBy = Math.max(0, remMiss); }
+                    }
+                }
+                if (!gradedCeiling) {
+                    if (gradedTip === "BLUE_BALLS" || gradedTip === "MISS") {
+                        gradedCeiling = "MISS";
+                        ceilingMissBy = Number((missByPts + 3.0).toFixed(1));
+                    } else if (gradedTip === "HIT") {
+                        gradedCeiling = "HIT";
+                    }
+                }
+            }
+
+            const fmtTipProj = (isSpread && Number(tipProj) > 0) ? `+${tipProj}` : `${tipProj}`;
+            const fmtBdProj = (isSpread && Number(bdProj) > 0) ? `+${bdProj}` : `${bdProj}`;
+
+            const rowHTML = buildStandardVaultRowHTML(
+                weekLabel, cleanMatchup, statusLabel, type, slot, pickLabel, ledgerTier,
+                vegasLine, baseOdds, tipColor, fmtTipProj, tipWinPct, tipEvPct,
+                showBallsDeep, bdColor, fmtBdProj, bdWinPct, bdEvPct,
+                safeFloorLabel, safeFloorWinPct, bdAltLabel, bdAltEvPct, gradedTip, missByPts
+            );
+
+            if (gradedTip === "HIT" || gradedTip === "MISS" || gradedTip === "BLUE_BALLS" || gradedTip === "PUSH") {
+                if (gradedTip !== "PUSH") {
+                    tallyGrade("tip_all", gradedTip);
+                    tallyGrade("balls_deep_all", gradedBd);
+                    tallyGrade("safe_floors", gradedFloor);
+                    tallyGrade("ceilings", gradedCeiling);
+                }
+                vaultRows.tip_vs_bd.push(rowHTML);
+                vaultRows.floors_ceilings.push(
+                    buildFloorCeilingVaultRowHTML(
+                        weekLabel, cleanMatchup, statusLabel, type, pickLabel, vegasLine,
+                        safeFloorLabel, safeFloorWinPct, gradedFloor, floorMissBy,
+                        bdAltLabel, bdAltEvPct, gradedCeiling, ceilingMissBy
+                    )
+                );
+
+                if (slot) {
+                    if (gradedTip !== "PUSH") {
+                        tallyGrade("flagship_5pack", gradedTip);
+                        if (slot.includes("MÉNAGE")) tallyGrade("menage_a_trois", gradedTip);
+                    }
+                    const wkObj = ensureWeekFivePackBucket(weekLabel);
+                    if (gradedTip !== "PUSH") {
+                        tallyGradeToObj(wkObj, gradedTip);
+                        if (slot.includes("MÉNAGE")) tallyGradeToObj(wkObj.menage, gradedTip);
+                    }
+                    wkObj.rows.push(rowHTML);
+                    vaultRows.flagship_5pack.push({ weekLabel, rowHTML });
+                }
+
+                if (ledgerTier === "SMASH") {
+                    if (gradedTip !== "PUSH") {
+                        tallyGrade("overall_smash", gradedTip);
+                        tallyGrade(isSpread ? "spread_smash" : "total_smash", gradedTip);
+                    }
+                    vaultRows.overall_smash.push(rowHTML);
+                } else if (ledgerTier === "TOO_CLOSE") {
+                    if (gradedTip !== "PUSH") {
+                        tallyGrade("all_tease", gradedTip);
+                    }
+                    vaultRows.all_tease.push(rowHTML);
+                }
+            } else {
+                // Fallback: never silently drop an ungraded completed game — show it in the table as FINAL / AWAITING GRADE
+                upcomingRowsHTML += rowHTML;
+            }
+        });
+    });
+
+    // 2. Process current week's slate (FINAL -> Vaults; UPCOMING/IN-PLAY -> Live Ledger Table)
+    AppState.processedGames.filter(g => g.isCurrentWeek).forEach(g => {
+        if (renderedMatchups.has(g.matchup)) return;
+        if (!isRankedLedgerEntry(g.matchup, g.league)) return;
+        renderedMatchups.add(g.matchup);
+
+        const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[g.matchup];
+        const kickedOffByClock = g.commenceTime ? (new Date(g.commenceTime).getTime() <= Date.now()) : false;
+
+        const isFinal = Boolean(espnMatch && espnMatch.state === "post");
+        const isLocked = isFinal || kickedOffByClock || Boolean(espnMatch && espnMatch.state === "in");
+        const scoreDisplay = espnMatch ? espnMatch.scoreStr : "";
+        const weekLabel = g.weekLabel || "Week 11";
+
+        const statusLabel = isFinal
+            ? `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${scoreDisplay})</span>`
+            : (isLocked
+                ? `<span style="color:var(--accent-gold);font-weight:700;">🔒 IN-PLAY (${scoreDisplay || 'CLOSING LOCKED'})</span>`
+                : `<span style="color:var(--text-secondary);">PRE-KICKOFF SNAPSHOT</span>`);
+
+        const gameSpreads = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "spread").sort((a, b) => b.tipEvPct - a.tipEvPct);
+        const gameTotals = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "total");
+
+        if (isFinal && espnMatch && gameSpreads.length > 1) {
+            const trapSide = gameSpreads[gameSpreads.length - 1];
+            const bestSide = gameSpreads[0];
+            if (trapSide && trapSide.tipEvPct <= PASS_EV_CUTOFF) {
+                const trapGrade = gradeSpreadPick(trapSide.isHomeSpread, trapSide.baseLine, espnMatch.homeScore, espnMatch.awayScore);
+                buckets.champagne_room.total += 1;
+                const dodgedSuccess = (trapGrade.outcome !== "HIT");
+                if (dodgedSuccess) {
+                    buckets.champagne_room.dodged += 1;
+                }
+                const fmtTrapProj = Number(trapSide.tipProjectedMean) > 0 ? `+${trapSide.tipProjectedMean}` : `${trapSide.tipProjectedMean}`;
+                vaultRows.grenades_dodged.push(`
+                    <tr>
+                        <td><span style="font-family:var(--font-mono); font-size:10px; color:var(--accent-gold); font-weight:800;">${weekLabel}</span><br><strong>${g.matchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+                        <td>PUBLIC GRENADE<br>${renderTierBadgeHTML("PASS")}</td>
+                        <td><strong style="color:var(--accent-danger);">🚫 TRAP: ${trapSide.player}</strong></td>
+                        <td>${trapSide.baseLine} (${trapSide.baseOdds})</td>
+                        <td style="color:var(--accent-danger);">Proj: <strong>${fmtTrapProj}</strong> (${trapSide.tipEvPct}% EV)</td>
+                        <td style="color:var(--accent-emerald);"><strong>${dodgedSuccess ? '✅ FADE HIT:' : '💥 TRAP COVERED:'}</strong> ${bestSide ? bestSide.player : ''}</td>
+                        <td>${dodgedSuccess ? `<span class="badge-smash" style="font-size:11px;">💣 GRENADE DODGED</span>` : `<span class="badge-pass" style="background:rgba(239,68,68,0.18);color:var(--accent-danger);font-size:11px;">💥 BLEW UP</span>`}</td>
+                    </tr>
+                `);
+            }
+        }
+
+        const topPicks = [gameSpreads[0], gameTotals[0]].filter(Boolean);
+
+        topPicks.forEach((p) => {
+            const isSpread = p.marketType === "spread";
+            const fmtTipProj = (isSpread && Number(p.tipProjectedMean) > 0) ? `+${p.tipProjectedMean}` : `${p.tipProjectedMean}`;
+            const fmtBdProj = (isSpread && Number(p.bdProjectedMean) > 0) ? `+${p.bdProjectedMean}` : `${p.bdProjectedMean}`;
+            const ledgerTier = p.gatekeeperBlocked ? "PASS" : getTierFromEv(p.tipEvPct);
+            const tipColor = getTierColor(ledgerTier);
+            const bdTier = p.gatekeeperBlocked ? "PASS" : getTierFromEv(p.bdEvPct);
+            const bdColor = getTierColor(bdTier);
+
+            let gradedTip = "PENDING";
+            let gradedBd = "PENDING";
+            let missByPts = 0;
+            let gradedFloor = "PENDING";
+            let floorMissBy = 0;
+            let gradedCeiling = "PENDING";
+            let ceilingMissBy = 0;
+
+            if (isFinal && espnMatch) {
+                const tipResObj = isSpread
+                    ? gradeSpreadPick(p.isHomeSpread, p.baseLine, espnMatch.homeScore, espnMatch.awayScore)
+                    : gradeTotalPick(p.tipProjectedMean, p.baseLine, espnMatch.homeScore, espnMatch.awayScore);
+                const bdResObj = isSpread
+                    ? gradeSpreadPick(p.isHomeSpread, p.baseLine, espnMatch.homeScore, espnMatch.awayScore)
+                    : gradeTotalPick(p.bdProjectedMean, p.baseLine, espnMatch.homeScore, espnMatch.awayScore);
+                const floorResObj = isSpread
+                    ? gradeSpreadPick(p.isHomeSpread, p.safeFloorHookNum, espnMatch.homeScore, espnMatch.awayScore)
+                    : gradeTotalPick(p.tipProjectedMean, p.safeFloorHookNum, espnMatch.homeScore, espnMatch.awayScore);
+                const ceilingResObj = isSpread
+                    ? gradeSpreadPick(p.isHomeSpread, p.ceilingHookNum, espnMatch.homeScore, espnMatch.awayScore)
+                    : gradeTotalPick(p.tipProjectedMean, p.ceilingHookNum, espnMatch.homeScore, espnMatch.awayScore);
+
+                gradedTip = tipResObj.outcome;
+                gradedBd = bdResObj.outcome;
+                missByPts = tipResObj.missBy;
+                gradedFloor = floorResObj.outcome;
+                floorMissBy = floorResObj.missBy;
+                gradedCeiling = ceilingResObj.outcome;
+                ceilingMissBy = ceilingResObj.missBy;
+            }
+
+            if (isFinal && (gradedTip === "HIT" || gradedTip === "MISS" || gradedTip === "BLUE_BALLS")) {
+                const rowHTML = buildStandardVaultRowHTML(
+                    weekLabel, g.matchup, statusLabel, isSpread ? "SPREAD" : "TOTAL (O/U)", p.flagshipSlot,
+                    p.player, ledgerTier, p.baseLine, p.baseOdds, tipColor, fmtTipProj, p.tipModelPct, p.tipEvPct,
+                    showBallsDeep, bdColor, fmtBdProj, p.bdModelPct, p.bdEvPct,
+                    p.safeFloorLabel, p.safeFloorWinPct, p.bdAltLabel, p.bdAltEvPct, gradedTip, missByPts
+                );
+
+                tallyGrade("tip_all", gradedTip);
+                tallyGrade("balls_deep_all", gradedBd);
+                vaultRows.tip_vs_bd.push(rowHTML);
+
+                tallyGrade("safe_floors", gradedFloor);
+                tallyGrade("ceilings", gradedCeiling);
+                vaultRows.floors_ceilings.push(
+                    buildFloorCeilingVaultRowHTML(
+                        weekLabel, g.matchup, statusLabel, isSpread ? "SPREAD" : "TOTAL (O/U)", p.player, p.baseLine,
+                        p.safeFloorLabel, p.safeFloorWinPct, gradedFloor, floorMissBy,
+                        p.bdAltLabel, p.bdAltEvPct, gradedCeiling, ceilingMissBy
+                    )
+                );
+
+                if (p.flagshipSlot) {
+                    tallyGrade("flagship_5pack", gradedTip);
+                    if (p.flagshipSlot.includes("MÉNAGE")) tallyGrade("menage_a_trois", gradedTip);
+
+                    const wkObj = ensureWeekFivePackBucket(weekLabel);
+                    tallyGradeToObj(wkObj, gradedTip);
+                    if (p.flagshipSlot.includes("MÉNAGE")) tallyGradeToObj(wkObj.menage, gradedTip);
+                    wkObj.rows.push(rowHTML);
+                    vaultRows.flagship_5pack.push({ weekLabel, rowHTML });
+                }
+
+                if (ledgerTier === "SMASH") {
+                    tallyGrade("overall_smash", gradedTip);
+                    tallyGrade(isSpread ? "spread_smash" : "total_smash", gradedTip);
+                    vaultRows.overall_smash.push(rowHTML);
+                } else if (ledgerTier === "TOO_CLOSE") {
+                    tallyGrade("all_tease", gradedTip);
+                    vaultRows.all_tease.push(rowHTML);
+                }
+            } else {
+                upcomingRowsHTML += `
+                    <tr>
+                        <td><strong>${g.matchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+                        <td>${isSpread ? 'SPREAD' : 'TOTAL (O/U)'} ${p.flagshipSlot ? `<br><span class="${p.flagshipSlot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}">${p.flagshipSlot}</span>` : ""}</td>
+                        <td><strong>${p.player}</strong> ${renderTierBadgeHTML(ledgerTier)}${renderGatekeeperPillsHTML(p.gatekeeperFlags, p.gatekeeperAction)}</td>
+                        <td>${p.baseLine} (${p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds})</td>
+                        <td style="color:${tipColor};">Proj: <strong>${fmtTipProj}</strong> (${p.tipModelPct}% | ${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV)</td>
+                        <td>${showBallsDeep ? `<span style="color:${bdColor};">Proj: <strong>${fmtBdProj}</strong> (${p.bdModelPct}% | ${p.bdEvPct > 0 ? '+' : ''}${p.bdEvPct}% EV)<br><small style="color:var(--accent-cyan);">🛡️ ${p.safeFloorLabel} (${p.safeFloorWinPct}%)</small> • <small style="color:var(--accent-gold);">🎯 ${p.bdAltLabel} (${p.bdAltEvPct > 0 ? '+' : ''}${p.bdAltEvPct}% EV)</small></span>` : renderLockCellHTML()}</td>
+                        <td>${renderGradeBadge(gradedTip, missByPts)}</td>
+                    </tr>
+                `;
+            }
+        });
+    });
+
+    // 3. Audit Active / Current-Week Porky's 5-Pack (3 Core Day-Shift + 2 Keep-It-In-Your-Pants Flex)
+    if (Array.isArray(AppState.porkysFivePack) && AppState.porkysFivePack.length > 0) {
+        AppState.porkysFivePack.forEach(item => {
+            const trap = item.trapProp;
+            const fade = item.fadeProp;
+            if (!trap || !fade) return;
+            const matchup = fade.matchup;
+            if (recordedPorkysMatchups.has(matchup)) return;
+            if (!isRankedLedgerEntry(matchup, fade.league)) return;
+            recordedPorkysMatchups.add(matchup);
+
+            const weekLabel = fade.weekLabel || "Week 12";
+            const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[matchup];
+            const isFinal = Boolean(espnMatch && espnMatch.state === "post");
+            const isLive = Boolean(espnMatch && espnMatch.state === "in");
+            const scoreDisplay = espnMatch ? espnMatch.scoreStr : "";
+            const statusLabel = isFinal
+                ? `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${scoreDisplay})</span>`
+                : (isLive
+                    ? `<span style="color:var(--accent-gold);font-weight:700;">🔒 IN-PLAY (${scoreDisplay})</span>`
+                    : `<span style="color:var(--text-secondary);">ACTIVE WEEK TICKET</span>`);
+
+            const isCore3 = Boolean(item.isTopThreeTrap);
+            const fadeTeam = fade.isHomeSpread ? fade.homeTeam : fade.awayTeam;
+            let pFloorRes = "PENDING", pFloorMiss = 0, pStraightRes = "PENDING", pStraightMiss = 0;
+
+            if (isFinal && espnMatch) {
+                const flObj = gradeSpreadPick(fade.isHomeSpread, fade.safeFloorHookNum, espnMatch.homeScore, espnMatch.awayScore);
+                const stObj = gradeSpreadPick(fade.isHomeSpread, fade.baseLine, espnMatch.homeScore, espnMatch.awayScore);
+                pFloorRes = flObj.outcome;
+                pFloorMiss = flObj.missBy;
+                pStraightRes = stObj.outcome;
+                pStraightMiss = stObj.missBy;
+            }
+
+            const pRowHTML = buildPorkysVaultRowHTML(
+                weekLabel, matchup, statusLabel, item.slotLabel, isCore3,
+                trap.player, trap.baseLine,
+                Number(trap.tipProjectedMean) > 0 ? `+${trap.tipProjectedMean}` : `${trap.tipProjectedMean}`,
+                trap.tipEvPct, fadeTeam, fade.safeFloorLabel, fade.safeFloorWinPct, fade.baseLine,
+                pFloorRes, pFloorMiss, pStraightRes, pStraightMiss
+            );
+
+            const pWkObj = ensureWeekPorkysBucket(weekLabel);
+            if (isFinal && (pFloorRes === "HIT" || pFloorRes === "MISS" || pFloorRes === "BLUE_BALLS")) {
+                tallyGrade("porkys_5pack", pFloorRes);
+                tallyGrade(isCore3 ? "porkys_core3" : "porkys_flex2", pFloorRes);
+                tallyGradeToObj(pWkObj, pFloorRes);
+                tallyGradeToObj(isCore3 ? pWkObj.core3 : pWkObj.flex2, pFloorRes);
+            }
+            if (isCore3) pWkObj.coreLegs.push({ slot: item.slotLabel, outcome: pFloorRes });
+            else pWkObj.flexLegs.push({ slot: item.slotLabel, outcome: pFloorRes });
+            pWkObj.rows.push(pRowHTML);
+            vaultRows.porkys_5pack.push({ weekLabel, rowHTML: pRowHTML, isCore3, outcome: pFloorRes });
+        });
+    }
+
+    // Compute Weekly Porky's Parlay Audit (3-Pick Core Parlay, 2-Pick Flex Parlay, Full 5-Pick Parlay at -175 Safe Floor odds)
+    const evalParlayTicket = (legsArr, expectedLegCount) => {
+        if (!legsArr || legsArr.length === 0) return "EMPTY";
+        const hasLoss = legsArr.some(l => l.outcome === "MISS" || l.outcome === "BLUE_BALLS");
+        if (hasLoss) return "BUST";
+        const hits = legsArr.filter(l => l.outcome === "HIT").length;
+        const pushes = legsArr.filter(l => l.outcome === "PUSH").length;
+        if (legsArr.length >= expectedLegCount && (hits + pushes) === legsArr.length && hits > 0) return "CASH";
+        return "PENDING";
+    };
+
+    const computeParlaySummaryForWeeks = (weekKeys) => {
+        const res = {
+            core3: { cashed: 0, busted: 0, pending: 0 },
+            flex2: { cashed: 0, busted: 0, pending: 0 },
+            full5: { cashed: 0, busted: 0, pending: 0 }
+        };
+        weekKeys.forEach(wk => {
+            const w = porkysByWeek[wk];
+            if (!w) return;
+            const c3 = evalParlayTicket(w.coreLegs, 3);
+            const f2 = evalParlayTicket(w.flexLegs, 2);
+            const a5 = evalParlayTicket([...w.coreLegs, ...w.flexLegs], 5);
+            if (c3 === "CASH") res.core3.cashed++; else if (c3 === "BUST") res.core3.busted++; else if (c3 === "PENDING") res.core3.pending++;
+            if (f2 === "CASH") res.flex2.cashed++; else if (f2 === "BUST") res.flex2.busted++; else if (f2 === "PENDING") res.flex2.pending++;
+            if (a5 === "CASH") res.full5.cashed++; else if (a5 === "BUST") res.full5.busted++; else if (a5 === "PENDING") res.full5.pending++;
+        });
+        return res;
+    };
+
+    const fmtBucketObj = (b) => {
+        if (!b || !b.total) return "0W - 0L - 0BB (0.0%)";
+        const pct = ((b.hits / b.total) * 100).toFixed(1);
+        return `${b.hits}W - ${b.misses}L - <span style="color:#60a5fa;">${b.blueBalls}BB</span> (${pct}%)`;
+    };
+
+    const fmtBucket = (key) => fmtBucketObj(buckets[key]);
+
+    const fmtTraps = () => {
+        const c = buckets.champagne_room;
+        if (!c || !c.total) return "0 / 0 Dodged (0.0%)";
+        const pct = ((c.dodged / c.total) * 100).toFixed(1);
+        return `${c.dodged} / ${c.total} Dodged (${pct}%)`;
+    };
+
+    const availableFivePackWeeks = Object.keys(fivePackByWeek).sort((a, b) => {
+        const numA = parseInt(a.replace(/\D/g, ""), 10) || 0;
+        const numB = parseInt(b.replace(/\D/g, ""), 10) || 0;
+        return numB - numA;
+    });
+
+    if (AppState.selectedFivePackWeek !== "ALL" && !fivePackByWeek[AppState.selectedFivePackWeek]) {
+        AppState.selectedFivePackWeek = "ALL";
+    }
+
+    const activeFivePackRecordBucket = (AppState.selectedFivePackWeek === "ALL")
+        ? buckets.flagship_5pack
+        : fivePackByWeek[AppState.selectedFivePackWeek];
+
+    const activeMenageRecordBucket = (AppState.selectedFivePackWeek === "ALL")
+        ? buckets.menage_a_trois
+        : fivePackByWeek[AppState.selectedFivePackWeek].menage;
+
+    const totalFivePackWeeksCount = Math.max(1, availableFivePackWeeks.length) * 5;
+    const weekDropdownHTML = `
+        <select onchange="window.setFivePackVaultWeek(this.value, event)" onclick="event.stopPropagation()" style="background:#0f172a; color:var(--accent-gold); border:1px solid rgba(245,158,11,0.55); border-radius:4px; padding:2px 6px; font-family:var(--font-mono); font-size:10.5px; font-weight:800; cursor:pointer;">
+            <option value="ALL" ${AppState.selectedFivePackWeek === "ALL" ? "selected" : ""}>All Weeks (${buckets.flagship_5pack.hits}/${totalFivePackWeeksCount})</option>
+            ${availableFivePackWeeks.map(wk => {
+                const wObj = fivePackByWeek[wk];
+                return `<option value="${wk}" ${AppState.selectedFivePackWeek === wk ? "selected" : ""}>${wk} (${wObj.hits}/5)</option>`;
+            }).join("")}
+        </select>
+    `;
+
+    const availablePorkysWeeks = Object.keys(porkysByWeek).sort((a, b) => {
+        const numA = parseInt(a.replace(/\D/g, ""), 10) || 0;
+        const numB = parseInt(b.replace(/\D/g, ""), 10) || 0;
+        return numB - numA;
+    });
+
+    if (AppState.selectedPorkysWeek !== "ALL" && !porkysByWeek[AppState.selectedPorkysWeek]) {
+        AppState.selectedPorkysWeek = "ALL";
+    }
+
+    const activePorkysRecordBucket = (AppState.selectedPorkysWeek === "ALL")
+        ? buckets.porkys_5pack
+        : porkysByWeek[AppState.selectedPorkysWeek];
+    const activePorkysCore3Bucket = (AppState.selectedPorkysWeek === "ALL")
+        ? buckets.porkys_core3
+        : porkysByWeek[AppState.selectedPorkysWeek].core3;
+    const activePorkysFlex2Bucket = (AppState.selectedPorkysWeek === "ALL")
+        ? buckets.porkys_flex2
+        : porkysByWeek[AppState.selectedPorkysWeek].flex2;
+
+    const activePorkysWeekKeys = (AppState.selectedPorkysWeek === "ALL")
+        ? availablePorkysWeeks
+        : [AppState.selectedPorkysWeek];
+    const activePorkysParlays = computeParlaySummaryForWeeks(activePorkysWeekKeys);
+
+    const totalPorkysWeeksCount = Math.max(1, availablePorkysWeeks.length) * 5;
+    const porkysWeekDropdownHTML = `
+        <select onchange="window.setPorkysVaultWeek(this.value, event)" onclick="event.stopPropagation()" style="background:#0f172a; color:#f87171; border:1px solid rgba(239,68,68,0.55); border-radius:4px; padding:2px 6px; font-family:var(--font-mono); font-size:10.5px; font-weight:800; cursor:pointer;">
+            <option value="ALL" ${AppState.selectedPorkysWeek === "ALL" ? "selected" : ""}>All Weeks (${buckets.porkys_5pack.hits}/${totalPorkysWeeksCount})</option>
+            ${availablePorkysWeeks.map(wk => {
+                const wObj = porkysByWeek[wk];
+                return `<option value="${wk}" ${AppState.selectedPorkysWeek === wk ? "selected" : ""}>${wk} (${wObj.hits}/${Math.max(5, wObj.total)})</option>`;
+            }).join("")}
+        </select>
+    `;
+
+    let activeVaultDrawerHTML = "";
+    if (AppState.activeLedgerVault) {
+        let vaultTitle = "";
+        let vaultAccentColor = "var(--accent-cyan)";
+        let selectedRowsHTML = "";
+        let vaultSubBannerHTML = "";
+        const isFloorsCeilingsVault = (AppState.activeLedgerVault === "floors_ceilings");
+        const isPorkysVault = (AppState.activeLedgerVault === "porkys_5pack");
+
+        if (AppState.activeLedgerVault === "flagship_5pack") {
+            const wkFilter = AppState.selectedFivePackWeek;
+            const wkScoreTag = wkFilter === "ALL"
+                ? `ALL WEEKS (${buckets.flagship_5pack.hits}/${totalFivePackWeeksCount} HIT)`
+                : `${wkFilter.toUpperCase()} (${fivePackByWeek[wkFilter].hits}/5 HIT)`;
+            vaultTitle = `👑 FLAGSHIP 5-PACK &amp; MÉNAGE À TROIS VAULT // ${wkScoreTag}`;
+            vaultAccentColor = "var(--accent-gold)";
+            const matchingRows = vaultRows.flagship_5pack
+                .filter(item => wkFilter === "ALL" || item.weekLabel === wkFilter)
+                .map(item => item.rowHTML);
+            selectedRowsHTML = matchingRows.join("");
+        } else if (isPorkysVault) {
+            const wkFilter = AppState.selectedPorkysWeek;
+            const wkScoreTag = wkFilter === "ALL"
+                ? `ALL WEEKS (${buckets.porkys_5pack.hits}/${totalPorkysWeeksCount} FLOOR FADES HIT)`
+                : `${wkFilter.toUpperCase()} (${porkysByWeek[wkFilter].hits}/5 FLOOR FADES HIT)`;
+            vaultTitle = `🐷 PORKY&apos;S 5-PACK &amp; PARLAY AUDIT VAULT // ${wkScoreTag}`;
+            vaultAccentColor = "#f87171";
+
+            const dec175 = americanToDecimal(-175);
+            const mult3 = Math.pow(dec175, 3);
+            const mult2 = Math.pow(dec175, 2);
+            const mult5 = Math.pow(dec175, 5);
+            const fmtNet10 = (cashed, busted, mult) => {
+                const net = (cashed * 10.0 * (mult - 1.0)) - (busted * 10.0);
+                const sign = net >= 0 ? "+" : "-";
+                const col = net >= 0 ? "var(--accent-emerald)" : "var(--accent-danger)";
+                return `<span style="color:${col}; font-weight:800;">${sign}$${Math.abs(net).toFixed(2)}</span>`;
+            };
+
+            vaultSubBannerHTML = `
+                <div style="padding: 10px 16px; background: rgba(239, 68, 68, 0.08); border-bottom: 1px solid rgba(239, 68, 68, 0.35); display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; font-family: var(--font-mono); font-size: 11px;">
+                    <div style="background: rgba(15, 23, 42, 0.85); padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(239, 68, 68, 0.45);">
+                        <div style="color: #f87171; font-weight: 800;">🐷 3-PICK CORE PARLAY (#1–#3 @ ${mult3.toFixed(2)}x)</div>
+                        <div style="margin-top: 3px;">Legs: <strong>${fmtBucketObj(activePorkysCore3Bucket)}</strong></div>
+                        <div style="margin-top: 2px;">Tickets: <strong style="color:var(--accent-emerald);">${activePorkysParlays.core3.cashed}W</strong> - <strong style="color:var(--accent-danger);">${activePorkysParlays.core3.busted}L</strong> (${activePorkysParlays.core3.pending} Live) • $10 Net: ${fmtNet10(activePorkysParlays.core3.cashed, activePorkysParlays.core3.busted, mult3)}</div>
+                    </div>
+                    <div style="background: rgba(15, 23, 42, 0.85); padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(236, 72, 153, 0.45);">
+                        <div style="color: #f472b6; font-weight: 800;">🔞 2-PICK FLEX PARLAY (#4–#5 @ ${mult2.toFixed(2)}x)</div>
+                        <div style="margin-top: 3px;">Legs: <strong>${fmtBucketObj(activePorkysFlex2Bucket)}</strong></div>
+                        <div style="margin-top: 2px;">Tickets: <strong style="color:var(--accent-emerald);">${activePorkysParlays.flex2.cashed}W</strong> - <strong style="color:var(--accent-danger);">${activePorkysParlays.flex2.busted}L</strong> (${activePorkysParlays.flex2.pending} Live) • $10 Net: ${fmtNet10(activePorkysParlays.flex2.cashed, activePorkysParlays.flex2.busted, mult2)}</div>
+                    </div>
+                    <div style="background: rgba(15, 23, 42, 0.85); padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(6, 182, 212, 0.45);">
+                        <div style="color: var(--accent-cyan); font-weight: 800;">🛡️ FULL 5-PICK SAFE FLOOR PARLAY (@ ${mult5.toFixed(2)}x)</div>
+                        <div style="margin-top: 3px;">All 5 Legs: <strong>${fmtBucketObj(activePorkysRecordBucket)}</strong></div>
+                        <div style="margin-top: 2px;">Tickets: <strong style="color:var(--accent-emerald);">${activePorkysParlays.full5.cashed}W</strong> - <strong style="color:var(--accent-danger);">${activePorkysParlays.full5.busted}L</strong> (${activePorkysParlays.full5.pending} Live) • $10 Net: ${fmtNet10(activePorkysParlays.full5.cashed, activePorkysParlays.full5.busted, mult5)}</div>
+                    </div>
+                </div>
+            `;
+
+            const matchingRows = vaultRows.porkys_5pack
+                .filter(item => wkFilter === "ALL" || item.weekLabel === wkFilter)
+                .map(item => item.rowHTML);
+            selectedRowsHTML = matchingRows.join("");
+        } else if (AppState.activeLedgerVault === "overall_smash") {
+            vaultTitle = `🔥 OFFICIAL SMASH VAULT (&ge;+10.0% EV COMPLETED RECEIPTS) // ${fmtBucket("overall_smash")}`;
+            vaultAccentColor = "var(--accent-emerald)";
+            selectedRowsHTML = vaultRows.overall_smash.join("");
+        } else if (AppState.activeLedgerVault === "all_tease") {
+            vaultTitle = `🔵 ALL TEASE, NO SQUEEZE VAULT (-18.9% to +9.9% EV COMPLETED RECEIPTS) // ${fmtBucket("all_tease")}`;
+            vaultAccentColor = "#60a5fa";
+            selectedRowsHTML = vaultRows.all_tease.join("");
+        } else if (AppState.activeLedgerVault === "grenades_dodged") {
+            vaultTitle = `💣 GRENADES DODGED VAULT (&le;-19.0% EV PUBLIC TRAPS AVOIDED) // ${fmtTraps()}`;
+            vaultAccentColor = "var(--accent-danger)";
+            selectedRowsHTML = vaultRows.grenades_dodged.join("");
+        } else if (isFloorsCeilingsVault) {
+            vaultTitle = `🛡️ SAFE FLOORS (-2&phi;) &amp; 🎯 CEILING ESCALATORS (+&phi;) VAULT // Floors: ${fmtBucket("safe_floors")} • Ceilings: ${fmtBucket("ceilings")}`;
+            vaultAccentColor = "var(--accent-gold)";
+            selectedRowsHTML = vaultRows.floors_ceilings.join("");
+        } else if (AppState.activeLedgerVault === "tip_vs_bd") {
+            vaultTitle = `⚡ TIP vs. BALLS DEEP MASTER ARCHIVE (ALL COMPLETED GAMES)`;
+            vaultAccentColor = "var(--accent-cyan)";
+            selectedRowsHTML = vaultRows.tip_vs_bd.join("");
+        }
+
+        const vaultTableHeadHTML = isPorkysVault
+            ? `
+                <tr>
+                    <th>Week &amp; Score</th>
+                    <th>Porky&apos;s Slot</th>
+                    <th>🚫 Public Trap (PASS)</th>
+                    <th>🛡️ Safe Floor Fade (-2&phi; / -175)</th>
+                    <th>Floor Result</th>
+                    <th>Straight Fade</th>
+                    <th>Parlay Status</th>
+                </tr>
+            `
+            : (isFloorsCeilingsVault
+                ? `
+                    <tr>
+                        <th>Week &amp; Final Score</th>
+                        <th>Market</th>
+                        <th>Base Model Pick</th>
+                        <th>🛡️ Safe Floor (-2&phi; / -175)</th>
+                        <th>Floor Result</th>
+                        <th>🎯 Ceiling Escalator (+&phi;)</th>
+                        <th>Ceiling Result</th>
+                    </tr>
+                `
+                : `
+                    <tr>
+                        <th>Week &amp; Final Score</th>
+                        <th>Market &amp; Slot</th>
+                        <th>Official Model Pick</th>
+                        <th>Vegas Closing</th>
+                        <th>Just the Tip Closing</th>
+                        <th>${AppState.activeLedgerVault === "grenades_dodged" ? "Counter-Strike Fade Outcome" : "Balls Deep Closing"}</th>
+                        <th>Graded Result</th>
+                    </tr>
+                `);
+
+        const swapBtnLabel = isPorkysVault ? "👑 Swap to Flagship 5-Pack ➔" : "🐷 Swap to Porky&apos;s Audit ➔";
+        const vaultHeaderToggleBtn = (AppState.activeLedgerVault === "flagship_5pack" || isPorkysVault)
+            ? `<button class="calc-action-btn" onclick="window.toggleLedgerFivePackView(event)" style="font-size: 11px; padding: 4px 10px; border-color: ${isPorkysVault ? 'var(--accent-gold)' : 'rgba(239,68,68,0.65)'}; color: ${isPorkysVault ? 'var(--accent-gold)' : '#f87171'};">
+                   ${swapBtnLabel}
+               </button>`
+            : "";
+
+        activeVaultDrawerHTML = `
+            <div style="margin-bottom: 22px; border: 1px solid ${vaultAccentColor}; border-radius: 8px; background: #0f172a; box-shadow: 0 8px 24px rgba(0,0,0,0.5); overflow: hidden;">
+                <div style="padding: 12px 16px; background: rgba(30, 41, 59, 0.85); border-bottom: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                    <span style="font-family: var(--font-mono); font-size: 12.5px; font-weight: 800; color: ${vaultAccentColor};">
+                        📂 ${vaultTitle}
+                    </span>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        ${vaultHeaderToggleBtn}
+                        <button class="calc-action-btn" onclick="window.toggleLedgerVault('${AppState.activeLedgerVault}', event)" style="font-size: 11px; padding: 4px 10px;">
+                            ✕ Close Vault ▲
+                        </button>
+                    </div>
+                </div>
+                ${vaultSubBannerHTML}
+                <div class="table-responsive">
+                    <table class="quant-table">
+                        <thead>
+                            ${vaultTableHeadHTML}
+                        </thead>
+                        <tbody>
+                            ${selectedRowsHTML || `<tr><td colspan="7" style="text-align:center; color:var(--text-secondary); padding:18px;">No completed games in this vault yet—active games move here automatically as soon as they hit FINAL.</td></tr>`}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }
+
+    const cardActiveStyle = (key, defaultBorder) => (AppState.activeLedgerVault === key)
+        ? `border: 2px solid var(--accent-cyan); box-shadow: 0 0 16px rgba(6, 182, 212, 0.35);`
+        : `border: 1px solid ${defaultBorder};`;
+
+    container.innerHTML = `
+        ${buildLedgerLegendHTML()}
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-bottom: 20px; font-family: var(--font-mono);">
+            ${AppState.ledgerFivePackView === "porkys" ? `
+            <div onclick="window.toggleLedgerVault('porkys_5pack', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('porkys_5pack', 'rgba(239, 68, 68, 0.6)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
+                    <span style="font-size: 11px; color: #f87171; font-weight: 800;">🐷 PORKY&apos;S 5-PACK</span>
+                    <button onclick="window.toggleLedgerFivePackView(event)" title="Swap back to Flagship 5-Pack" style="cursor:pointer; font-family:var(--font-mono); font-size:9.5px; font-weight:800; padding:2px 6px; border-radius:4px; background:rgba(15,23,42,0.9); color:var(--accent-gold); border:1px solid rgba(245,158,11,0.6);">👑 Flagship ➔</button>
+                </div>
+                <div style="margin-top: 6px; display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
+                    <span style="font-size: 13.5px; font-weight: 800; color: var(--accent-cyan);">Core 3: ${fmtBucketObj(activePorkysCore3Bucket)}</span>
+                    ${porkysWeekDropdownHTML}
+                </div>
+                <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
+                    Flex 2: <strong>${fmtBucketObj(activePorkysFlex2Bucket)}</strong> • Parlays (3/5): <strong style="color:var(--accent-emerald);">${activePorkysParlays.core3.cashed}-${activePorkysParlays.core3.busted}</strong> / <strong style="color:var(--accent-gold);">${activePorkysParlays.full5.cashed}-${activePorkysParlays.full5.busted}</strong>
+                </div>
+            </div>
+            ` : `
+            <div onclick="window.toggleLedgerVault('flagship_5pack', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('flagship_5pack', 'rgba(245, 158, 11, 0.5)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
+                    <span style="font-size: 11px; color: var(--accent-gold); font-weight: 800;">👑 FLAGSHIP 5-PACK</span>
+                    <button onclick="window.toggleLedgerFivePackView(event)" title="Swap to Porky&apos;s 5-Pack &amp; Parlay Audit" style="cursor:pointer; font-family:var(--font-mono); font-size:9.5px; font-weight:800; padding:2px 6px; border-radius:4px; background:rgba(15,23,42,0.9); color:#f87171; border:1px solid rgba(239,68,68,0.6);">🐷 Porky&apos;s ➔</button>
+                </div>
+                <div style="margin-top: 6px; display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
+                    <span style="font-size: 13.5px; font-weight: 800;">5-Pack: ${fmtBucketObj(activeFivePackRecordBucket)}</span>
+                    ${weekDropdownHTML}
+                </div>
+                <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 4px;">Ménage à Trois: <strong>${fmtBucketObj(activeMenageRecordBucket)}</strong></div>
+            </div>
+            `}
+
+            <div onclick="window.toggleLedgerVault('overall_smash', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('overall_smash', 'rgba(16, 185, 129, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
+                <div style="font-size: 11px; color: var(--accent-emerald); font-weight: 800;">🔥 OFFICIAL SMASH (&ge;+10.0% EV)</div>
+                <div style="font-size: 14.5px; font-weight: 800; margin: 6px 0;">${fmtBucket("overall_smash")}</div>
+                <div style="font-size: 11px; color: var(--text-secondary);">
+                    Spreads: <strong>${fmtBucket("spread_smash")}</strong><br>Totals: <strong>${fmtBucket("total_smash")}</strong>
+                </div>
+            </div>
+
+            <div onclick="window.toggleLedgerVault('all_tease', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('all_tease', 'rgba(59, 130, 246, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
+                <div style="font-size: 11px; color: #60a5fa; font-weight: 800;">🔵 ALL TEASE, NO SQUEEZE (-18.9% to +9.9% EV)</div>
+                <div style="font-size: 14.5px; font-weight: 800; margin: 6px 0; color: var(--text-primary);">${fmtBucket("all_tease")}</div>
+                <div style="font-size: 11px; color: var(--text-muted);">Coin-flip zone | BB = Missed line by &le;3 pts</div>
+            </div>
+
+            <div onclick="window.toggleLedgerVault('grenades_dodged', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('grenades_dodged', 'rgba(239, 68, 68, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
+                <div style="font-size: 11px; color: var(--accent-danger); font-weight: 800;">💣 GRENADES DODGED (&le;-19.0% EV)</div>
+                <div style="font-size: 15.5px; font-weight: 800; margin: 6px 0; color: var(--accent-emerald);">${fmtTraps()}</div>
+                <div style="font-size: 11px; color: var(--text-muted);">You were a little too drunk to make that call last night</div>
+            </div>
+
+            <div onclick="window.toggleLedgerVault('floors_ceilings', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('floors_ceilings', 'rgba(245, 158, 11, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
+                <div style="font-size: 11px; color: var(--accent-gold); font-weight: 800;">🛡️ SAFE FLOORS &amp; 🎯 CEILINGS</div>
+                <div style="font-size: 13px; font-weight: 800; margin: 6px 0; color: var(--accent-cyan);">🛡️ Floors (-2&phi;): ${fmtBucket("safe_floors")}</div>
+                <div style="font-size: 12.5px; font-weight: 800; color: var(--accent-gold);">🎯 Ceilings (+&phi;): ${fmtBucket("ceilings")}</div>
+            </div>
+
+            <div onclick="window.toggleLedgerVault('tip_vs_bd', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('tip_vs_bd', 'rgba(6, 182, 212, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
+                <div style="font-size: 11px; color: var(--accent-cyan); font-weight: 800;">⚡ TIP vs. BALLS DEEP HEAD-TO-HEAD</div>
+                <div style="font-size: 13px; font-weight: 800; margin: 6px 0;">Tip: ${fmtBucket("tip_all")}</div>
+                ${showBallsDeep
+                    ? `<div style="font-size: 13px; font-weight: 800; color: var(--accent-emerald);">Balls Deep: ${fmtBucket("balls_deep_all")}</div>`
+                    : `<div style="font-size: 11px; color: var(--accent-gold); cursor: pointer;" onclick="window.unlockBallsDeepMode(event)">🔒 Click to unlock Balls Deep Record</div>`
+                }
+            </div>
+        </div>
+
+        ${activeVaultDrawerHTML}
+
+        <div style="margin-bottom: 10px; padding: 8px 14px; border-radius: 6px; background: rgba(15, 23, 42, 0.85); border: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; font-family: var(--font-mono);">
+            <span style="font-size: 12px; font-weight: 800; color: var(--accent-cyan);">
+                🕒 ACTIVE WEEK // UPCOMING &amp; IN-PLAY CLOSING LINE LEDGER
+            </span>
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <button onclick="window.toggleLedgerAllCompleted(event)" class="calc-action-btn" style="font-size: 10.5px; padding: 3px 9px; border-color: ${AppState.ledgerShowAllCompleted ? 'var(--accent-emerald)' : 'rgba(245,158,11,0.55)'}; color: ${AppState.ledgerShowAllCompleted ? 'var(--accent-emerald)' : 'var(--accent-gold)'};">
+                    ${AppState.ledgerShowAllCompleted ? '📋 Showing ALL Completed FBS + NFL (Click for Top-25 Only)' : '🏆 Top-25 NCAA + NFL Only (Click to Show ALL FBS Finals)'}
+                </button>
+                <span style="font-size: 11px; color: var(--text-secondary);">
+                    Completed games move automatically into the 6 Scorecard Vaults above upon hitting FINAL
+                </span>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="quant-table">
+                <thead>
+                    <tr>
+                        <th>Matchup &amp; Status</th>
+                        <th>Market &amp; Slot</th>
+                        <th>Official Model Pick</th>
+                        <th>Vegas Closing</th>
+                        <th>Just the Tip Closing</th>
+                        <th>Balls Deep Closing</th>
+                        <th>Graded Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${upcomingRowsHTML}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+// ==========================================
+// RESPONSIVE 5-PACK CSS & FIXED-BOTTOM ZERO-TOKEN ESPN LIVE WIRE TICKER (300s CRAWL)
+// ==========================================
+function ensureTickerStylesInjected() {
+    if (document.getElementById("dixpix-ticker-keyframes")) return;
+    const styleEl = document.createElement("style");
+    styleEl.id = "dixpix-ticker-keyframes";
+    styleEl.textContent = `
+        @keyframes dixpixMarqueeScroll {
+            0% { transform: translateX(0%); }
+            100% { transform: translateX(-50%); }
+        }
+        #dixpix-live-wire-track:hover {
+            animation-play-state: paused !important;
+        }
+        #flagship-banner-toggle {
+            position: relative;
+            cursor: pointer;
+            padding: 14px 145px;
+            text-align: center;
+            user-select: none;
+        }
+        .five-pack-corner-btn {
+            position: absolute;
+            top: 12px;
+            right: 14px;
+        }
+        @media (max-width: 720px) {
+            #flagship-banner-toggle {
+                padding: 12px 14px !important;
+            }
+            .five-pack-corner-btn {
+                position: static !important;
+                display: inline-block !important;
+                margin-bottom: 8px !important;
+            }
+        }
+    `;
+    document.head.appendChild(styleEl);
+    document.body.style.paddingBottom = "46px";
+}
+
+function renderLiveBottomTicker() {
+    ensureTickerStylesInjected();
+
+    let tickerBar = document.getElementById("dixpix-live-wire-bar");
+    if (!tickerBar) {
+        tickerBar = document.createElement("div");
+        tickerBar.id = "dixpix-live-wire-bar";
+        tickerBar.style.cssText = "position:fixed; bottom:0; left:0; right:0; height:36px; background:rgba(9,13,22,0.96); border-top:1px solid rgba(245,158,11,0.55); box-shadow:0 -4px 16px rgba(0,0,0,0.65); z-index:9999; display:flex; align-items:center; overflow:hidden; font-family:var(--font-mono); font-size:11.5px;";
+        document.body.appendChild(tickerBar);
+    }
+
+    const tickerItems = [];
+
+    // 1. Add Permanent Graded Archive Highlights
+    tickerItems.push(`<span style="color:var(--accent-emerald);font-weight:800;">🟢 FINAL: LAC 23 - BAL 20</span> <span style="color:var(--text-primary);">[BAL +6.5 ✅ HIT (+27.6% EV) • O 44.5 🔵 BLUE BALLS (-1.5 pts)]</span>`);
+
+    // 2. Add Live / Final ESPN Feed Games + Current Week Slate Picks
+    const currentWeekGames = AppState.processedGames.filter(g => g.isCurrentWeek);
+    currentWeekGames.forEach(g => {
+        const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[g.matchup];
+        const gameSpreads = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "spread").sort((a, b) => b.tipEvPct - a.tipEvPct);
+        const topSpread = gameSpreads[0];
+        if (!topSpread) return;
+
+        const pickTag = `${topSpread.player} (${topSpread.tipEvPct > 0 ? '+' : ''}${topSpread.tipEvPct}% EV)`;
+        const tierColor = getTierColor(topSpread.tipBadge, true);
+
+        if (espnMatch && espnMatch.state === "in") {
+            tickerItems.push(`<span style="color:#ef4444;font-weight:800;">🔴 LIVE (${espnMatch.shortDetail || 'IN-PLAY'}): ${espnMatch.scoreStr}</span> <span style="color:${tierColor};">[Model: ${pickTag}]</span>`);
+        } else if (espnMatch && espnMatch.state === "post") {
+            tickerItems.push(`<span style="color:var(--accent-emerald);font-weight:800;">🟢 FINAL: ${espnMatch.scoreStr}</span> <span style="color:${tierColor};">[Model: ${pickTag}]</span>`);
+        } else {
+            let kickStr = "UPCOMING";
+            if (g.commenceTime) {
+                const dt = new Date(g.commenceTime);
+                kickStr = dt.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase() + " " + dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+            }
+            const badgeStr = topSpread.tipBadge === "SMASH" ? "🔥 SMASH" : (topSpread.tipBadge === "PASS" ? "💣 PASS" : "⚖️ TEASE");
+            tickerItems.push(`<span style="color:var(--accent-cyan);font-weight:700;">🕒 ${kickStr}: ${g.matchup}</span> <span style="color:${tierColor};">[${badgeStr}: ${pickTag}]</span>`);
+        }
+    });
+
+    const joinedStrip = tickerItems.join(` <span style="color:rgba(245,158,11,0.55);margin:0 18px;">//</span> `);
+    // Dynamic broadcast crawl speed (~60 px/sec regardless of item count — fixes snail crawl on short slates!)
+    const tickerDurationSec = Math.max(18, Math.min(180, tickerItems.length * 10));
+
+    tickerBar.innerHTML = `
+        <div style="flex-shrink:0; height:100%; padding:0 12px; background:linear-gradient(90deg, rgba(245,158,11,0.25), rgba(15,23,42,0.98)); border-right:1px solid rgba(245,158,11,0.55); display:flex; align-items:center; gap:7px; color:var(--accent-gold); font-weight:800; letter-spacing:0.03em; z-index:2;">
+            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--accent-emerald); box-shadow:0 0 8px var(--accent-emerald);"></span>
+            📡 DIXPIX LIVE WIRE
+        </div>
+        <div style="flex:1; overflow:hidden; white-space:nowrap; position:relative;">
+            <div id="dixpix-live-wire-track" style="display:inline-block; white-space:nowrap; padding-left:24px; animation: dixpixMarqueeScroll ${tickerDurationSec}s linear infinite;">
+                <span>${joinedStrip}</span>
+                <span style="color:rgba(245,158,11,0.55);margin:0 18px;">//</span>
+                <span>${joinedStrip}</span>
+            </div>
+        </div>
+    `;
+}
+// === END OF APP_CONTROLLER.JS (v246) ===
