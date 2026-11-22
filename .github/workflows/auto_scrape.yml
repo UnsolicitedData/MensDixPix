@@ -2,8 +2,8 @@ name: DixPix Auto-Scraper
 
 on:
   schedule:
-    # Standard 4-hour pulse
-    - cron: '0 */4 * * *'
+    # Standard 8-hour pulse (change to */4 if you want 4-hour updates)
+    - cron: '0 */8 * * *'
     # Sunday Early Slate Closing Line Lock: 12:00 PM EST (17:00 UTC)
     - cron: '0 17 * * 0'
     # Sunday Late Slate Closing Line Lock: 4:00 PM EST (21:00 UTC)
@@ -34,6 +34,7 @@ jobs:
       - name: Run DixPix Scraper & Auto-Grader
         env:
           GITHUB_ACTIONS: "true"
+          DIXPIX_ODDS_API_KEY: ${{ secrets.DIXPIX_ODDS_API_KEY }}
         run: python scraper.py
 
       - name: Commit and Push updated data.json
