@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v258 — FINAL PRODUCTION LOCK + 0.618x NCAA SPREAD / 0.786x TOTAL PARITY)
- * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with onlinemath_engine.js (v321) & scraper.py (v234)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v259 — PRODUCTION AUDIT LOCK (62-PLAY TOTALS + TIP DOG VISIBILITY + PORKYS ODDS PARITY + LEAGUE-SCOPED ESPN + REMATCH-SAFE LEDGER))
+ * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with math_engine.js (v322) & scraper.py (v235)
  *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
  *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
  *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
@@ -74,7 +74,6 @@ const CLEAN_CODE_OVERRIDES = {
     "BYCO": "BYU",
     "UTUT": "UTAH",
     "ARWI": "ARIZ",
-    "ARST": "ASU",
     "COBU": "COLO",
     "UCKN": "UCF",
     "CIBE": "CIN",
@@ -91,7 +90,6 @@ const CLEAN_CODE_OVERRIDES = {
     "INHO": "IND",
     "OHST": "OSU",
     "MIWO": "MICH",
-    "MIST": "MSU",
     "PEST": "PSU",
     "RUSC": "RUTG",
     "MATE": "MD",
@@ -175,7 +173,20 @@ const CLEAN_CODE_OVERRIDES = {
     "WEKE": "WKU",
     "WACA": "WCU",
     "MEME": "MERC",
-    "THCI": "CIT"
+    "THCI": "CIT",
+    "EAMI": "EMU",
+    "KEST": "KENT",
+    "WEMI": "WMU",
+    "AKZI": "AKR",
+    "BAST": "BALL",
+    "CEMI": "CMU",
+    "DEBL": "DEL",
+    "NOTE": "UNT",
+    "TEOW": "TEM",
+    "SOMI": "USM",
+    "ULMO": "ULM",
+    "LORA": "ULL",
+    "SAHO": "SHSU"
 };
 
 function cleanTeamCode(code) {
@@ -289,7 +300,7 @@ function shouldIncludeGame(game, defaultLeague = "NFL") {
     return true;
 }
 
-// Calculates Tuesday 5:00 AM cutoff right after Monday Night Football for the active week
+// Calculates Tuesday 5:00 AM EST (10:00 UTC) cutoff right after Monday Night Football (1:1 with scraper.py)
 function computeUpcomingMnfCutoffMs(gamesList) {
     const validTimes = (gamesList || [])
         .map(g => g.commence_time || g.commenceTime)
@@ -298,14 +309,19 @@ function computeUpcomingMnfCutoffMs(gamesList) {
         .filter(ms => !isNaN(ms));
 
     const anchorMs = validTimes.length > 0 ? Math.min(...validTimes) : Date.now();
-    const anchorDate = new Date(anchorMs);
-    const day = anchorDate.getDay();
+    // Shift to EST (-5h) in UTC frame so West Coast & East Coast browsers compute the exact same cutoff
+    const EST_OFFSET_MS = 5 * 60 * 60 * 1000;
+    const estAnchor = new Date(anchorMs - EST_OFFSET_MS);
+    const day = estAnchor.getUTCDay(); // 0=Sun, 1=Mon, 2=Tue ...
     const daysUntilTueAfterMnf = (day === 2) ? 7 : ((9 - day) % 7 || 7);
 
-    const cutoffDate = new Date(anchorDate);
-    cutoffDate.setDate(anchorDate.getDate() + daysUntilTueAfterMnf);
-    cutoffDate.setHours(5, 0, 0, 0);
-    return cutoffDate.getTime();
+    const cutoffEstMs = Date.UTC(
+        estAnchor.getUTCFullYear(),
+        estAnchor.getUTCMonth(),
+        estAnchor.getUTCDate() + daysUntilTueAfterMnf,
+        5, 0, 0, 0
+    );
+    return cutoffEstMs + EST_OFFSET_MS;
 }
 
 function isGameInCurrentWeek(commenceTimeStr, cutoffMs) {
@@ -337,6 +353,12 @@ function inferFootballWeekLabel(entryOrGame, fallbackLabel = "Week 10") {
     return fallbackLabel;
 }
 
+function getEspnScoreMatch(league, matchupKey) {
+    if (!matchupKey) return null;
+    const lg = String(league || "NFL").toUpperCase();
+    return ESPN_SCORE_CACHE.gamesByMatchup[`${lg}_${matchupKey}`] || ESPN_SCORE_CACHE.gamesByMatchup[matchupKey] || null;
+}
+
 // Checks if a game on Tab 1 has already finished (FINAL) so it can be swept into the Ledger vaults
 function isGameCompletedFinal(game) {
     if (!game) return false;
@@ -344,7 +366,8 @@ function isGameCompletedFinal(game) {
     const cleanHome = cleanTeamCode(game.home_team || game.homeTeam || "");
     const cleanAway = cleanTeamCode(game.away_team || game.awayTeam || "");
     const matchupKey = game.matchup || `${cleanAway} @ ${cleanHome}`;
-    const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[matchupKey];
+    const gameLeague = game.league || "NFL";
+    const espnMatch = getEspnScoreMatch(gameLeague, matchupKey);
     if (espnMatch && espnMatch.state === "post") return true;
     return false;
 }
@@ -818,9 +841,11 @@ function recalculateAndRenderAll(opts = {}) {
             awayTel.off_eff !== undefined && awayTel.def_eff !== undefined
         );
 
-        if (hasSplitEpa) {
+        if (typeof calcIndependentTotalTip === "function") {
+            baseTelemetryTotal = calcIndependentTotalTip(homeTel, awayTel, gameLeague, windMph, m8.delayTotalDragPts);
+        } else if (hasSplitEpa) {
             const maxTotCap = (gameLeague === "NCAA") ? 78.0 : 65.0;
-            const epaTotDelta = (playScaler * 0.5) * (
+            const epaTotDelta = (playScaler * PHI * 0.5) * (
                 Number(homeTel.off_epa_per_play) + Number(homeTel.def_epa_per_play) +
                 Number(awayTel.off_epa_per_play) + Number(awayTel.def_epa_per_play)
             );
@@ -1560,7 +1585,8 @@ function renderFlagshipFivePack() {
         // Safe Floor (-2φ) Counter-Strike Fade metrics
         const fadeTeamCode = fade.isHomeSpread ? fade.homeTeam : fade.awayTeam;
         const safeFloorProbRaw = (fade.safeFloorWinPct || 82.0) / 100.0;
-        const m2SafeFloor = calcExpectedValueAndKelly(safeFloorProbRaw, -175);
+        const porkyFloorOdds = fade.safeFloorOdds || -175;
+        const m2SafeFloor = calcExpectedValueAndKelly(safeFloorProbRaw, porkyFloorOdds);
         const safeFloorEvPct = Number(m2SafeFloor.evPercentage.toFixed(2));
         const safeFloorEvStr = `${safeFloorEvPct > 0 ? '+' : ''}${safeFloorEvPct}% EV`;
         const safeFloorTier = getTierFromEv(safeFloorEvPct);
@@ -1686,7 +1712,7 @@ function buildMasonryGridForGames(gamesSlice, numCols, cardSubtitle) {
         const cleanHome = cleanTeamCode(game.home_team);
         const cleanAway = cleanTeamCode(game.away_team);
         const matchupKey = `${cleanAway} @ ${cleanHome}`;
-        const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[matchupKey];
+        const espnMatch = getEspnScoreMatch(game.league || (gameRecord && gameRecord.league) || "NFL", matchupKey);
         const isLiveInPlay = Boolean(espnMatch && espnMatch.state === "in");
         const gameRecord = processedMap.get(game.game_id);
 
@@ -1741,14 +1767,12 @@ function buildMasonryGridForGames(gamesSlice, numCols, cardSubtitle) {
 
         const allGameProps = AppState.processedProps.filter(ep => ep.gameId === game.game_id);
 
-        const visibleGameProps = (AppState.activeMode === "tip")
-            ? allGameProps.filter(ep => {
-                if (ep.marketType !== "spread") return true;
-                if (ep.baseLine < 0) return true;
-                if (ep.baseLine === 0 && ep.isHomeSpread) return true;
-                return false;
-            })
-            : allGameProps;
+        let visibleGameProps = allGameProps;
+        if (AppState.activeMode === "tip") {
+            const gameSpreads = allGameProps.filter(ep => ep.marketType === "spread").sort((a, b) => b.tipEvPct - a.tipEvPct);
+            const bestTipSpreadKey = gameSpreads.length > 0 ? gameSpreads[0].propKey : null;
+            visibleGameProps = allGameProps.filter(ep => ep.marketType !== "spread" || ep.propKey === bestTipSpreadKey);
+        }
 
         if (visibleGameProps.length === 0) {
             drawer.innerHTML = `<div style="font-size: 0.85em; color: #94a3b8;">No active lines available yet.</div>`;
@@ -1760,9 +1784,9 @@ function buildMasonryGridForGames(gamesSlice, numCols, cardSubtitle) {
                     ? `+${engineData.tipProjectedMean}`
                     : `${engineData.tipProjectedMean}`;
                 const tipEvStr = `${engineData.tipEvPct > 0 ? '+' : ''}${engineData.tipEvPct}% EV`;
-                const slotBadge = (AppState.activeMode !== "tip" && engineData.flagshipSlot)
+                const slotBadge = engineData.flagshipSlot
                     ? `<span class="${engineData.flagshipSlot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}" style="margin-right:6px;">${engineData.flagshipSlot}</span>`
-                    : (engineData.flagshipSlot && (engineData.marketType !== "spread" || engineData.baseLine <= 0) ? `<span class="${engineData.flagshipSlot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}" style="margin-right:6px;">${engineData.flagshipSlot}</span>` : "");
+                    : "";
 
                 const propBlock = document.createElement("div");
                 propBlock.style.padding = "8px 0";
@@ -1883,7 +1907,7 @@ function renderCombinatoricsDeck() {
     const isUnlockedMode = (AppState.activeMode === "balls_deep" || AppState.activeMode === "davinci");
     const hasFloorLegs = AppState.safeFloorParlayLegs.size > 0;
     const modeTag = hasFloorLegs
-        ? "🐷 PORKY'S SAFE FLOOR (-2φ) FADE SLIP ACTIVE (-175 ALT LINES)"
+        ? "🔑 KEY-NUMBER / SAFE FLOOR ALT SLIP ACTIVE"
         : (AppState.activeMode === "tip"
             ? "JUST THE TIP BASELINE (M1–M9)"
             : (AppState.activeMode === "balls_deep" ? "BALLS DEEP v313 GUARDRAILS ACTIVE" : "DAVINCI MOMENTUM ARC ACTIVE"));
@@ -1918,9 +1942,10 @@ function renderCombinatoricsDeck() {
             ${selectedProps.map(p => {
                 const isFloor = AppState.safeFloorParlayLegs.has(p.propKey);
                 const pillLabel = isFloor
-                    ? `🛡️ ${p.isHomeSpread ? p.homeTeam : p.awayTeam} ${p.safeFloorLabel}`
+                    ? `🛡️ ${p.marketType === "spread" ? (p.isHomeSpread ? p.homeTeam : p.awayTeam) : p.matchup} ${p.safeFloorLabel}`
                     : (p.activePlayerLabel || p.player);
-                const pillOdds = isFloor ? "-175" : (p.baseOdds > 0 ? `+${p.baseOdds}` : `${p.baseOdds}`);
+                const effFloorOdds = p.safeFloorOdds || -175;
+                const pillOdds = isFloor ? (effFloorOdds > 0 ? `+${effFloorOdds}` : `${effFloorOdds}`) : (p.baseOdds > 0 ? `+${p.baseOdds}` : `${p.baseOdds}`);
                 const pillWin = isFloor ? p.safeFloorWinPct : p.activeModelPct;
                 const pillBorder = isFloor ? "rgba(6, 182, 212, 0.55)" : getTierColor(p.tierBadge, true);
 
@@ -2048,8 +2073,8 @@ function renderCombinatoricsDeck() {
                                 </div>
                             </div>
                             <div style="font-weight: 700; font-size: 13px; color: var(--text-primary); margin-bottom: 4px;">
-                                ${isFloorSelected ? `${p.isHomeSpread ? p.homeTeam : p.awayTeam} ${p.safeFloorLabel}` : (p.activePlayerLabel || p.player)}
-                                <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);">(${isFloorSelected ? '-175' : (p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds)})</span>
+                                ${isFloorSelected ? `${p.marketType === "spread" ? (p.isHomeSpread ? p.homeTeam : p.awayTeam) : p.matchup} ${p.safeFloorLabel}` : (p.activePlayerLabel || p.player)}
+                                <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);">(${isFloorSelected ? ((p.safeFloorOdds || -175) > 0 ? '+' + (p.safeFloorOdds || -175) : (p.safeFloorOdds || -175)) : (p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds)})</span>
                             </div>
                             <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 12px; color: ${isFloorSelected ? 'var(--accent-cyan)' : tierColor};">
                                 <span>Proj: <strong>${fmtProj}</strong>${kellyBit}</span>
@@ -2129,7 +2154,7 @@ function renderCompendiumBoard() {
             m12: tovVal * 0.12,
             m2: 0,
             m3: 0,
-            m11: (g.m11.phiBioScore + Math.abs(em.psiElevPts)) * 0.25,
+            m11: (g.m11.phiBioScore - em.psiElevPts) * 0.25,
             m4: 0,
             m8: g.m8.circadianStrainIndex * 0.12
         }, 13, sliderForAgg, m13.mRiseMultiplier);
@@ -2404,7 +2429,7 @@ async function syncEspnLiveScores() {
                 const state = (ev.status && ev.status.type && ev.status.type.state) || "pre";
                 const shortDetail = (ev.status && ev.status.type && ev.status.type.shortDetail) || "";
                 const key = `${awayCode} @ ${homeCode}`;
-                ESPN_SCORE_CACHE.gamesByMatchup[key] = {
+                const scoreObj = {
                     league: ep.league,
                     homeCode,
                     awayCode,
@@ -2414,6 +2439,10 @@ async function syncEspnLiveScores() {
                     shortDetail,
                     scoreStr: `${awayCode} ${awayScore} - ${homeCode} ${homeScore}`
                 };
+                ESPN_SCORE_CACHE.gamesByMatchup[`${ep.league}_${key}`] = scoreObj;
+                if (!ESPN_SCORE_CACHE.gamesByMatchup[key] || ep.league === "NFL") {
+                    ESPN_SCORE_CACHE.gamesByMatchup[key] = scoreObj;
+                }
             });
         } catch (e) {
             // Silent fallback
@@ -2639,7 +2668,7 @@ function renderHistoricalLedger() {
 
     let upcomingRowsHTML = "";
     const renderedMatchups = new Set();
-    const activeSlateMatchups = new Set(AppState.processedGames.map(g => g.matchup));
+    const activeSlateMatchups = new Set(AppState.processedGames.map(g => `${g.league}_${g.matchup}_${g.weekLabel || "Week 11"}`));
 
     const buildStandardVaultRowHTML = (weekLabel, cleanMatchup, statusLabel, type, slot, pickLabel, ledgerTier, vegasLine, baseOdds, tipColor, fmtTipProj, tipWinPct, tipEvPct, showBallsDeepFlag, bdColor, fmtBdProj, bdWinPct, bdEvPct, safeFloorLabel, safeFloorWinPct, bdAltLabel, bdAltEvPct, gradedTip, missByPts) => {
         const floorInfoHTML = safeFloorLabel
@@ -2733,16 +2762,18 @@ function renderHistoricalLedger() {
         if (!entry) return;
 
         const cleanMatchup = cleanLabelCodes(entry.matchup || "");
-        if (!cleanMatchup || renderedMatchups.has(cleanMatchup)) return;
-
         const entryLeague = entry.league || "NFL";
+        const weekLabel = inferFootballWeekLabel(entry, "Week 11");
+        const rematchKey = `${entryLeague}_${cleanMatchup}_${weekLabel}`;
+        if (!cleanMatchup || renderedMatchups.has(rematchKey)) return;
+
         if (!isRankedLedgerEntry(cleanMatchup, entryLeague, entry)) return;
 
-        const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[cleanMatchup];
+        const espnMatch = getEspnScoreMatch(entryLeague, cleanMatchup);
         const parsedScores = parseFinalScores(entry, espnMatch);
         const isFinal = entry.status === "FINAL" || (espnMatch && espnMatch.state === "post");
 
-        if (activeSlateMatchups.has(cleanMatchup) && !isFinal) return;
+        if (activeSlateMatchups.has(`${entryLeague}_${cleanMatchup}_${weekLabel}`) && !isFinal) return;
 
         const hasGradedResult = entry.spread_record && (
             entry.spread_record.result_tip === "HIT" ||
@@ -2752,9 +2783,7 @@ function renderHistoricalLedger() {
         );
         if (!isFinal && !hasGradedResult) return;
 
-        renderedMatchups.add(cleanMatchup);
-
-        const weekLabel = inferFootballWeekLabel(entry, "Week 11");
+        renderedMatchups.add(rematchKey);
         const scoreDisplay = entry.final_score || (espnMatch ? espnMatch.scoreStr : "COMPLETED");
         const statusLabel = `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${scoreDisplay})</span>`;
 
@@ -2835,8 +2864,8 @@ function renderHistoricalLedger() {
         }
 
         // Audit archived Porky's 5-Pack (3 Core Day-Shift Traps + 2 Keep-It-In-Your-Pants Flex)
-        if (entry.porkys_record && !recordedPorkysMatchups.has(cleanMatchup)) {
-            recordedPorkysMatchups.add(cleanMatchup);
+        if (entry.porkys_record && !recordedPorkysMatchups.has(rematchKey)) {
+            recordedPorkysMatchups.add(rematchKey);
             const pr = entry.porkys_record;
             const pSlot = pr.porkys_slot || "DAY-SHIFT TRAP #1";
             const isCore3 = pr.is_core_three !== undefined ? Boolean(pr.is_core_three) : pSlot.toUpperCase().includes("DAY-SHIFT");
@@ -3090,17 +3119,18 @@ function renderHistoricalLedger() {
 
     // 2. Process current week's slate (FINAL -> Vaults; UPCOMING/IN-PLAY -> Live Ledger Table)
     AppState.processedGames.filter(g => g.isCurrentWeek).forEach(g => {
-        if (renderedMatchups.has(g.matchup)) return;
+        const weekLabel = g.weekLabel || "Week 11";
+        const currRematchKey = `${g.league}_${g.matchup}_${weekLabel}`;
+        if (renderedMatchups.has(currRematchKey)) return;
         if (!isRankedLedgerEntry(g.matchup, g.league)) return;
-        renderedMatchups.add(g.matchup);
+        renderedMatchups.add(currRematchKey);
 
-        const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[g.matchup];
+        const espnMatch = getEspnScoreMatch(g.league, g.matchup);
         const kickedOffByClock = g.commenceTime ? (new Date(g.commenceTime).getTime() <= Date.now()) : false;
 
         const isFinal = Boolean(espnMatch && espnMatch.state === "post");
         const isLocked = isFinal || kickedOffByClock || Boolean(espnMatch && espnMatch.state === "in");
         const scoreDisplay = espnMatch ? espnMatch.scoreStr : "";
-        const weekLabel = g.weekLabel || "Week 11";
 
         const statusLabel = isFinal
             ? `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${scoreDisplay})</span>`
@@ -3251,12 +3281,13 @@ function renderHistoricalLedger() {
             const fade = item.fadeProp;
             if (!trap || !fade) return;
             const matchup = fade.matchup;
-            if (recordedPorkysMatchups.has(matchup)) return;
-            if (!isRankedLedgerEntry(matchup, fade.league)) return;
-            recordedPorkysMatchups.add(matchup);
-
             const weekLabel = fade.weekLabel || "Week 12";
-            const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[matchup];
+            const pCurrKey = `${fade.league}_${matchup}_${weekLabel}`;
+            if (recordedPorkysMatchups.has(pCurrKey)) return;
+            if (!isRankedLedgerEntry(matchup, fade.league)) return;
+            recordedPorkysMatchups.add(pCurrKey);
+
+            const espnMatch = getEspnScoreMatch(fade.league, matchup);
             const isFinal = Boolean(espnMatch && espnMatch.state === "post");
             const isLive = Boolean(espnMatch && espnMatch.state === "in");
             const scoreDisplay = espnMatch ? espnMatch.scoreStr : "";
@@ -3363,13 +3394,13 @@ function renderHistoricalLedger() {
         ? buckets.menage_a_trois
         : fivePackByWeek[AppState.selectedFivePackWeek].menage;
 
-    const totalFivePackWeeksCount = Math.max(1, availableFivePackWeeks.length) * 5;
+    const totalFivePackGraded = buckets.flagship_5pack.total;
     const weekDropdownHTML = `
         <select onchange="window.setFivePackVaultWeek(this.value, event)" onclick="event.stopPropagation()" style="background:#0f172a; color:var(--accent-gold); border:1px solid rgba(245,158,11,0.55); border-radius:4px; padding:2px 6px; font-family:var(--font-mono); font-size:10.5px; font-weight:800; cursor:pointer;">
-            <option value="ALL" ${AppState.selectedFivePackWeek === "ALL" ? "selected" : ""}>All Weeks (${buckets.flagship_5pack.hits}/${totalFivePackWeeksCount})</option>
+            <option value="ALL" ${AppState.selectedFivePackWeek === "ALL" ? "selected" : ""}>All Weeks (${buckets.flagship_5pack.hits}/${totalFivePackGraded})</option>
             ${availableFivePackWeeks.map(wk => {
                 const wObj = fivePackByWeek[wk];
-                return `<option value="${wk}" ${AppState.selectedFivePackWeek === wk ? "selected" : ""}>${wk} (${wObj.hits}/5)</option>`;
+                return `<option value="${wk}" ${AppState.selectedFivePackWeek === wk ? "selected" : ""}>${wk} (${wObj.hits}/${wObj.total})</option>`;
             }).join("")}
         </select>
     `;
@@ -3399,13 +3430,13 @@ function renderHistoricalLedger() {
         : [AppState.selectedPorkysWeek];
     const activePorkysParlays = computeParlaySummaryForWeeks(activePorkysWeekKeys);
 
-    const totalPorkysWeeksCount = Math.max(1, availablePorkysWeeks.length) * 5;
+    const totalPorkysGraded = buckets.porkys_5pack.total;
     const porkysWeekDropdownHTML = `
         <select onchange="window.setPorkysVaultWeek(this.value, event)" onclick="event.stopPropagation()" style="background:#0f172a; color:#f87171; border:1px solid rgba(239,68,68,0.55); border-radius:4px; padding:2px 6px; font-family:var(--font-mono); font-size:10.5px; font-weight:800; cursor:pointer;">
-            <option value="ALL" ${AppState.selectedPorkysWeek === "ALL" ? "selected" : ""}>All Weeks (${buckets.porkys_5pack.hits}/${totalPorkysWeeksCount})</option>
+            <option value="ALL" ${AppState.selectedPorkysWeek === "ALL" ? "selected" : ""}>All Weeks (${buckets.porkys_5pack.hits}/${totalPorkysGraded})</option>
             ${availablePorkysWeeks.map(wk => {
                 const wObj = porkysByWeek[wk];
-                return `<option value="${wk}" ${AppState.selectedPorkysWeek === wk ? "selected" : ""}>${wk} (${wObj.hits}/${Math.max(5, wObj.total)})</option>`;
+                return `<option value="${wk}" ${AppState.selectedPorkysWeek === wk ? "selected" : ""}>${wk} (${wObj.hits}/${wObj.total})</option>`;
             }).join("")}
         </select>
     `;
@@ -3422,8 +3453,8 @@ function renderHistoricalLedger() {
         if (AppState.activeLedgerVault === "flagship_5pack") {
             const wkFilter = AppState.selectedFivePackWeek;
             const wkScoreTag = wkFilter === "ALL"
-                ? `ALL WEEKS (${buckets.flagship_5pack.hits}/${totalFivePackWeeksCount} HIT)`
-                : `${wkFilter.toUpperCase()} (${fivePackByWeek[wkFilter].hits}/5 HIT)`;
+                ? `ALL WEEKS (${buckets.flagship_5pack.hits}/${totalFivePackGraded} HIT)`
+                : `${wkFilter.toUpperCase()} (${fivePackByWeek[wkFilter].hits}/${fivePackByWeek[wkFilter].total} HIT)`;
             vaultTitle = `👑 FLAGSHIP 5-PACK &amp; MÉNAGE À TROIS VAULT // ${wkScoreTag}`;
             vaultAccentColor = "var(--accent-gold)";
             const matchingRows = vaultRows.flagship_5pack
@@ -3433,8 +3464,8 @@ function renderHistoricalLedger() {
         } else if (isPorkysVault) {
             const wkFilter = AppState.selectedPorkysWeek;
             const wkScoreTag = wkFilter === "ALL"
-                ? `ALL WEEKS (${buckets.porkys_5pack.hits}/${totalPorkysWeeksCount} FLOOR FADES HIT)`
-                : `${wkFilter.toUpperCase()} (${porkysByWeek[wkFilter].hits}/5 FLOOR FADES HIT)`;
+                ? `ALL WEEKS (${buckets.porkys_5pack.hits}/${totalPorkysGraded} FLOOR FADES HIT)`
+                : `${wkFilter.toUpperCase()} (${porkysByWeek[wkFilter].hits}/${porkysByWeek[wkFilter].total} FLOOR FADES HIT)`;
             vaultTitle = `🐷 PORKY&apos;S 5-PACK &amp; PARLAY AUDIT VAULT // ${wkScoreTag}`;
             vaultAccentColor = "#f87171";
 
@@ -3756,7 +3787,7 @@ function renderLiveBottomTicker() {
     // 2. Add Live / Final ESPN Feed Games + Current Week Slate Picks
     const currentWeekGames = AppState.processedGames.filter(g => g.isCurrentWeek);
     currentWeekGames.forEach(g => {
-        const espnMatch = ESPN_SCORE_CACHE.gamesByMatchup[g.matchup];
+        const espnMatch = getEspnScoreMatch(g.league, g.matchup);
         const gameSpreads = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "spread").sort((a, b) => b.tipEvPct - a.tipEvPct);
         const topSpread = gameSpreads[0];
         if (!topSpread) return;
@@ -3797,4 +3828,4 @@ function renderLiveBottomTicker() {
         </div>
     `;
 }
-// === END OF APP_CONTROLLER.JS (v258) ===
+// === END OF APP_CONTROLLER.JS (v259) ===
