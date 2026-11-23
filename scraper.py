@@ -1,5 +1,5 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v233 — 100% PURGE ESPN FPI + PURE NFLVERSE/SPORTSDATAVERSE EPA + 0.618x NCAA SPREADS)
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v234 — FINAL PRODUCTION LOCK: DYNAMIC SDV GZIP + 0.618x NCAA SPREAD / 0.786x TOTAL + PLAYOFF REMATCH SAFE)
 Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
   1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
   2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
@@ -13,6 +13,7 @@ Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
 """
 
 import csv
+import gzip
 import io
 import json
 import math
@@ -411,12 +412,52 @@ def fetch_nflverse_live_team_epa(season_year=2026):
         print(f"[nflverse Notice] Live fetch skipped ({e}); falling back to ESPN FPI/registry.")
     return team_stats
 
+def _download_sdv_csv_text(release_tag, season_year, fallback_names):
+    """Dynamically resolves the exact .csv or .csv.gz asset URL from SportsDataverse GitHub releases
+    (zero API key needed) and transparently gunzips compressed feeds."""
+    candidate_urls = []
+    try:
+        api_url = f"https://api.github.com/repos/sportsdataverse/sportsdataverse-data/releases/tags/{release_tag}"
+        r_meta = requests.get(api_url, headers=HEADERS, timeout=10)
+        if r_meta.status_code == 200:
+            assets = r_meta.json().get("assets", [])
+            yr_str = str(season_year)
+            csv_assets = [a for a in assets if yr_str in (a.get("name") or "") and (a.get("name") or "").endswith((".csv", ".csv.gz"))]
+            # Prefer plain .csv first, then .csv.gz
+            csv_assets.sort(key=lambda a: 0 if (a.get("name") or "").endswith(".csv") else 1)
+            for a in csv_assets:
+                dl = a.get("browser_download_url")
+                if dl:
+                    candidate_urls.append(dl)
+    except Exception:
+        pass
+
+    for fname in fallback_names:
+        url = f"https://github.com/sportsdataverse/sportsdataverse-data/releases/download/{release_tag}/{fname}"
+        if url not in candidate_urls:
+            candidate_urls.append(url)
+
+    for dl_url in candidate_urls:
+        try:
+            resp = requests.get(dl_url, headers=HEADERS, timeout=22)
+            if resp.status_code == 200 and len(resp.content) > 250:
+                raw_bytes = resp.content
+                if dl_url.endswith(".gz") or raw_bytes[:2] == b"\x1f\x8b":
+                    raw_bytes = gzip.decompress(raw_bytes)
+                text = raw_bytes.decode("utf-8", errors="replace")
+                if len(text) > 500 and "," in text[:500]:
+                    return text, dl_url
+        except Exception:
+            continue
+    return None, None
+
 def fetch_sportsdataverse_cfb_live_epa(season_year=2026):
     """
     Pulls real 2026 NCAA FBS play-by-play EPA directly from SportsDataverse (cfbfastR-cfb-data releases)
     with zero API key and zero ESPN FPI black-box priors.
-    Primary:  espn_cfb_adv_team/adv_team_{season_year}.csv (true Offensive & Defensive EPA/play)
-    Fallback: espn_cfb_team_box/team_box_{season_year}.csv (pure box-score net yards/play & turnovers)
+    Auto-discovers exact .csv / .csv.gz release assets via GitHub Releases API.
+    Primary:  espn_cfb_adv_team (true Offensive & Defensive EPA/play)
+    Fallback: espn_cfb_team_box (pure on-field net yards/play & turnovers)
     """
     cfb_map = {}
 
@@ -446,12 +487,14 @@ def fetch_sportsdataverse_cfb_live_epa(season_year=2026):
                 return ESPN_CODE_MAP.get(val, val)
         return ""
 
-    # 1. Primary: SportsDataverse Advanced Team EPA CSV (built from cfbfastR play-by-play EPA)
-    adv_url = f"https://github.com/sportsdataverse/sportsdataverse-data/releases/download/espn_cfb_adv_team/adv_team_{season_year}.csv"
+    # 1. Primary: SportsDataverse Advanced Team EPA CSV/GZ (built from cfbfastR play-by-play EPA)
     try:
-        resp = requests.get(adv_url, headers=HEADERS, timeout=20)
-        if resp.status_code == 200 and len(resp.text) > 500:
-            reader = csv.DictReader(io.StringIO(resp.text))
+        adv_text, adv_src = _download_sdv_csv_text(
+            "espn_cfb_adv_team", season_year,
+            [f"adv_team_{season_year}.csv", f"adv_team_{season_year}.csv.gz", f"espn_cfb_adv_team_{season_year}.csv", f"espn_cfb_adv_team_{season_year}.csv.gz"]
+        )
+        if adv_text:
+            reader = csv.DictReader(io.StringIO(adv_text))
             agg = {}
             for row in reader:
                 t_name = _extract_team_name(row)
@@ -524,17 +567,19 @@ def fetch_sportsdataverse_cfb_live_epa(season_year=2026):
                     cfb_map[f"code:{abbr}"] = entry
 
             if len(ranked) >= 60:
-                print(f"[SportsDataverse Live {season_year} NCAA] Loaded raw play-by-play Off/Def EPA for {len(ranked)} FBS teams (ZERO ESPN FPI).")
+                print(f"[SportsDataverse Live {season_year} NCAA] Loaded raw play-by-play Off/Def EPA for {len(ranked)} FBS teams from {adv_src} (ZERO ESPN FPI).")
                 return cfb_map
     except Exception as e:
         print(f"[SportsDataverse adv_team Notice] {e}")
 
-    # 2. Secondary Fallback: SportsDataverse Team Box Scores CSV (pure on-field yards/play + turnovers, zero ESPN FPI)
-    box_url = f"https://github.com/sportsdataverse/sportsdataverse-data/releases/download/espn_cfb_team_box/team_box_{season_year}.csv"
+    # 2. Secondary Fallback: SportsDataverse Team Box Scores CSV/GZ (pure on-field yards/play + turnovers, zero ESPN FPI)
     try:
-        resp = requests.get(box_url, headers=HEADERS, timeout=22)
-        if resp.status_code == 200 and len(resp.text) > 500:
-            reader = csv.DictReader(io.StringIO(resp.text))
+        box_text, box_src = _download_sdv_csv_text(
+            "espn_cfb_team_box", season_year,
+            [f"team_box_{season_year}.csv", f"team_box_{season_year}.csv.gz", f"espn_cfb_team_box_{season_year}.csv", f"espn_cfb_team_box_{season_year}.csv.gz"]
+        )
+        if box_text:
+            reader = csv.DictReader(io.StringIO(box_text))
             by_game = {}
             for row in reader:
                 gid_b = (row.get("game_id") or "").strip()
@@ -598,12 +643,12 @@ def fetch_sportsdataverse_cfb_live_epa(season_year=2026):
                     cfb_map[f"code:{abbr}"] = entry
 
             if len(ranked) >= 60:
-                print(f"[SportsDataverse TeamBox {season_year} NCAA] Computed pure on-field efficiency for {len(ranked)} FBS teams (ZERO ESPN FPI).")
+                print(f"[SportsDataverse TeamBox {season_year} NCAA] Computed pure on-field efficiency for {len(ranked)} FBS teams from {box_src} (ZERO ESPN FPI).")
                 return cfb_map
     except Exception as e:
         print(f"[SportsDataverse team_box Notice] {e}")
 
-    print("[SportsDataverse Notice] Live CFB release unavailable; using calibrated stadium registry baselines (ZERO ESPN FPI).")
+    print("[SportsDataverse Notice] Live CFB release unavailable; using verified standings PPG / registry baselines (ZERO ESPN FPI).")
     return cfb_map
 
 def parse_record_games(record_str):
@@ -930,6 +975,12 @@ def get_team_meta(full_name, league="NFL", nflverse_map=None, cfb_epa_map=None, 
                 meta["rz_dvoa"] = 0.06 if is_elite_fcs else 0.15
                 meta["close_pct"] = 0.650 if is_elite_fcs else 0.250
                 meta["telemetry_source"] = "fcs_calibrated_tier"
+            elif st_hit and st_hit.get("ppg_for") is not None and st_hit.get("ppg_against") is not None and st_hit.get("games_played", 0) >= 3:
+                # Zero-FPI live standings fallback (compressed 0.55x to adjust for SOS variance)
+                pd_pts = max(-22.0, min(22.0, (st_hit["ppg_for"] - st_hit["ppg_against"]) * 0.55))
+                meta["epa"] = round(pd_pts / GOLDEN_PLAY_SCALER, 4)
+                meta["close_pct"] = st_hit["win_pct"]
+                meta["telemetry_source"] = "espn_standings_ppg_fallback"
 
         # Overlay live Top-25 poll rank
         if poll_map:
@@ -1894,9 +1945,13 @@ class _NflDedicatedEngine:
     hfa_base = PI_OVER_PHI_HFA
     total_intercept = MODEL_TOTAL_INTERCEPT
     logistic_k = LOGISTIC_K_TIGHT
+    total_logistic_k = LOGISTIC_K_TIGHT
 
     def win_prob(self, gap):
         return max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-self.logistic_k * gap))))
+
+    def total_win_prob(self, gap):
+        return max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-self.total_logistic_k * gap))))
 
     def key_alt(self, base_line, fair_line, base_odds=-110):
         return calc_key_number_alt_spread(base_line, fair_line, base_odds)
@@ -1910,9 +1965,13 @@ class _NcaaDedicatedEngine:
     hfa_base = NCAA_HFA_BASE
     total_intercept = NCAA_TOTAL_INTERCEPT
     logistic_k = round(LOGISTIC_K_TIGHT * (1.0 / GOLDEN_RATIO_PHI), 6)
+    total_logistic_k = round(LOGISTIC_K_TIGHT * 0.786, 6)
 
     def win_prob(self, gap):
         return max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-self.logistic_k * gap))))
+
+    def total_win_prob(self, gap):
+        return max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-self.total_logistic_k * gap))))
 
     def key_alt(self, base_line, fair_line, base_odds=-110):
         res = calc_key_number_alt_spread(base_line, fair_line, base_odds)
@@ -2206,8 +2265,8 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                     bd_t = reg_t["balls_deep_total"]
                     t_dir = "U" if tip_t < v_tot else "O"
                     lg_tot_eng = get_dedicated_engine(lg)
-                    p_tip_t = max(0.50, lg_tot_eng.win_prob(abs(tip_t - v_tot)))
-                    p_bd_t = max(0.50, lg_tot_eng.win_prob(abs(bd_t - v_tot)))
+                    p_tip_t = max(0.50, lg_tot_eng.total_win_prob(abs(tip_t - v_tot)))
+                    p_bd_t = max(0.50, lg_tot_eng.total_win_prob(abs(bd_t - v_tot)))
                     ev_t_tot = calc_ev_pct(p_tip_t, -110)
                     ev_b_tot = calc_ev_pct(p_bd_t, -110)
                     t_rec.update({
@@ -2276,12 +2335,12 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                     reg_t = calc_regime_safe_total_obj(v_tot, tip_t, env_arch, tz_arch, elev_arch, lg, False)
                     bd_t_arch = reg_t["balls_deep_total"]
                     lg_tot_eng = get_dedicated_engine(lg)
-                    p_bd_t_arch = max(0.50, lg_tot_eng.win_prob(abs(bd_t_arch - v_tot)))
+                    p_bd_t_arch = max(0.50, lg_tot_eng.total_win_prob(abs(bd_t_arch - v_tot)))
                     ev_bd_t_arch = calc_ev_pct(p_bd_t_arch, -110)
                     c_dir_arch = reg_t["safe_dir"]
                     c_line_arch = (math.floor(v_tot - 3.0) + 0.5) if c_dir_arch == "U" else (math.floor(v_tot + 3.0) + 0.5)
                     c_edge_arch = (c_line_arch - bd_t_arch) if c_dir_arch == "U" else (bd_t_arch - c_line_arch)
-                    c_ev_arch = calc_ev_pct(lg_tot_eng.win_prob(c_edge_arch), 155)
+                    c_ev_arch = calc_ev_pct(lg_tot_eng.total_win_prob(c_edge_arch), 155)
                     t_rec.update({
                         "balls_deep_proj": bd_t_arch,
                         "balls_deep_direction": reg_t["safe_dir"],
@@ -2322,7 +2381,7 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
         if cur_dir != true_dir or f"({true_dir} " not in cur_lbl:
             lg = entry.get("league") or ("NCAA" if gid.startswith("NCAA_") else "NFL")
             lg_eng = get_dedicated_engine(lg)
-            p_tip_t = max(0.50, lg_eng.win_prob(abs(tip_t - v_tot)))
+            p_tip_t = max(0.50, lg_eng.total_win_prob(abs(tip_t - v_tot)))
             odds_t = _i(t_rec.get("odds"), -110)
             if abs(odds_t) >= 220 or odds_t == 0:
                 odds_t = -110
@@ -2358,19 +2417,19 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
         t_rec["safe_total_dir"] = true_dir
         s_line_c = (math.floor(v_tot + 4.0) + 0.5) if true_dir == "U" else (math.floor(v_tot - 4.0) + 0.5)
         s_edge_c = (s_line_c - bd_t_cur) if true_dir == "U" else (bd_t_cur - s_line_c)
-        s_prob_c = min(0.94, max(0.55, lg_eng_c.win_prob(s_edge_c)))
+        s_prob_c = min(0.94, max(0.55, lg_eng_c.total_win_prob(s_edge_c)))
         t_rec["safe_total_line"] = s_line_c
         t_rec["safe_total_odds"] = -175
         t_rec["safe_total_label"] = f"Alt {true_dir} {s_line_c:.1f} (-175)"
         t_rec["safe_total_win_pct"] = round(s_prob_c * 100.0, 1)
         t_rec["safe_total_ev_pct"] = calc_ev_pct(s_prob_c, -175)
-        p_bd_c = max(0.50, lg_eng_c.win_prob(abs(bd_t_cur - v_tot)))
+        p_bd_c = max(0.50, lg_eng_c.total_win_prob(abs(bd_t_cur - v_tot)))
         t_rec["balls_deep_win_pct"] = round(p_bd_c * 100.0, 2)
         t_rec["balls_deep_ev_pct"] = calc_ev_pct(p_bd_c, -110)
         c_line_c = (math.floor(v_tot - 3.0) + 0.5) if true_dir == "U" else (math.floor(v_tot + 3.0) + 0.5)
         c_edge_c = (c_line_c - bd_t_cur) if true_dir == "U" else (bd_t_cur - c_line_c)
         t_rec["bd_alt_label"] = f"Alt {true_dir} {c_line_c:.1f} (+155)"
-        t_rec["bd_alt_ev_pct"] = calc_ev_pct(lg_eng_c.win_prob(c_edge_c), 155)
+        t_rec["bd_alt_ev_pct"] = calc_ev_pct(lg_eng_c.total_win_prob(c_edge_c), 155)
 
     # Also enforce Spread Ceiling EV% consistency on EVERY archived spread
     for gid, entry in entries.items():
@@ -2644,7 +2703,19 @@ def build_master_payload():
         if matchup_pair in seen_matchups:
             continue
         seen_matchups.add(matchup_pair)
-        game_id = f"{game_league}_{away_code}_{home_code}_{season_year}"
+        base_gid = f"{game_league}_{away_code}_{home_code}_{season_year}"
+        game_id = base_gid
+        old_led_entries = (old_payload.get("historical_ledger") or {}).get("entries") or {}
+        prev_e = old_led_entries.get(base_gid)
+        if prev_e and prev_e.get("status") == "FINAL" and prev_e.get("commence_time") and game.get("commence_time"):
+            try:
+                prev_dt = datetime.strptime(prev_e["commence_time"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                cur_dt = datetime.strptime(game["commence_time"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                if abs((cur_dt - prev_dt).days) >= 5:
+                    wk_num = max(1, ((cur_dt - datetime(season_year, 9, 2, tzinfo=timezone.utc)).days // 7) + 1)
+                    game_id = f"{base_gid}_W{wk_num}"
+            except Exception:
+                pass
 
         travel_miles = calc_haversine_miles(away_meta["lat"], away_meta["lon"], home_meta["lat"], home_meta["lon"])
         tz_shift = home_meta["tz"] - away_meta["tz"]
@@ -2806,8 +2877,8 @@ def build_master_payload():
                     total_diff_bd = abs(proj_total_bd - t_point)
 
                     lg_tot_eng = get_dedicated_engine(game_league)
-                    calc_prob_tip = max(0.50, lg_tot_eng.win_prob(total_diff_tip))
-                    calc_prob_bd = max(0.50, lg_tot_eng.win_prob(total_diff_bd))
+                    calc_prob_tip = max(0.50, lg_tot_eng.total_win_prob(total_diff_tip))
+                    calc_prob_bd = max(0.50, lg_tot_eng.total_win_prob(total_diff_bd))
 
                     ev_tip = calc_ev_pct(calc_prob_tip, active_price)
                     ev_bd = calc_ev_pct(calc_prob_bd, bd_price)
@@ -2830,7 +2901,7 @@ def build_master_payload():
                         "key_alt_win_pct": reg_tot["safe_win_pct"],
                         "key_alt_ev_pct": reg_tot["safe_ev_pct"],
                         "bd_alt_label": f"Alt {reg_tot['safe_dir']} {((math.floor(t_point - 3.0) + 0.5) if reg_tot['safe_dir'] == 'U' else (math.floor(t_point + 3.0) + 0.5)):.1f} (+155)",
-                        "bd_alt_ev_pct": calc_ev_pct(lg_tot_eng.win_prob((((math.floor(t_point - 3.0) + 0.5) - proj_total_bd) if reg_tot['safe_dir'] == 'U' else (proj_total_bd - (math.floor(t_point + 3.0) + 0.5)))), 155),
+                        "bd_alt_ev_pct": calc_ev_pct(lg_tot_eng.total_win_prob((((math.floor(t_point - 3.0) + 0.5) - proj_total_bd) if reg_tot['safe_dir'] == 'U' else (proj_total_bd - (math.floor(t_point + 3.0) + 0.5)))), 155),
                         "tier_badge": badge,
                         "flagship_slot": "",
                         "projected_variance_sigma2": 0,
@@ -3070,7 +3141,7 @@ def build_master_payload():
             "league": "NFL_NCAA",
             "week": dynamic_week,
             "last_updated": now_iso,
-            "telemetry_version": "v233_pure_epa_zero_fpi",
+            "telemetry_version": "v234_final_production_lock",
             "ranked_ncaa_teams": live_ranked_ncaa
         },
         "games": games_slate,
@@ -3085,7 +3156,7 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v233 — 100% PURGE ESPN FPI + PURE NFLVERSE/SPORTSDATAVERSE EPA + 0.618x NCAA SPREADS)")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v234 — FINAL PRODUCTION LOCK: DYNAMIC SDV GZIP + 0.618x NCAA SPREAD / 0.786x TOTAL + PLAYOFF REMATCH SAFE)")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("=========================================================")
 
