@@ -1,11 +1,11 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v232 — DYNAMIC WEEK ROLLOVER + BALLS DEEP ENHANCE-ONLY)
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v233 — 100% PURGE ESPN FPI + PURE NFLVERSE/SPORTSDATAVERSE EPA + 0.618x NCAA SPREADS)
 Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
   1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
   2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
      (true Offensive EPA/play - Defensive EPA/play allowed, turnover regression, red-zone defense proxy).
-  3. Live 2026 NCAA FBS & NFL FPI: Pulls ESPN Power Index (fitt/v3) + ESPN Standings (PPG For/Against,
-     active win streaks, closing win%) + True FCS Tiering (eliminates random MD5 hash EPA bugs).
+  3. Live 2026 NCAA FBS Raw EPA: Pulls SportsDataverse (cfbfastR) play-by-play Off/Def EPA + ESPN Standings
+     (active win streaks) + True FCS Tiering (100% ESPN FPI purged from both NFL and NCAA).
   4. Live 2026 AP/CFP Top-25 Rankings: Pulls real weekly poll_rank for M13 divergence & Ranked NCAA filter.
   5. Live 2026 NFL Injury Reports: Pulls ESPN game summary injuries to populate qb_replacement_delta,
      lt_or_rb_pass_pro_out, and injuries_summary automatically.
@@ -411,100 +411,200 @@ def fetch_nflverse_live_team_epa(season_year=2026):
         print(f"[nflverse Notice] Live fetch skipped ({e}); falling back to ESPN FPI/registry.")
     return team_stats
 
-def fetch_espn_fpi(league="NCAA"):
+def fetch_sportsdataverse_cfb_live_epa(season_year=2026):
     """
-    Pulls live ESPN Football Power Index (fitt/v3) for NCAA FBS (~134 teams) or NFL (32 teams).
-    Returns dict keyed by normalized displayName AND 'code:ABBR'.
-    FPI is predictive neutral-field points above league average.
+    Pulls real 2026 NCAA FBS play-by-play EPA directly from SportsDataverse (cfbfastR-cfb-data releases)
+    with zero API key and zero ESPN FPI black-box priors.
+    Primary:  espn_cfb_adv_team/adv_team_{season_year}.csv (true Offensive & Defensive EPA/play)
+    Fallback: espn_cfb_team_box/team_box_{season_year}.csv (pure box-score net yards/play & turnovers)
     """
-    sport_path = "college-football" if league == "NCAA" else "nfl"
-    limit = 160 if league == "NCAA" else 40
-    url = f"https://site.web.api.espn.com/apis/fitt/v3/sports/football/{sport_path}/powerindex?limit={limit}"
-    fpi_map = {}
+    cfb_map = {}
 
+    def _fval(row, *keys):
+        for k in keys:
+            v = row.get(k)
+            if v not in (None, "", "NA", "NaN", "None"):
+                try:
+                    val = float(v)
+                    if not math.isnan(val) and not math.isinf(val):
+                        return val
+                except (ValueError, TypeError):
+                    pass
+        return None
+
+    def _extract_team_name(row):
+        for k in ("team", "team_name", "school", "display_name", "team_short_display_name", "team_location"):
+            val = (row.get(k) or "").strip()
+            if val:
+                return val
+        return ""
+
+    def _extract_abbr(row):
+        for k in ("abbreviation", "team_abbreviation", "abbr", "team_abbr"):
+            val = (row.get(k) or "").strip().upper()
+            if val:
+                return ESPN_CODE_MAP.get(val, val)
+        return ""
+
+    # 1. Primary: SportsDataverse Advanced Team EPA CSV (built from cfbfastR play-by-play EPA)
+    adv_url = f"https://github.com/sportsdataverse/sportsdataverse-data/releases/download/espn_cfb_adv_team/adv_team_{season_year}.csv"
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=14)
-        if resp.status_code != 200:
-            print(f"[ESPN FPI {league} Notice] HTTP {resp.status_code}")
-            return {}
-        payload = resp.json()
+        resp = requests.get(adv_url, headers=HEADERS, timeout=20)
+        if resp.status_code == 200 and len(resp.text) > 500:
+            reader = csv.DictReader(io.StringIO(resp.text))
+            agg = {}
+            for row in reader:
+                t_name = _extract_team_name(row)
+                if not t_name:
+                    continue
+                norm_k = normalize_team_key(t_name)
+                abbr = _extract_abbr(row)
 
-        # Build category name -> stat index map from top-level categories metadata
-        cat_stat_names = {}
-        for cat in payload.get("categories", []):
-            cname = cat.get("name", "")
-            cat_stat_names[cname] = cat.get("names", [])
+                plays = _fval(row, "scrimmage_plays", "plays", "off_plays", "total_plays") or 0.0
+                off_pp = _fval(row, "EPA_overall_off_per_play", "epa_overall_off_per_play", "off_epa_per_play", "ppa_offense", "offense_ppa")
+                def_pp = _fval(row, "EPA_overall_def_per_play", "epa_overall_def_per_play", "def_epa_per_play", "ppa_defense", "defense_ppa")
 
-        teams_arr = payload.get("teams", [])
-        ranked_entries = []
+                off_tot = _fval(row, "EPA_overall_off", "epa_overall_off", "off_epa")
+                def_tot = _fval(row, "EPA_overall_def", "epa_overall_def", "def_epa")
 
-        for item in teams_arr:
-            team_obj = item.get("team", {})
-            dname = team_obj.get("displayName") or team_obj.get("name") or ""
-            abbr = ESPN_CODE_MAP.get((team_obj.get("abbreviation") or "").upper(), (team_obj.get("abbreviation") or "").upper())
-            if not dname:
-                continue
+                if off_pp is None and off_tot is not None and plays > 0:
+                    off_pp = off_tot / plays
+                if def_pp is None and def_tot is not None and plays > 0:
+                    def_pp = def_tot / plays
+                if off_pp is None or def_pp is None:
+                    continue
 
-            stats_dict = {}
-            for cat in item.get("categories", []):
-                cname = cat.get("name", "")
-                names = cat.get("names") or cat_stat_names.get(cname, [])
-                vals = cat.get("totals") or cat.get("values") or []
-                for idx, val in enumerate(vals):
-                    stat_key = names[idx].lower() if idx < len(names) else f"{cname}_{idx}"
-                    try:
-                        stats_dict[stat_key] = float(val)
-                    except (ValueError, TypeError):
-                        pass
+                w_plays = plays if plays > 0 else 65.0
+                rec = agg.setdefault(norm_k, {
+                    "name": t_name, "abbr": abbr, "games": 0,
+                    "w_plays": 0.0, "w_off_epa": 0.0, "w_def_epa": 0.0,
+                    "giveaways": 0.0, "takeaways": 0.0
+                })
+                rec["games"] += 1
+                rec["w_plays"] += w_plays
+                rec["w_off_epa"] += off_pp * w_plays
+                rec["w_def_epa"] += def_pp * w_plays
+                if abbr and not rec["abbr"]:
+                    rec["abbr"] = abbr
 
-            fpi_val = None
-            for k in ("fpi", "overall", "powerindex"):
-                if k in stats_dict:
-                    fpi_val = stats_dict[k]
-                    break
-            if fpi_val is None:
-                continue
+                to_val = _fval(row, "turnovers", "giveaways", "total_turnovers")
+                ta_val = _fval(row, "takeaways", "def_turnovers", "opponent_turnovers")
+                if to_val is not None:
+                    rec["giveaways"] += to_val
+                if ta_val is not None:
+                    rec["takeaways"] += ta_val
 
-            fpi_rk = None
-            for k in ("fpirank", "rank", "fpi_rk"):
-                if k in stats_dict:
-                    fpi_rk = int(round(stats_dict[k]))
-                    break
+            ranked = []
+            for norm_k, d in agg.items():
+                if d["w_plays"] <= 0:
+                    continue
+                off_epa_pp = d["w_off_epa"] / d["w_plays"]
+                def_epa_pp = d["w_def_epa"] / d["w_plays"]
+                net_epa_pp = off_epa_pp - def_epa_pp
+                gp = max(1, d["games"])
+                to_margin_pg = (d["takeaways"] - d["giveaways"]) / gp
+                to_reg = max(-0.85, min(0.85, -0.35 * to_margin_pg))
+                rz_dvoa = max(-0.22, min(0.22, def_epa_pp * 1.45))
 
-            off_eff = stats_dict.get("offefficiency", stats_dict.get("off", 50.0))
-            def_eff = stats_dict.get("defefficiency", stats_dict.get("def", 50.0))
+                entry = {
+                    "off_epa_per_play": round(off_epa_pp, 4),
+                    "def_epa_per_play": round(def_epa_pp, 4),
+                    "net_epa_per_play": round(net_epa_pp, 4),
+                    "to_reg": round(to_reg, 2),
+                    "rz_dvoa": round(rz_dvoa, 3),
+                    "is_fbs": True
+                }
+                ranked.append((net_epa_pp, norm_k, d["abbr"], entry))
 
-            # Convert FPI (predictive neutral-field points vs avg) cleanly into GOLDEN_PLAY_SCALER EPA units
-            epa_equiv = round(fpi_val / GOLDEN_PLAY_SCALER, 4)
-            # Defensive efficiency (0..100, higher=better) -> opp_rz_dvoa (-0.22..+0.22, negative=better)
-            rz_proxy = round(max(-0.22, min(0.22, -(def_eff - 50.0) / 220.0)), 3)
+            ranked.sort(key=lambda x: x[0], reverse=True)
+            for idx, (_, norm_k, abbr, entry) in enumerate(ranked, start=1):
+                entry["epa_rank"] = idx
+                cfb_map[norm_k] = entry
+                if abbr:
+                    cfb_map[f"code:{abbr}"] = entry
 
-            entry = {
-                "fpi": round(fpi_val, 2),
-                "epa_equiv": epa_equiv,
-                "epa_rank": fpi_rk,
-                "off_eff": round(off_eff, 1),
-                "def_eff": round(def_eff, 1),
-                "rz_dvoa": rz_proxy,
-                "is_fbs": True,
-                "espn_abbr": abbr
-            }
-            ranked_entries.append((fpi_val, entry))
-            fpi_map[normalize_team_key(dname)] = entry
-            if abbr:
-                fpi_map[f"code:{abbr}"] = entry
-
-        # Fill epa_rank cleanly if not explicitly present
-        ranked_entries.sort(key=lambda x: x[0], reverse=True)
-        for idx, (_, ent) in enumerate(ranked_entries, start=1):
-            if not ent.get("epa_rank"):
-                ent["epa_rank"] = idx
-
-        print(f"[ESPN FPI {league}] Loaded live FPI ratings for {len(ranked_entries)} teams.")
+            if len(ranked) >= 60:
+                print(f"[SportsDataverse Live {season_year} NCAA] Loaded raw play-by-play Off/Def EPA for {len(ranked)} FBS teams (ZERO ESPN FPI).")
+                return cfb_map
     except Exception as e:
-        print(f"[ESPN FPI {league} Notice] {e}")
+        print(f"[SportsDataverse adv_team Notice] {e}")
 
-    return fpi_map
+    # 2. Secondary Fallback: SportsDataverse Team Box Scores CSV (pure on-field yards/play + turnovers, zero ESPN FPI)
+    box_url = f"https://github.com/sportsdataverse/sportsdataverse-data/releases/download/espn_cfb_team_box/team_box_{season_year}.csv"
+    try:
+        resp = requests.get(box_url, headers=HEADERS, timeout=22)
+        if resp.status_code == 200 and len(resp.text) > 500:
+            reader = csv.DictReader(io.StringIO(resp.text))
+            by_game = {}
+            for row in reader:
+                gid_b = (row.get("game_id") or "").strip()
+                t_name = _extract_team_name(row)
+                if not gid_b or not t_name:
+                    continue
+                yds = _fval(row, "total_yards", "net_passing_yards") or 0.0
+                if yds == 0.0:
+                    py = _fval(row, "net_passing_yards", "passing_yards") or 0.0
+                    ry = _fval(row, "rushing_yards") or 0.0
+                    yds = py + ry
+                plays = _fval(row, "total_offensive_plays", "scrimmage_plays", "plays") or 65.0
+                tos = _fval(row, "turnovers", "total_turnovers") or 0.0
+                by_game.setdefault(gid_b, []).append({
+                    "norm": normalize_team_key(t_name),
+                    "abbr": _extract_abbr(row),
+                    "ypp": yds / max(20.0, plays),
+                    "tos": tos
+                })
+
+            agg = {}
+            for gid_b, sides in by_game.items():
+                if len(sides) != 2:
+                    continue
+                for i_s in (0, 1):
+                    me_s = sides[i_s]
+                    opp_s = sides[1 - i_s]
+                    rec = agg.setdefault(me_s["norm"], {"abbr": me_s["abbr"], "games": 0, "off_ypp": 0.0, "def_ypp": 0.0, "to_diff": 0.0})
+                    rec["games"] += 1
+                    rec["off_ypp"] += me_s["ypp"]
+                    rec["def_ypp"] += opp_s["ypp"]
+                    rec["to_diff"] += (opp_s["tos"] - me_s["tos"])
+
+            ranked = []
+            for norm_k, d in agg.items():
+                if d["games"] < 2:
+                    continue
+                off_ypp = d["off_ypp"] / d["games"]
+                def_ypp = d["def_ypp"] / d["games"]
+                # Convert net yards-per-play vs FBS 5.55 ypp baseline cleanly into EPA/play units (~0.075 EPA per 1.0 ypp)
+                off_epa_pp = (off_ypp - 5.55) * 0.075
+                def_epa_pp = (def_ypp - 5.55) * 0.075
+                net_epa_pp = off_epa_pp - def_epa_pp
+                to_reg = max(-0.85, min(0.85, -0.35 * (d["to_diff"] / d["games"])))
+                rz_dvoa = max(-0.22, min(0.22, def_epa_pp * 1.45))
+                entry = {
+                    "off_epa_per_play": round(off_epa_pp, 4),
+                    "def_epa_per_play": round(def_epa_pp, 4),
+                    "net_epa_per_play": round(net_epa_pp, 4),
+                    "to_reg": round(to_reg, 2),
+                    "rz_dvoa": round(rz_dvoa, 3),
+                    "is_fbs": True
+                }
+                ranked.append((net_epa_pp, norm_k, d["abbr"], entry))
+
+            ranked.sort(key=lambda x: x[0], reverse=True)
+            for idx, (_, norm_k, abbr, entry) in enumerate(ranked, start=1):
+                entry["epa_rank"] = idx
+                cfb_map[norm_k] = entry
+                if abbr:
+                    cfb_map[f"code:{abbr}"] = entry
+
+            if len(ranked) >= 60:
+                print(f"[SportsDataverse TeamBox {season_year} NCAA] Computed pure on-field efficiency for {len(ranked)} FBS teams (ZERO ESPN FPI).")
+                return cfb_map
+    except Exception as e:
+        print(f"[SportsDataverse team_box Notice] {e}")
+
+    print("[SportsDataverse Notice] Live CFB release unavailable; using calibrated stadium registry baselines (ZERO ESPN FPI).")
+    return cfb_map
 
 def parse_record_games(record_str):
     """Parses an ESPN W-L or W-L-T string (e.g. '8-2', '7-2-1') into (wins, losses, ties, gp)."""
@@ -747,7 +847,7 @@ def fetch_espn_game_injuries(event_id, league="NFL"):
         pass
     return out_by_abbr
 
-def get_team_meta(full_name, league="NFL", nflverse_map=None, fpi_map=None, standings_map=None, poll_map=None):
+def get_team_meta(full_name, league="NFL", nflverse_map=None, cfb_epa_map=None, standings_map=None, poll_map=None):
     # 1. Start from Stadium/Geography Registry (or clean regional neutral fallback — ZERO MD5 HASHES!)
     is_verified_code = False
     if league == "NFL" and full_name in NFL_TEAM_REGISTRY:
@@ -790,23 +890,13 @@ def get_team_meta(full_name, league="NFL", nflverse_map=None, fpi_map=None, stan
         if league == "NFL":
             meta["close_pct"] = st_hit["win_pct"]
 
-    # 3. Overlay Live Performance Efficiency (ZERO MD5 HASHES, ZERO BROKEN STANDINGS PPG)
+    # 3. Overlay 100% Pure Live Play-by-Play Performance Efficiency (ZERO ESPN FPI!)
     if league == "NFL":
         nv_hit = nflverse_map.get(f"code:{code}") if nflverse_map else None
-        fpi_hit = lookup_by_name(fpi_map, full_name, code, allow_code=is_verified_code) if fpi_map else None
-
-        if fpi_hit:
-            meta["off_eff"] = fpi_hit.get("off_eff")
-            meta["def_eff"] = fpi_hit.get("def_eff")
-
         if nv_hit:
             # NFL teams run ~62.32 plays/game (= GOLDEN_PLAY_SCALER * PHI).
-            # Normalize raw per-play Net EPA onto the exact GOLDEN_PLAY_SCALER point scale (1:1 with FPI)!
-            nv_epa_scaled = nv_hit["net_epa_per_play"] * GOLDEN_RATIO_PHI
-            if fpi_hit:
-                meta["epa"] = round((0.80 * nv_epa_scaled) + (0.20 * fpi_hit["epa_equiv"]), 4)
-            else:
-                meta["epa"] = round(nv_epa_scaled, 4)
+            # 100% pure nflverse Net EPA/play — ZERO ESPN FPI blend!
+            meta["epa"] = round(nv_hit["net_epa_per_play"] * GOLDEN_RATIO_PHI, 4)
             meta["epa_scaled_62"] = True
             meta["off_epa_per_play"] = nv_hit.get("off_epa_per_play")
             meta["def_epa_per_play"] = nv_hit.get("def_epa_per_play")
@@ -815,36 +905,28 @@ def get_team_meta(full_name, league="NFL", nflverse_map=None, fpi_map=None, stan
             meta["epa_rank"] = nv_hit.get("epa_rank")
             if meta["epa_rank"]:
                 meta["close_pct"] = round(max(0.10, min(0.95, 1.0 - ((meta["epa_rank"] - 1) / 31.0))), 3)
-            meta["telemetry_source"] = "nflverse_2026_live"
-        elif fpi_hit:
-            meta["epa"] = fpi_hit["epa_equiv"]
-            meta["rz_dvoa"] = fpi_hit["rz_dvoa"]
-            meta["epa_rank"] = fpi_hit.get("epa_rank")
-            if meta["epa_rank"]:
-                meta["close_pct"] = round(max(0.10, min(0.95, 1.0 - ((meta["epa_rank"] - 1) / 31.0))), 3)
-            meta["telemetry_source"] = "espn_fpi_2026_live"
+            meta["telemetry_source"] = "nflverse_2026_pure_100pct"
     else:
-        fpi_hit = lookup_by_name(fpi_map, full_name, code, allow_code=is_verified_code) if fpi_map else None
-        if fpi_hit:
-            meta["epa"] = fpi_hit["epa_equiv"]
-            meta["rz_dvoa"] = fpi_hit["rz_dvoa"]
-            meta["epa_rank"] = fpi_hit.get("epa_rank")
-            meta["off_eff"] = fpi_hit.get("off_eff")
-            meta["def_eff"] = fpi_hit.get("def_eff")
-            # Derive closing_rank_pct cleanly across ALL 136 FBS teams (fixes 0.05 bug!)
+        sdv_hit = lookup_by_name(cfb_epa_map, full_name, code, allow_code=is_verified_code) if cfb_epa_map else None
+        if sdv_hit:
+            meta["epa"] = round(sdv_hit["net_epa_per_play"] * GOLDEN_RATIO_PHI, 4)
+            meta["epa_scaled_62"] = True
+            meta["off_epa_per_play"] = sdv_hit.get("off_epa_per_play")
+            meta["def_epa_per_play"] = sdv_hit.get("def_epa_per_play")
+            meta["to_reg"] = sdv_hit.get("to_reg", meta["to_reg"])
+            meta["rz_dvoa"] = sdv_hit.get("rz_dvoa", meta["rz_dvoa"])
+            meta["epa_rank"] = sdv_hit.get("epa_rank")
             if meta["epa_rank"]:
                 meta["close_pct"] = round(max(0.10, min(0.95, 1.0 - ((meta["epa_rank"] - 1) / 135.0))), 3)
-            meta["telemetry_source"] = "espn_fpi_2026_live"
+            meta["telemetry_source"] = "sportsdataverse_2026_pure_epa"
         else:
-            # If ESPN FPI (all ~136 FBS teams) loaded and this team isn't in FPI, it is an FCS opponent
-            if fpi_map and len(fpi_map) >= 80:
+            # If SportsDataverse loaded full FBS dataset and this team isn't in FBS, classify as FCS
+            if cfb_epa_map and len(cfb_epa_map) >= 80:
                 meta["is_fcs"] = True
                 norm_nm = normalize_team_key(full_name)
                 is_elite_fcs = any(kw in norm_nm for kw in ELITE_FCS_KEYWORDS)
-                fcs_fpi = -12.5 if is_elite_fcs else -23.5
-                meta["epa"] = round(fcs_fpi / GOLDEN_PLAY_SCALER, 4)
-                meta["off_eff"] = 38.0 if is_elite_fcs else 20.0
-                meta["def_eff"] = 38.0 if is_elite_fcs else 20.0
+                fcs_pts = -12.5 if is_elite_fcs else -23.5
+                meta["epa"] = round(fcs_pts / GOLDEN_PLAY_SCALER, 4)
                 meta["rz_dvoa"] = 0.06 if is_elite_fcs else 0.15
                 meta["close_pct"] = 0.650 if is_elite_fcs else 0.250
                 meta["telemetry_source"] = "fcs_calibrated_tier"
@@ -1451,14 +1533,14 @@ def calc_independent_total_tip(home_meta, away_meta, game_league, wind_mph):
     wind_penalty = max(0.0, (wind_mph - 10.0) * 0.25)
     total_intercept = NCAA_TOTAL_INTERCEPT if game_league == "NCAA" else MODEL_TOTAL_INTERCEPT
 
-    if game_league == "NFL":
-        h_off = home_meta.get("off_epa_per_play")
-        h_def = home_meta.get("def_epa_per_play")
-        a_off = away_meta.get("off_epa_per_play")
-        a_def = away_meta.get("def_epa_per_play")
-        if all(v is not None for v in (h_off, h_def, a_off, a_def)):
-            delta = (GOLDEN_PLAY_SCALER * 0.5) * (h_off + h_def + a_off + a_def)
-            return round(max(28.0, min(65.0, total_intercept + delta - wind_penalty)), 1)
+    h_off = home_meta.get("off_epa_per_play")
+    h_def = home_meta.get("def_epa_per_play")
+    a_off = away_meta.get("off_epa_per_play")
+    a_def = away_meta.get("def_epa_per_play")
+    if all(v is not None for v in (h_off, h_def, a_off, a_def)):
+        max_cap = 78.0 if game_league == "NCAA" else 65.0
+        delta = (GOLDEN_PLAY_SCALER * 0.5) * (h_off + h_def + a_off + a_def)
+        return round(max(28.0, min(max_cap, total_intercept + delta - wind_penalty)), 1)
 
     h_oe = home_meta.get("off_eff")
     h_de = home_meta.get("def_eff")
@@ -1827,7 +1909,7 @@ class _NcaaDedicatedEngine:
     league = "NCAA"
     hfa_base = NCAA_HFA_BASE
     total_intercept = NCAA_TOTAL_INTERCEPT
-    logistic_k = LOGISTIC_K_TIGHT * 0.786
+    logistic_k = round(LOGISTIC_K_TIGHT * (1.0 / GOLDEN_RATIO_PHI), 6)
 
     def win_prob(self, gap):
         return max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-self.logistic_k * gap))))
@@ -2480,10 +2562,9 @@ def build_master_payload():
     season_year = now_utc.year if now_utc.month >= 8 else (now_utc.year - 1)
 
     # Pull all live 2026 telemetry feeds + Odds API concurrently (~4 seconds total)
-    with ThreadPoolExecutor(max_workers=9) as pool:
+    with ThreadPoolExecutor(max_workers=8) as pool:
         f_nv = pool.submit(fetch_nflverse_live_team_epa, season_year)
-        f_nfpi = pool.submit(fetch_espn_fpi, "NFL")
-        f_cfpi = pool.submit(fetch_espn_fpi, "NCAA")
+        f_cepa = pool.submit(fetch_sportsdataverse_cfb_live_epa, season_year)
         f_nst = pool.submit(fetch_espn_standings, "NFL")
         f_cst = pool.submit(fetch_espn_standings, "NCAA")
         f_rk = pool.submit(fetch_espn_ncaa_rankings)
@@ -2492,8 +2573,7 @@ def build_master_payload():
         f_codd = pool.submit(fetch_live_odds_for_sport, "americanfootball_ncaaf", "NCAA")
 
         nflverse_epa = f_nv.result()
-        nfl_fpi = f_nfpi.result()
-        ncaa_fpi = f_cfpi.result()
+        ncaa_sdv_epa = f_cepa.result()
         nfl_standings = f_nst.result()
         ncaa_standings = f_cst.result()
         ncaa_poll_map, live_ranked_ncaa = f_rk.result()
@@ -2511,10 +2591,10 @@ def build_master_payload():
         lg = game.get("_league", "NFL")
         h_full = game.get("home_team", "")
         a_full = game.get("away_team", "")
-        hm = get_team_meta(h_full, lg, nflverse_epa if lg == "NFL" else None, nfl_fpi if lg == "NFL" else ncaa_fpi, nfl_standings if lg == "NFL" else ncaa_standings, None if lg == "NFL" else ncaa_poll_map)
+        hm = get_team_meta(h_full, lg, nflverse_epa if lg == "NFL" else None, None if lg == "NFL" else ncaa_sdv_epa, nfl_standings if lg == "NFL" else ncaa_standings, None if lg == "NFL" else ncaa_poll_map)
         home_metas_for_weather.append(hm)
         if lg == "NFL":
-            am = get_team_meta(a_full, "NFL", nflverse_epa, nfl_fpi, nfl_standings, None)
+            am = get_team_meta(a_full, "NFL", nflverse_epa, None, nfl_standings, None)
             c_str = game.get("commence_time", "")
             try:
                 dt_u = datetime.strptime(c_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
@@ -2552,11 +2632,11 @@ def build_master_payload():
         away_full = game.get("away_team", "Unknown Away")
 
         if game_league == "NFL":
-            home_meta = get_team_meta(home_full, "NFL", nflverse_epa, nfl_fpi, nfl_standings, None)
-            away_meta = get_team_meta(away_full, "NFL", nflverse_epa, nfl_fpi, nfl_standings, None)
+            home_meta = get_team_meta(home_full, "NFL", nflverse_epa, None, nfl_standings, None)
+            away_meta = get_team_meta(away_full, "NFL", nflverse_epa, None, nfl_standings, None)
         else:
-            home_meta = get_team_meta(home_full, "NCAA", None, ncaa_fpi, ncaa_standings, ncaa_poll_map)
-            away_meta = get_team_meta(away_full, "NCAA", None, ncaa_fpi, ncaa_standings, ncaa_poll_map)
+            home_meta = get_team_meta(home_full, "NCAA", None, ncaa_sdv_epa, ncaa_standings, ncaa_poll_map)
+            away_meta = get_team_meta(away_full, "NCAA", None, ncaa_sdv_epa, ncaa_standings, ncaa_poll_map)
 
         home_code, away_code = home_meta["code"], away_meta["code"]
 
@@ -2990,7 +3070,7 @@ def build_master_payload():
             "league": "NFL_NCAA",
             "week": dynamic_week,
             "last_updated": now_iso,
-            "telemetry_version": "v232_dynamic_week_bd_enhance",
+            "telemetry_version": "v233_pure_epa_zero_fpi",
             "ranked_ncaa_teams": live_ranked_ncaa
         },
         "games": games_slate,
@@ -3005,7 +3085,7 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v232 — DYNAMIC WEEK ROLLOVER + BALLS DEEP ENHANCE-ONLY)")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v233 — 100% PURGE ESPN FPI + PURE NFLVERSE/SPORTSDATAVERSE EPA + 0.618x NCAA SPREADS)")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("=========================================================")
 
