@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v250 — PRE-GAME LOCK + PURE SMASH LEDGER)
- * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with math_engine.js (v316) & scraper.py (v224)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v251 — DEDICATED NFL + NCAA ENGINES)
+ * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with math_engine.js (v317) & scraper.py (v225)
  *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
  *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
  *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
@@ -959,7 +959,17 @@ function recalculateAndRenderAll(opts = {}) {
                     }
 
                     // BACK-TO-OUR-ROOTS MODULE 3 KEY-NUMBER ALT BUY (-2.5, +3.5, -6.5, +7.5, -13.5, -14.5, -17.5)
-                    const keyAltObj = calcKeyNumberAltSpreadSafe(vegasLine, bdProjectedLine, prop.base_odds_over || -110);
+                    const lgEng = (typeof getLeagueEngine === "function") ? getLeagueEngine(gameLeague) : null;
+                    if (lgEng && gameLeague === "NCAA") {
+                        const ncaaTipGap = vegasLine - baseProjectedLine;
+                        const ncaaBdGap = vegasLine - bdProjectedLine;
+                        tipModelProb = lgEng.winProb(ncaaTipGap);
+                        bdModelProb = lgEng.winProb(ncaaBdGap);
+                        activeModelProb = (mode === "balls_deep") ? bdModelProb : ((mode === "davinci") ? lgEng.winProb(vegasLine - finalCalculatedLine) : tipModelProb);
+                    }
+                    const keyAltObj = (lgEng && gameLeague === "NCAA")
+                        ? lgEng.keyAlt(vegasLine, bdProjectedLine, prop.base_odds_over || -110)
+                        : calcKeyNumberAltSpreadSafe(vegasLine, bdProjectedLine, prop.base_odds_over || -110);
                     const baseAltSpread = snapToHalfPointHook(vegasLine, -3.0);
                     const spreadArc = isActiveMomentumArc ? calcMomentumArc(sliderVal, 1.0) : 0.0;
 
@@ -1000,7 +1010,10 @@ function recalculateAndRenderAll(opts = {}) {
                     const tipTotalDiff = baseProjectedLine - vegasLine;
                     tipModelProb = calcPointGapWinProb(Math.abs(tipTotalDiff));
 
-                    const bdTotObj = calcReportCalibratedTotalSafe(vegasLine, baseProjectedLine, envPayload, circPayload, elevBd, gameLeague, hasBackupQb);
+                    const lgTotEng = (typeof getLeagueEngine === "function") ? getLeagueEngine(gameLeague) : null;
+                    const bdTotObj = (lgTotEng && gameLeague === "NCAA")
+                        ? lgTotEng.safeTotal(vegasLine, baseProjectedLine, envPayload, circPayload, elevBd, hasBackupQb)
+                        : calcReportCalibratedTotalSafe(vegasLine, baseProjectedLine, envPayload, circPayload, elevBd, gameLeague, hasBackupQb);
                     bdProjectedLine = bdTotObj.ballsDeepTotal;
                     totalRegime = bdTotObj.regime || "NEUTRAL_PASS";
                     const bdTotalDiff = bdProjectedLine - vegasLine;
@@ -3733,4 +3746,4 @@ function renderLiveBottomTicker() {
         </div>
     `;
 }
-// === END OF APP_CONTROLLER.JS (v250) ===
+// === END OF APP_CONTROLLER.JS (v251) ===
