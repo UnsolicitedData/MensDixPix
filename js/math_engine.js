@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v316 — BACK TO OUR ROOTS + WONG LADDER)
- * Pure OG M1–M9 + Verified ΔQB-Only Filter + Key-Number Alt Buys (MER > 1.15) + Regime Safe Totals (Synced 1:1 with scraper.py v223)
+ * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v317 — DEDICATED NFL + NCAA ENGINES)
+ * Pure OG M1–M9 + Verified ΔQB-Only Filter + Key-Number Alt Buys (MER > 1.15) + Regime Safe Totals (Synced 1:1 with scraper.py v225)
  *  - PURE OG MODULES 1–9 RESTORED: 100% Independent Fair Margin (ZERO Vegas-Spread Anchoring)
  *  - Live Roster/Injury Integration (qb_replacement_delta) + Fixed opp_rz_dvoa Sign
  *  - Strict M1–M9 Firewall in Just the Tip | Full M11–M13 Physics & Sacred Geometry in Balls Deep/DaVinci
@@ -1141,4 +1141,64 @@ function calcMasterFibonacciAggregate(moduleScores, fibLookupFn = 13, intensityS
         liveAdjustedProb: Number((pAgg * 100).toFixed(2))
     };
 }
-// === END OF MATH_ENGINE.JS (v316) ===
+
+// ==============================================================================
+// DEDICATED DUAL-ENGINE ARCHITECTURE (v317 — SEPARATE NFL ENGINE & NCAA ENGINE)
+//   - DixPixNflEngine:  62.32-play NFL volume, tight logistic spread slope (1.0x),
+//                       pro weather/circadian/HFA (+1.9416), NFL key numbers & Wong 6-pt teasers.
+//   - DixPixNcaaEngine: High-tempo college pace/variance (0.786x slope for wider NCAA margins),
+//                       hostile campus HFA (+2.6180), full 136-team FBS + FCS coverage,
+//                       rank-differential M_rise & college key-number / teaser routing.
+// ==============================================================================
+const DixPixNflEngine = {
+    league: "NFL",
+    hfaBase: PI_OVER_PHI_HFA,
+    totalIntercept: 42.986,
+    logisticK: LOGISTIC_K_TIGHT,
+    playScaler: GOLDEN_PLAY_SCALER,
+    winProb(pointGap) {
+        return calcPointGapWinProb(pointGap);
+    },
+    keyAlt(baseLine, modelFairLine, baseOdds = -110) {
+        return calcKeyNumberAltSpread(baseLine, modelFairLine, baseOdds);
+    },
+    safeTotal(vegasTotal, ogTipTotal, envPayload = {}, circPayload = {}, elevMatrix = null, hasBackupQb = false) {
+        return calcReportCalibratedTotal(vegasTotal, ogTipTotal, envPayload, circPayload, elevMatrix, "NFL", hasBackupQb);
+    }
+};
+
+const DixPixNcaaEngine = {
+    league: "NCAA",
+    hfaBase: 2.6180339887,
+    totalIntercept: 51.450,
+    logisticK: Number((LOGISTIC_K_TIGHT * 0.786).toFixed(6)),
+    playScaler: GOLDEN_PLAY_SCALER,
+    winProb(pointGap) {
+        const p = 1.0 / (1.0 + Math.exp(-this.logisticK * pointGap));
+        return Math.max(0.01, Math.min(0.99, p));
+    },
+    keyAlt(baseLine, modelFairLine, baseOdds = -110) {
+        const res = calcKeyNumberAltSpread(baseLine, modelFairLine, baseOdds);
+        const line = Number(baseLine || 0);
+        const fair = Number(modelFairLine !== undefined ? modelFairLine : line);
+        const altP = this.winProb(res.altLine - fair);
+        const km1 = _calcKeyMassBonus(Math.min(line, res.altLine), Math.max(line, res.altLine));
+        const adjP = Math.min(0.95, Math.max(0.05, altP + km1.bonus));
+        const evObj = calcExpectedValueAndKelly(adjP, res.altOdds);
+        return Object.assign({}, res, {
+            altProb: adjP,
+            altProbPct: Number((adjP * 100.0).toFixed(1)),
+            altEvPct: Number(evObj.evPercentage.toFixed(2)),
+            engineLeague: "NCAA"
+        });
+    },
+    safeTotal(vegasTotal, ogTipTotal, envPayload = {}, circPayload = {}, elevMatrix = null, hasBackupQb = false) {
+        return calcReportCalibratedTotal(vegasTotal, ogTipTotal, envPayload, circPayload, elevMatrix, "NCAA", hasBackupQb);
+    }
+};
+
+function getLeagueEngine(league = "NFL") {
+    return (String(league || "NFL").toUpperCase() === "NCAA") ? DixPixNcaaEngine : DixPixNflEngine;
+}
+
+// === END OF MATH_ENGINE.JS (v317) ===
