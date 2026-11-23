@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v251 — DEDICATED NFL + NCAA ENGINES)
- * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with math_engine.js (v317) & scraper.py (v225)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v252 — FULL 1:1 NFL + NCAA PARITY)
+ * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with onlinemath_engine.js (v318) & scraper.py (v227)
  *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
  *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
  *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
@@ -984,7 +984,7 @@ function recalculateAndRenderAll(opts = {}) {
                     tier2Mode = keyAltObj.tier2Mode || null;
                     tier2Label = keyAltObj.tier2Label || "";
                     if (isActiveMomentumArc) {
-                        const safeProbRaw = Math.min(0.96, Math.max(0.05, calcPointGapWinProb(safeSpreadVal - finalCalculatedLine)));
+                        const safeProbRaw = Math.min(0.96, Math.max(0.05, (lgEng ? lgEng.winProb(safeSpreadVal - finalCalculatedLine) : calcPointGapWinProb(safeSpreadVal - finalCalculatedLine))));
                         safeFloorWinPct = Number((safeProbRaw * 100).toFixed(1));
                         safeFloorEvPct = Number(calcExpectedValueAndKelly(safeProbRaw, safeFloorOdds).evPercentage.toFixed(2));
                         const safeFmt = safeSpreadVal.toFixed(2);
@@ -1003,21 +1003,22 @@ function recalculateAndRenderAll(opts = {}) {
                     bdAltLineLabel = `Alt ${altSpreadVal > 0 ? '+' + altFmt : altFmt} (+145)`;
                     bdLongerOdds = 145;
                     const altCoverGap = altSpreadVal - finalCalculatedLine;
-                    bdReachProb = calcPointGapWinProb(altCoverGap);
+                    bdReachProb = lgEng ? lgEng.winProb(altCoverGap) : calcPointGapWinProb(altCoverGap);
 
                 } else if (prop.market_type === "total") {
                     baseProjectedLine = baseTelemetryTotal;
                     const tipTotalDiff = baseProjectedLine - vegasLine;
-                    tipModelProb = calcPointGapWinProb(Math.abs(tipTotalDiff));
-
                     const lgTotEng = (typeof getLeagueEngine === "function") ? getLeagueEngine(gameLeague) : null;
+                    const totProbFn = (gap) => lgTotEng ? lgTotEng.winProb(gap) : calcPointGapWinProb(gap);
+                    tipModelProb = Math.max(0.50, totProbFn(Math.abs(tipTotalDiff)));
+
                     const bdTotObj = (lgTotEng && gameLeague === "NCAA")
                         ? lgTotEng.safeTotal(vegasLine, baseProjectedLine, envPayload, circPayload, elevBd, hasBackupQb)
                         : calcReportCalibratedTotalSafe(vegasLine, baseProjectedLine, envPayload, circPayload, elevBd, gameLeague, hasBackupQb);
                     bdProjectedLine = bdTotObj.ballsDeepTotal;
                     totalRegime = bdTotObj.regime || "NEUTRAL_PASS";
                     const bdTotalDiff = bdProjectedLine - vegasLine;
-                    bdModelProb = calcPointGapWinProb(Math.abs(bdTotalDiff));
+                    bdModelProb = Math.max(0.50, totProbFn(Math.abs(bdTotalDiff)));
 
                     const bdDirSign = (bdTotObj.safeDir === "U") ? -1 : 1;
                     const totalArc = isActiveMomentumArc ? calcMomentumArc(sliderVal, 1.15) : 0.0;
@@ -1028,7 +1029,7 @@ function recalculateAndRenderAll(opts = {}) {
                     } else if (mode === "davinci") {
                         const dvTotal = bdProjectedLine + (bdDirSign * totalArc);
                         finalCalculatedLine = Number(dvTotal.toFixed(1));
-                        activeModelProb = calcPointGapWinProb(Math.abs(finalCalculatedLine - vegasLine));
+                        activeModelProb = Math.max(0.50, totProbFn(Math.abs(finalCalculatedLine - vegasLine)));
                     } else {
                         finalCalculatedLine = baseProjectedLine;
                         activeModelProb = tipModelProb;
@@ -1046,7 +1047,7 @@ function recalculateAndRenderAll(opts = {}) {
                     safeFloorHookNum = safeTotalVal;
                     if (isActiveMomentumArc) {
                         const safeTotalEdge = isUnderActive ? (safeTotalVal - finalCalculatedLine) : (finalCalculatedLine - safeTotalVal);
-                        const safeTotalProb = Math.min(0.96, Math.max(0.05, calcPointGapWinProb(safeTotalEdge)));
+                        const safeTotalProb = Math.min(0.96, Math.max(0.05, totProbFn(safeTotalEdge)));
                         safeFloorWinPct = Number((safeTotalProb * 100).toFixed(1));
                         safeFloorEvPct = Number(calcExpectedValueAndKelly(safeTotalProb, safeFloorOdds).evPercentage.toFixed(2));
                         safeFloorLabel = `Alt ${isUnderActive ? 'U' : 'O'} ${safeTotalVal.toFixed(1)} (${safeFloorOdds})`;
@@ -1068,7 +1069,7 @@ function recalculateAndRenderAll(opts = {}) {
                     const altTotalEdge = isUnderActive
                         ? (altTotalVal - finalCalculatedLine)
                         : (finalCalculatedLine - altTotalVal);
-                    bdReachProb = calcPointGapWinProb(altTotalEdge);
+                    bdReachProb = totProbFn(altTotalEdge);
 
                 } else {
                     const gatedMu = gatekeeper.adjustedMu > 0 ? gatekeeper.adjustedMu : (prop.projected_mean_mu || vegasLine || 50);
@@ -3746,4 +3747,4 @@ function renderLiveBottomTicker() {
         </div>
     `;
 }
-// === END OF APP_CONTROLLER.JS (v251) ===
+// === END OF APP_CONTROLLER.JS (v252) ===
