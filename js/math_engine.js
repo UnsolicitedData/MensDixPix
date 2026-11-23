@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v317 — DEDICATED NFL + NCAA ENGINES)
- * Pure OG M1–M9 + Verified ΔQB-Only Filter + Key-Number Alt Buys (MER > 1.15) + Regime Safe Totals (Synced 1:1 with scraper.py v225)
+ * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v318 — DEDICATED NFL + NCAA ENGINES 1:1 PARITY)
+ * Pure OG M1–M9 + Verified ΔQB-Only Filter + Key-Number Alt Buys (MER > 1.15) + Regime Safe Totals (Synced 1:1 with scraper.py v227)
  *  - PURE OG MODULES 1–9 RESTORED: 100% Independent Fair Margin (ZERO Vegas-Spread Anchoring)
  *  - Live Roster/Injury Integration (qb_replacement_delta) + Fixed opp_rz_dvoa Sign
  *  - Strict M1–M9 Firewall in Just the Tip | Full M11–M13 Physics & Sacred Geometry in Balls Deep/DaVinci
@@ -922,6 +922,9 @@ function calcReportCalibratedTotal(vegasTotal, ogTipTotal, envPayload = {}, circ
     let safeOdds = -175;
     let safeProb = 0.65;
 
+    const kTotSlope = (gameLeague === "NCAA") ? (LOGISTIC_K_TIGHT * 0.786) : LOGISTIC_K_TIGHT;
+    const totWinProb = (gap) => Math.max(0.01, Math.min(0.99, 1.0 / (1.0 + Math.exp(-kTotSlope * gap))));
+
     if (vTot >= shootoutThresh || (isDome && vTot >= domeShootoutThresh && !hasBackupQb)) {
         regime = "SHOOTOUT_SAFE_OVER";
         fairTotal = vTot + Math.max(0.8, 1.5 + (0.20 * Math.max(0.0, vTot - domeShootoutThresh)) + (isDome ? 0.4 : 0.0) + Math.max(-0.5, pacePull));
@@ -929,17 +932,17 @@ function calcReportCalibratedTotal(vegasTotal, ogTipTotal, envPayload = {}, circ
         safeLine = Math.floor(vTot - dropPts) + 0.5;
         safeOdds = (dropPts >= 5.0) ? -180 : -175;
         safeDir = "O";
-        safeProb = Math.min(0.92, Math.max(0.55, calcPointGapWinProb(fairTotal - safeLine) + 0.04));
+        safeProb = Math.min(0.92, Math.max(0.55, totWinProb(fairTotal - safeLine) + 0.04));
     } else if (vTot <= grindThresh || (vTot <= weatherGrindThresh && heavyGrindEnv)) {
         regime = "GRIND_SAFE_UNDER";
         fairTotal = vTot + Math.min(-1.0, envDrag + Math.min(0.0, pacePull) - 0.8);
         safeLine = Math.floor(vTot + 4.0) + 0.5;
         safeOdds = -175;
         safeDir = "U";
-        safeProb = Math.min(0.92, Math.max(0.55, calcPointGapWinProb(safeLine - fairTotal) + 0.04));
+        safeProb = Math.min(0.92, Math.max(0.55, totWinProb(safeLine - fairTotal) + 0.04));
     } else {
         const edge = (safeDir === "U") ? (safeLine - fairTotal) : (fairTotal - safeLine);
-        safeProb = Math.min(0.82, Math.max(0.50, calcPointGapWinProb(edge)));
+        safeProb = Math.min(0.82, Math.max(0.50, totWinProb(edge)));
     }
 
     const safeEvObj = calcExpectedValueAndKelly(safeProb, safeOdds);
@@ -1201,4 +1204,4 @@ function getLeagueEngine(league = "NFL") {
     return (String(league || "NFL").toUpperCase() === "NCAA") ? DixPixNcaaEngine : DixPixNflEngine;
 }
 
-// === END OF MATH_ENGINE.JS (v317) ===
+// === END OF MATH_ENGINE.JS (v318) ===
