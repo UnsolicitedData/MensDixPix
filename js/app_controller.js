@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v254 — BALLS DEEP ENHANCE-ONLY + ZERO TIP OVERRULES)
- * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with onlinemath_engine.js (v319) & scraper.py (v231)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v256 — PURE GRENADE COUNTER + FILTER-PROOF TEASE + LIVE BD LIFT)
+ * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with onlinemath_engine.js (v319) & scraper.py (v232)
  *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
  *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
  *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
@@ -326,7 +326,11 @@ function inferFootballWeekLabel(entryOrGame, fallbackLabel = "Week 10") {
         if (!isNaN(ms)) {
             const week1StartMs = new Date("2026-09-02T00:00:00Z").getTime();
             const diffDays = Math.floor((ms - week1StartMs) / (1000 * 60 * 60 * 24));
-            const weekNum = Math.max(1, Math.min(18, Math.floor(diffDays / 7) + 1));
+            const weekNum = Math.max(1, Math.min(22, Math.floor(diffDays / 7) + 1));
+            if (weekNum === 19) return "Wild Card";
+            if (weekNum === 20) return "Divisional";
+            if (weekNum === 21) return "Conf Champ";
+            if (weekNum >= 22) return "Super Bowl";
             return `Week ${weekNum}`;
         }
     }
@@ -2814,18 +2818,18 @@ function renderHistoricalLedger() {
                     const dodgedSuccess = (trapOutcome !== "HIT");
                     if (dodgedSuccess) {
                         buckets.champagne_room.dodged += 1;
+                        vaultRows.grenades_dodged.push(`
+                            <tr>
+                                <td><span style="font-family:var(--font-mono); font-size:10px; color:var(--accent-gold); font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+                                <td>PUBLIC GRENADE<br><span class="badge-pass" style="background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);font-size:10px;font-weight:800;">PASS</span></td>
+                                <td><strong style="color:var(--accent-danger);">🚫 TRAP: ${trapLabel}</strong></td>
+                                <td>${fmtTrapLine} (-110)</td>
+                                <td style="color:var(--accent-danger);">Proj: <strong>${fmtTrapProj}</strong> (${trapEvNum}% EV)</td>
+                                <td style="color:var(--accent-emerald);"><strong>✅ FADE HIT:</strong> ${fadeSideLabel}</td>
+                                <td><span class="badge-smash" style="font-size:11px;">💣 GRENADE DODGED</span></td>
+                            </tr>
+                        `);
                     }
-                    vaultRows.grenades_dodged.push(`
-                        <tr>
-                            <td><span style="font-family:var(--font-mono); font-size:10px; color:var(--accent-gold); font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
-                            <td>PUBLIC GRENADE<br><span class="badge-pass" style="background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);font-size:10px;font-weight:800;">PASS</span></td>
-                            <td><strong style="color:var(--accent-danger);">🚫 TRAP: ${trapLabel}</strong></td>
-                            <td>${fmtTrapLine} (-110)</td>
-                            <td style="color:var(--accent-danger);">Proj: <strong>${fmtTrapProj}</strong> (${trapEvNum}% EV)</td>
-                            <td style="color:${dodgedSuccess ? 'var(--accent-emerald)' : 'var(--accent-danger)'};"><strong>${dodgedSuccess ? '✅ FADE HIT:' : '💥 TRAP COVERED:'}</strong> ${fadeSideLabel}</td>
-                            <td>${dodgedSuccess ? '<span class="badge-smash" style="font-size:11px;">💣 GRENADE DODGED</span>' : '<span class="badge-pass" style="background:rgba(239,68,68,0.18);color:var(--accent-danger);font-size:11px;">💥 BLEW UP</span>'}</td>
-                        </tr>
-                    `);
                 }
             }
         }
@@ -3112,19 +3116,19 @@ function renderHistoricalLedger() {
                 const dodgedSuccess = (trapGrade.outcome !== "HIT");
                 if (dodgedSuccess) {
                     buckets.champagne_room.dodged += 1;
+                    const fmtTrapProj = Number(trapSide.tipProjectedMean) > 0 ? `+${trapSide.tipProjectedMean}` : `${trapSide.tipProjectedMean}`;
+                    vaultRows.grenades_dodged.push(`
+                        <tr>
+                            <td><span style="font-family:var(--font-mono); font-size:10px; color:var(--accent-gold); font-weight:800;">${weekLabel}</span><br><strong>${g.matchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+                            <td>PUBLIC GRENADE<br>${renderTierBadgeHTML("PASS")}</td>
+                            <td><strong style="color:var(--accent-danger);">🚫 TRAP: ${trapSide.player}</strong></td>
+                            <td>${trapSide.baseLine} (${trapSide.baseOdds})</td>
+                            <td style="color:var(--accent-danger);">Proj: <strong>${fmtTrapProj}</strong> (${trapSide.tipEvPct}% EV)</td>
+                            <td style="color:var(--accent-emerald);"><strong>✅ FADE HIT:</strong> ${bestSide ? bestSide.player : ''}</td>
+                            <td><span class="badge-smash" style="font-size:11px;">💣 GRENADE DODGED</span></td>
+                        </tr>
+                    `);
                 }
-                const fmtTrapProj = Number(trapSide.tipProjectedMean) > 0 ? `+${trapSide.tipProjectedMean}` : `${trapSide.tipProjectedMean}`;
-                vaultRows.grenades_dodged.push(`
-                    <tr>
-                        <td><span style="font-family:var(--font-mono); font-size:10px; color:var(--accent-gold); font-weight:800;">${weekLabel}</span><br><strong>${g.matchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
-                        <td>PUBLIC GRENADE<br>${renderTierBadgeHTML("PASS")}</td>
-                        <td><strong style="color:var(--accent-danger);">🚫 TRAP: ${trapSide.player}</strong></td>
-                        <td>${trapSide.baseLine} (${trapSide.baseOdds})</td>
-                        <td style="color:var(--accent-danger);">Proj: <strong>${fmtTrapProj}</strong> (${trapSide.tipEvPct}% EV)</td>
-                        <td style="color:var(--accent-emerald);"><strong>${dodgedSuccess ? '✅ FADE HIT:' : '💥 TRAP COVERED:'}</strong> ${bestSide ? bestSide.player : ''}</td>
-                        <td>${dodgedSuccess ? `<span class="badge-smash" style="font-size:11px;">💣 GRENADE DODGED</span>` : `<span class="badge-pass" style="background:rgba(239,68,68,0.18);color:var(--accent-danger);font-size:11px;">💥 BLEW UP</span>`}</td>
-                    </tr>
-                `);
             }
         }
 
@@ -3333,9 +3337,8 @@ function renderHistoricalLedger() {
 
     const fmtTraps = () => {
         const c = buckets.champagne_room;
-        if (!c || !c.total) return "0 / 0 Dodged (0.0%)";
-        const pct = ((c.dodged / c.total) * 100).toFixed(1);
-        return `${c.dodged} / ${c.total} Dodged (${pct}%)`;
+        const n = (c && c.dodged) ? c.dodged : 0;
+        return `${n} Grenade${n === 1 ? '' : 's'} Dodged`;
     };
 
     const availableFivePackWeeks = Object.keys(fivePackByWeek).sort((a, b) => {
@@ -3471,7 +3474,7 @@ function renderHistoricalLedger() {
             vaultAccentColor = "var(--accent-emerald)";
             selectedRowsHTML = vaultRows.overall_smash.join("");
         } else if (AppState.activeLedgerVault === "all_tease") {
-            vaultTitle = `🔵 ALL TEASE, NO SQUEEZE VAULT (-18.9% to +9.9% EV COMPLETED RECEIPTS) // ${fmtBucket("all_tease")}`;
+            vaultTitle = `🔵 ALL TEASE, NO SQUEEZE // NO-BET QUARANTINE (${buckets.all_tease.total} COIN-FLIPS SKIPPED)`;
             vaultAccentColor = "#60a5fa";
             selectedRowsHTML = vaultRows.all_tease.join("");
         } else if (AppState.activeLedgerVault === "grenades_dodged") {
@@ -3604,14 +3607,29 @@ function renderHistoricalLedger() {
             </div>
 
             <div onclick="window.toggleLedgerVault('all_tease', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('all_tease', 'rgba(59, 130, 246, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
-                <div style="font-size: 11px; color: #60a5fa; font-weight: 800;">🔵 ALL TEASE, NO SQUEEZE (-18.9% to +9.9% EV)</div>
-                <div style="font-size: 14.5px; font-weight: 800; margin: 6px 0; color: var(--text-primary);">${fmtBucket("all_tease")}</div>
-                <div style="font-size: 11px; color: var(--text-muted);">Coin-flip zone | BB = Missed line by &le;3 pts</div>
+                <div style="font-size: 11px; color: #60a5fa; font-weight: 800;">🔵 ALL TEASE, NO SQUEEZE (NO-BET ZONE)</div>
+                ${(() => {
+                    const t = buckets.all_tease || { hits: 0, misses: 0, blueBalls: 0, total: 0 };
+                    const sk = buckets.smash_key_exec || { hits: 0, total: 0 };
+                    const sr = buckets.overall_smash || { hits: 0, total: 0 };
+                    const teasePct = t.total > 0 ? ((t.hits / t.total) * 100) : 0;
+                    const smashPct = sk.total > 0 ? ((sk.hits / sk.total) * 100) : (sr.total > 0 ? ((sr.hits / sr.total) * 100) : 0);
+                    const edgeLift = Number((smashPct - teasePct).toFixed(1));
+                    const liftColor = edgeLift >= 0 ? "var(--accent-emerald)" : "var(--text-secondary)";
+                    const breakEvenTag = teasePct < 52.4 ? "Below 52.4% Break-Even — Good Skip" : "Tight Coin-Flip Buffer";
+                    return `
+                        <div style="font-size: 15.5px; font-weight: 800; margin: 6px 0; color: var(--text-primary);">${t.total} Coin-Flips Skipped</div>
+                        <div style="font-size: 11px; color: var(--text-secondary); line-height: 1.45;">
+                            SMASH Filter Edge: <strong style="color:${liftColor};">${edgeLift >= 0 ? '+' : ''}${edgeLift}%</strong> vs. Skipped<br>
+                            <span style="color:var(--text-muted);">Skipped Raw: ${teasePct.toFixed(1)}% (${breakEvenTag})</span>
+                        </div>
+                    `;
+                })()}
             </div>
 
             <div onclick="window.toggleLedgerVault('grenades_dodged', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('grenades_dodged', 'rgba(239, 68, 68, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
                 <div style="font-size: 11px; color: var(--accent-danger); font-weight: 800;">💣 GRENADES DODGED (&le;-19.0% EV)</div>
-                <div style="font-size: 15.5px; font-weight: 800; margin: 6px 0; color: var(--accent-emerald);">${fmtTraps()}</div>
+                <div style="font-size: 18px; font-weight: 800; margin: 6px 0; color: var(--accent-emerald);">${fmtTraps()}</div>
                 <div style="font-size: 11px; color: var(--text-muted);">You were a little too drunk to make that call last night</div>
             </div>
 
@@ -3622,11 +3640,16 @@ function renderHistoricalLedger() {
             </div>
 
             <div onclick="window.toggleLedgerVault('tip_vs_bd', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('tip_vs_bd', 'rgba(6, 182, 212, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
-                <div style="font-size: 11px; color: var(--accent-cyan); font-weight: 800;">⚡ TIP vs. BALLS DEEP HEAD-TO-HEAD</div>
-                <div style="font-size: 13px; font-weight: 800; margin: 6px 0;">Tip: ${fmtBucket("tip_all")}</div>
+                <div style="font-size: 11px; color: var(--accent-cyan); font-weight: 800;">⚡ TIP RAW vs. BALLS DEEP EXEC</div>
+                <div style="font-size: 13px; font-weight: 800; margin: 6px 0;">Tip (-110): ${fmtBucket("tip_all")}</div>
                 ${showBallsDeep
-                    ? `<div style="font-size: 13px; font-weight: 800; color: var(--accent-emerald);">Balls Deep: ${fmtBucket("balls_deep_all")}</div>`
-                    : `<div style="font-size: 11px; color: var(--accent-gold); cursor: pointer;" onclick="window.unlockBallsDeepMode(event)">🔒 Click to unlock Balls Deep Record</div>`
+                    ? (() => {
+                        const tp = buckets.tip_all.total > 0 ? (buckets.tip_all.hits / buckets.tip_all.total) * 100 : 0;
+                        const fp = buckets.safe_floors.total > 0 ? (buckets.safe_floors.hits / buckets.safe_floors.total) * 100 : 0;
+                        const lift = Number((fp - tp).toFixed(1));
+                        return `<div style="font-size: 13px; font-weight: 800; color: var(--accent-emerald);">BD Exec: ${fmtBucket("safe_floors")} <span style="font-size:11px; color:var(--accent-cyan);">(${lift >= 0 ? '+' : ''}${lift}%)</span></div>`;
+                    })()
+                    : `<div style="font-size: 11px; color: var(--accent-gold); cursor: pointer;" onclick="window.unlockBallsDeepMode(event)">🔒 Click to unlock Balls Deep Exec Lift</div>`
                 }
             </div>
         </div>
@@ -3770,4 +3793,4 @@ function renderLiveBottomTicker() {
         </div>
     `;
 }
-// === END OF APP_CONTROLLER.JS (v254) ===
+// === END OF APP_CONTROLLER.JS (v256) ===
