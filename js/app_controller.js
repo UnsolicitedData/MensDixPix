@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v252 — FULL 1:1 NFL + NCAA PARITY)
- * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with onlinemath_engine.js (v318) & scraper.py (v227)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v253 — ZERO-CONTRADICTION LEDGER & BALLS DEEP PARITY)
+ * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with onlinemath_engine.js (v318) & scraper.py (v230)
  *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
  *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
  *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
@@ -2333,8 +2333,9 @@ const PERMANENT_LEDGER_ARCHIVE = {
             bd_proj: 1.4,
             bd_win_pct: 69.25,
             bd_ev_pct: 32.20,
-            safe_floor_label: "Alt +10.5 (-175)",
-            safe_floor_win_pct: 88.4,
+            key_alt_line: 7.5,
+            safe_floor_label: "Alt +7.5 (-140)",
+            safe_floor_win_pct: 77.6,
             bd_alt_label: "Alt +3.5 (+145)",
             bd_alt_ev_pct: 41.80,
             flagship_slot: "MÉNAGE À TROIS #2",
@@ -2898,9 +2899,21 @@ function renderHistoricalLedger() {
             const ledgerTier = getTierFromEv(tipEvPct);
             const tipColor = getTierColor(ledgerTier);
 
+            const archEng = (typeof getLeagueEngine === "function") ? getLeagueEngine(entryLeague) : null;
+            const archWinProbFn = (gap) => archEng ? archEng.winProb(gap) : calcPointGapWinProb(gap);
+
             const bdProj = rec.bd_proj !== undefined ? Number(rec.bd_proj) : (rec.balls_deep_proj !== undefined ? Number(rec.balls_deep_proj) : Number(rec.bdProjectedMean || tipProj));
-            const bdWinPct = rec.bd_win_pct !== undefined ? rec.bd_win_pct : (rec.balls_deep_win_pct !== undefined ? rec.balls_deep_win_pct : (rec.bdModelPct || tipWinPct));
-            const bdEvPct = rec.bd_ev_pct !== undefined ? rec.bd_ev_pct : (rec.balls_deep_ev_pct !== undefined ? rec.balls_deep_ev_pct : (rec.bdEvPct || tipEvPct));
+            const tipDirChar = !isSpread ? (tipProj < vegasLine ? "U" : "O") : "";
+            const safeDirChar = !isSpread ? (rec.safe_total_dir || rec.balls_deep_direction || (bdProj < vegasLine ? "U" : "O")) : "";
+            const isUnderSafe = (safeDirChar === "U");
+
+            // Always compute archived Balls Deep Win% & EV% cleanly from bdProj vs vegasLine (eliminates stale mismatched numbers!)
+            const archBdProbRaw = isSpread
+                ? archWinProbFn(vegasLine - bdProj)
+                : Math.max(0.50, archWinProbFn(Math.abs(bdProj - vegasLine)));
+            const archBdEvObj = calcExpectedValueAndKelly(archBdProbRaw, isSpread ? baseOdds : -110);
+            const bdWinPct = Number((archBdProbRaw * 100.0).toFixed(2));
+            const bdEvPct = Number(archBdEvObj.evPercentage.toFixed(2));
             const bdTier = getTierFromEv(bdEvPct);
             const bdColor = getTierColor(bdTier);
 
@@ -2910,26 +2923,31 @@ function renderHistoricalLedger() {
                 pickLabel.startsWith(`${entryHomeCode} `)
             );
 
-            const tipDirChar = !isSpread ? (rec.tip_direction || (tipProj < vegasLine ? "U" : "O")) : "";
-            const isUnderTip = (tipDirChar === "U");
-            const safeDirChar = !isSpread ? (rec.safe_total_dir || rec.balls_deep_direction || tipDirChar) : "";
-            const isUnderSafe = (safeDirChar === "U");
-            const keyAltFallback = isSpread ? calcKeyNumberAltSpreadSafe(vegasLine, bdProj, baseOdds) : null;
+            const keyAltFallback = isSpread
+                ? (archEng && entryLeague === "NCAA" ? archEng.keyAlt(vegasLine, bdProj, baseOdds) : calcKeyNumberAltSpreadSafe(vegasLine, bdProj, baseOdds))
+                : null;
             const defaultFloorHook = isSpread
                 ? (rec.key_alt_line !== undefined && rec.key_alt_line !== null ? Number(rec.key_alt_line) : keyAltFallback.altLine)
                 : (rec.safe_total_line !== undefined && rec.safe_total_line !== null ? Number(rec.safe_total_line) : (isUnderSafe ? (Math.floor(vegasLine + 4.0) + 0.5) : (Math.floor(vegasLine - 4.0) + 0.5)));
+            // Ceiling ALWAYS shares Balls Deep's direction (safeDirChar) — NEVER shows Alt U + Alt O in the same cell!
             const defaultCeilHook = isSpread
                 ? snapToHalfPointHook(vegasLine, -3.0)
-                : (isUnderTip ? (Math.floor(vegasLine - 3.0) + 0.5) : (Math.floor(vegasLine + 3.0) + 0.5));
+                : (isUnderSafe ? (Math.floor(vegasLine - 3.0) + 0.5) : (Math.floor(vegasLine + 3.0) + 0.5));
             const safeFloorLabel = rec.key_alt_label || rec.safe_total_label || rec.safe_floor_label || rec.safeFloorLabel || (isSpread
                 ? keyAltFallback.altStr
                 : `Alt ${safeDirChar} ${defaultFloorHook.toFixed(1)} (-175)`);
             const safeFloorWinPct = rec.key_alt_win_pct || rec.safe_total_win_pct || rec.safe_floor_win_pct || rec.safeFloorWinPct || (isSpread ? keyAltFallback.altProbPct : 74.5);
 
-            const bdAltLabel = rec.bd_alt_label || rec.bdAltLabel || (isSpread
-                ? `Alt ${defaultCeilHook > 0 ? '+' + defaultCeilHook.toFixed(1) : defaultCeilHook.toFixed(1)} (+145)`
-                : `Alt ${tipDirChar} ${defaultCeilHook.toFixed(1)} (+155)`);
-            const bdAltEvPct = rec.bd_alt_ev_pct !== undefined ? rec.bd_alt_ev_pct : (rec.bdAltEvPct || 0);
+            const bdAltLabel = isSpread
+                ? (rec.bd_alt_label || rec.bdAltLabel || `Alt ${defaultCeilHook > 0 ? '+' + defaultCeilHook.toFixed(1) : defaultCeilHook.toFixed(1)} (+145)`)
+                : `Alt ${safeDirChar} ${defaultCeilHook.toFixed(1)} (+155)`;
+            const archCeilGap = isSpread
+                ? (defaultCeilHook - bdProj)
+                : (isUnderSafe ? (defaultCeilHook - bdProj) : (bdProj - defaultCeilHook));
+            const archCeilEvCalc = Number(calcExpectedValueAndKelly(archWinProbFn(archCeilGap), isSpread ? 145 : 155).evPercentage.toFixed(2));
+            const bdAltEvPct = (rec.bd_alt_ev_pct !== undefined && rec.bd_alt_ev_pct !== 0)
+                ? rec.bd_alt_ev_pct
+                : ((rec.bdAltEvPct !== undefined && rec.bdAltEvPct !== 0) ? rec.bdAltEvPct : archCeilEvCalc);
             const slot = rec.flagship_slot || rec.flagshipSlot || "";
 
             let gradedTip = rec.result_tip || rec.result || "PENDING";
@@ -2957,7 +2975,7 @@ function renderHistoricalLedger() {
                     : gradeTotalByDirection(safeDirChar, defaultFloorHook, homeScore, awayScore);
                 const liveCeilObj = isSpread
                     ? gradeSpreadPick(isHomeSpreadPick, defaultCeilHook, homeScore, awayScore)
-                    : gradeTotalByDirection(tipDirChar, defaultCeilHook, homeScore, awayScore);
+                    : gradeTotalByDirection(safeDirChar, defaultCeilHook, homeScore, awayScore);
 
                 if (gradedTip === "PENDING" || (gradedTip === "MISS" && missByPts === 0)) {
                     gradedTip = liveTipObj.outcome;
@@ -3141,7 +3159,7 @@ function renderHistoricalLedger() {
                     : gradeTotalByDirection(liveSafeDir, p.safeFloorHookNum, espnMatch.homeScore, espnMatch.awayScore);
                 const ceilingResObj = isSpread
                     ? gradeSpreadPick(p.isHomeSpread, p.ceilingHookNum, espnMatch.homeScore, espnMatch.awayScore)
-                    : gradeTotalByDirection(liveTipDir, p.ceilingHookNum, espnMatch.homeScore, espnMatch.awayScore);
+                    : gradeTotalByDirection(liveSafeDir, p.ceilingHookNum, espnMatch.homeScore, espnMatch.awayScore);
 
                 gradedTip = tipResObj.outcome;
                 gradedBd = bdResObj.outcome;
@@ -3747,4 +3765,4 @@ function renderLiveBottomTicker() {
         </div>
     `;
 }
-// === END OF APP_CONTROLLER.JS (v252) ===
+// === END OF APP_CONTROLLER.JS (v253) ===
