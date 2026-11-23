@@ -1,5 +1,5 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v227 — FULL 1:1 DUAL-ENGINE PARITY + FINAL-SAFE SUNDAY SCRUB + O/U SELF-HEAL)
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v230 — ZERO-CONTRADICTION BALLS DEEP + ARCHIVE EV/CEILING PARITY)
 Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
   1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
   2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
@@ -728,7 +728,8 @@ def fetch_espn_game_injuries(event_id, league="NFL"):
                 if pos in ("OT", "LT", "RT", "T"):
                     pass_pro_compromised = True
                 if pos == "QB":
-                    qb_out_count += 1
+                    if status in ("out", "injured reserve", "ir"):
+                        qb_out_count += 1
                     qb_weight = (2.75 if status in ("injured reserve", "ir") else 3.50) * status_mult
                     total_impact = max(total_impact, qb_weight)
                 if pos in ("QB", "OT", "LT", "RT", "T", "CB", "WR", "RB", "DE", "EDGE", "LB") and len(key_outs) < 5:
@@ -739,7 +740,7 @@ def fetch_espn_game_injuries(event_id, league="NFL"):
             out_by_abbr[abbr] = {
                 "qb_replacement_delta": capped_delta,
                 "lt_or_rb_pass_pro_out": pass_pro_compromised,
-                "is_third_string_qb": (qb_out_count >= 2),
+                "is_third_string_qb": (qb_out_count >= 3),
                 "injuries_summary": key_outs
             }
     except Exception:
@@ -1864,13 +1865,13 @@ def scrub_live_poisoned_entries(entries, now_utc):
         odds_abs = abs(_i(s_rec.get("odds"), -110))
         t_odds_abs = abs(_i(t_rec.get("odds"), -110))
         c_time = str(e.get("commence_time") or "")
-        # Flag Sunday Nov 22 1PM/4PM slate games overwritten with live halftime odds (now IN_PLAY or FINAL; SNF is 2026-11-23T01:20Z UTC!)
-        is_sunday_afternoon_nov22 = c_time.startswith("2026-11-22")
-        was_live_poisoned = (
-            (odds_abs >= 220)
-            or (t_odds_abs >= 220)
-            or (is_sunday_afternoon_nov22 and e.get("status") in ("IN_PLAY", "FINAL") and (odds_abs >= 116 or t_odds_abs >= 116))
+        # Surgical scrub: remove extreme live garbage juice (>=220) or the 3 confirmed Nov 22 halftime-poisoned entries (NYJ@LAC, LV@DEN, JAX@NYG)
+        is_sunday_nov22_poison = (
+            c_time.startswith("2026-11-22")
+            and gid in ("NFL_NYJ_LAC_2026", "NFL_LV_DEN_2026", "NFL_JAX_NYG_2026")
+            and odds_abs >= 118
         )
+        was_live_poisoned = (odds_abs >= 220) or (t_odds_abs >= 220) or is_sunday_nov22_poison
         if was_live_poisoned:
             removed += 1
             continue
@@ -1970,13 +1971,15 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                 "key_alt_mer": best_spread.get("key_alt_mer", 1.0),
                 "key_alt_win_pct": best_spread.get("key_alt_win_pct", 70.0),
                 "key_alt_ev_pct": best_spread.get("key_alt_ev_pct", 0.0),
+                "bd_alt_label": best_spread.get("bd_alt_label", ""),
+                "bd_alt_ev_pct": best_spread.get("bd_alt_ev_pct", 0.0),
                 "tier_badge": best_spread.get("tier_badge", "PASS"),
                 "flagship_slot": best_spread.get("flagship_slot", ""),
                 "result_tip": "PENDING",
                 "result_balls_deep": "PENDING",
                 "result_key_alt": "PENDING"
             }
-            existing["engine_version"] = "v227_dual_engines"
+            existing["engine_version"] = "v230_zero_contradiction"
             if best_total:
                 existing["total_record"] = {
                     "pick_label": best_total["player"],
@@ -1997,6 +2000,8 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                     "safe_total_label": best_total.get("key_alt_label", ""),
                     "safe_total_win_pct": best_total.get("key_alt_win_pct", 72.0),
                     "safe_total_ev_pct": best_total.get("key_alt_ev_pct", 0.0),
+                    "bd_alt_label": best_total.get("bd_alt_label", ""),
+                    "bd_alt_ev_pct": best_total.get("bd_alt_ev_pct", 0.0),
                     "tier_badge": best_total.get("tier_badge", "PASS"),
                     "flagship_slot": best_total.get("flagship_slot", ""),
                     "result_tip": "PENDING",
@@ -2012,11 +2017,11 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
 
         entries[gid] = existing
 
-    # ONE-TIME v227_dual_engines MIGRATION (NULL-PROOF):
+    # ONE-TIME v230_zero_contradiction MIGRATION (NULL-PROOF):
     # Upgrades ALL pre-v222 entries (both games still in data.json AND older archived FINAL entries)
     # to clean ΔQB-only spreads, Key-Number Alt Buys, and Regime Safe Totals, then re-grades against actual scores!
     for gid, entry in entries.items():
-        if entry.get("engine_version") == "v227_dual_engines" or gid == "nfl_mnf_lac_bal_2026_w10":
+        if entry.get("engine_version") == "v230_zero_contradiction" or gid == "nfl_mnf_lac_bal_2026_w10":
             continue
         try:
             src_g = game_lookup_by_gid.get(gid)
@@ -2174,9 +2179,21 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                     tz_arch = _i(h_reg.get("tz"), -6) - _i(a_reg.get("tz"), -6)
                     elev_arch = calc_ten_zone_elevation(env_arch, _f(a_reg.get("elev_m"), 150.0))
                     reg_t = calc_regime_safe_total_obj(v_tot, tip_t, env_arch, tz_arch, elev_arch, lg, False)
+                    bd_t_arch = reg_t["balls_deep_total"]
+                    lg_tot_eng = get_dedicated_engine(lg)
+                    p_bd_t_arch = max(0.50, lg_tot_eng.win_prob(abs(bd_t_arch - v_tot)))
+                    ev_bd_t_arch = calc_ev_pct(p_bd_t_arch, -110)
+                    c_dir_arch = reg_t["safe_dir"]
+                    c_line_arch = (math.floor(v_tot - 3.0) + 0.5) if c_dir_arch == "U" else (math.floor(v_tot + 3.0) + 0.5)
+                    c_edge_arch = (c_line_arch - bd_t_arch) if c_dir_arch == "U" else (bd_t_arch - c_line_arch)
+                    c_ev_arch = calc_ev_pct(lg_tot_eng.win_prob(c_edge_arch), 155)
                     t_rec.update({
-                        "balls_deep_proj": reg_t["balls_deep_total"],
+                        "balls_deep_proj": bd_t_arch,
                         "balls_deep_direction": reg_t["safe_dir"],
+                        "balls_deep_win_pct": round(p_bd_t_arch * 100.0, 2),
+                        "balls_deep_ev_pct": ev_bd_t_arch,
+                        "bd_alt_label": f"Alt {c_dir_arch} {c_line_arch:.1f} (+155)",
+                        "bd_alt_ev_pct": c_ev_arch,
                         "total_regime": reg_t["regime"],
                         "safe_total_line": reg_t["safe_line"],
                         "safe_total_dir": reg_t["safe_dir"],
@@ -2184,11 +2201,12 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                         "safe_total_label": reg_t["safe_label"],
                         "safe_total_win_pct": reg_t["safe_win_pct"],
                         "safe_total_ev_pct": reg_t["safe_ev_pct"],
+                        "result_balls_deep": "PENDING",
                         "result_safe_total": "PENDING"
                     })
-            entry["engine_version"] = "v227_dual_engines"
+            entry["engine_version"] = "v230_zero_contradiction"
         except Exception as mig_err:
-            print(f"[v227 Migration Skip {gid}] {mig_err}")
+            print(f"[v230 Migration Skip {gid}] {mig_err}")
 
     # SELF-HEALING O/U DIRECTION GUARD:
     # Repairs any legacy v223 archived total where tip_proj contradicted tip_direction/pick_label
@@ -2224,6 +2242,35 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
             t_rec["result_tip"] = "PENDING"
             t_rec["miss_by_pts"] = None
             print(f"[TOTAL SELF-HEAL] Fixed {gid}: Proj {tip_t} vs {v_tot} -> {true_dir} {v_tot} (was {cur_dir})")
+
+        # Also lock Balls Deep Total win%/EV% & Ceiling label/EV% mathematically to balls_deep_proj + safe_total_dir!
+        bd_t_cur = _f(t_rec.get("balls_deep_proj"), tip_t)
+        lg_c = entry.get("league") or ("NCAA" if gid.startswith("NCAA_") else "NFL")
+        lg_eng_c = get_dedicated_engine(lg_c)
+        bd_dir_c = str(t_rec.get("safe_total_dir") or t_rec.get("balls_deep_direction") or ("U" if bd_t_cur < v_tot else "O")).upper()
+        p_bd_c = max(0.50, lg_eng_c.win_prob(abs(bd_t_cur - v_tot)))
+        t_rec["balls_deep_direction"] = bd_dir_c
+        t_rec["balls_deep_win_pct"] = round(p_bd_c * 100.0, 2)
+        t_rec["balls_deep_ev_pct"] = calc_ev_pct(p_bd_c, -110)
+        c_line_c = (math.floor(v_tot - 3.0) + 0.5) if bd_dir_c == "U" else (math.floor(v_tot + 3.0) + 0.5)
+        c_edge_c = (c_line_c - bd_t_cur) if bd_dir_c == "U" else (bd_t_cur - c_line_c)
+        t_rec["bd_alt_label"] = f"Alt {bd_dir_c} {c_line_c:.1f} (+155)"
+        t_rec["bd_alt_ev_pct"] = calc_ev_pct(lg_eng_c.win_prob(c_edge_c), 155)
+
+    # Also enforce Spread Ceiling EV% consistency on EVERY archived spread
+    for gid, entry in entries.items():
+        if gid == "nfl_mnf_lac_bal_2026_w10":
+            continue
+        s_rec = entry.get("spread_record")
+        if not isinstance(s_rec, dict) or s_rec.get("vegas_closing_line") is None:
+            continue
+        s_line = _f(s_rec.get("vegas_closing_line"), 0.0)
+        bd_sp = _f(s_rec.get("balls_deep_proj", s_rec.get("tip_proj")), s_line)
+        lg_s = entry.get("league") or ("NCAA" if gid.startswith("NCAA_") else "NFL")
+        lg_eng_s = get_dedicated_engine(lg_s)
+        c_sp = math.floor(s_line - 3.0) + 0.5
+        s_rec["bd_alt_label"] = f"Alt {'+' if c_sp > 0 else ''}{c_sp:.1f} (+145)"
+        s_rec["bd_alt_ev_pct"] = calc_ev_pct(lg_eng_s.win_prob(c_sp - bd_sp), 145)
 
     for gid, entry in entries.items():
         espn_info = None
@@ -2607,6 +2654,8 @@ def build_master_payload():
                         "key_alt_mer": key_alt["mer"],
                         "key_alt_win_pct": key_alt["alt_win_pct"],
                         "key_alt_ev_pct": key_alt["alt_ev_pct"],
+                        "bd_alt_label": f"Alt {'+' if (math.floor(point - 3.0) + 0.5) > 0 else ''}{(math.floor(point - 3.0) + 0.5):.1f} (+145)",
+                        "bd_alt_ev_pct": calc_ev_pct(lg_eng.win_prob((math.floor(point - 3.0) + 0.5) - model_bd_spread), 145),
                         "tier2_line": key_alt["tier2_line"],
                         "tier2_mode": key_alt["tier2_mode"],
                         "tier2_label": key_alt["tier2_label"],
@@ -2667,6 +2716,8 @@ def build_master_payload():
                         "key_alt_label": reg_tot["safe_label"],
                         "key_alt_win_pct": reg_tot["safe_win_pct"],
                         "key_alt_ev_pct": reg_tot["safe_ev_pct"],
+                        "bd_alt_label": f"Alt {reg_tot['safe_dir']} {((math.floor(t_point - 3.0) + 0.5) if reg_tot['safe_dir'] == 'U' else (math.floor(t_point + 3.0) + 0.5)):.1f} (+155)",
+                        "bd_alt_ev_pct": calc_ev_pct(lg_tot_eng.win_prob((((math.floor(t_point - 3.0) + 0.5) - proj_total_bd) if reg_tot['safe_dir'] == 'U' else (proj_total_bd - (math.floor(t_point + 3.0) + 0.5)))), 155),
                         "tier_badge": badge,
                         "flagship_slot": "",
                         "projected_variance_sigma2": 0,
@@ -2903,7 +2954,7 @@ def build_master_payload():
             "league": "NFL_NCAA",
             "week": 12,
             "last_updated": now_iso,
-            "telemetry_version": "v227_dual_engines_parity",
+            "telemetry_version": "v230_zero_contradiction",
             "ranked_ncaa_teams": live_ranked_ncaa
         },
         "games": games_slate,
@@ -2918,7 +2969,7 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v227 — FULL 1:1 DUAL-ENGINE PARITY + FINAL-SAFE SUNDAY SCRUB + O/U SELF-HEAL)")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v230 — ZERO-CONTRADICTION BALLS DEEP + ARCHIVE EV/CEILING PARITY)")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("=========================================================")
 
