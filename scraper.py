@@ -1,5 +1,5 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v231 — BALLS DEEP ENHANCE-ONLY OVERLAY + ZERO TIP OVERRULES)
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v232 — DYNAMIC WEEK ROLLOVER + BALLS DEEP ENHANCE-ONLY)
 Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
   1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
   2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
@@ -2982,12 +2982,15 @@ def build_master_payload():
     existing_ledger = old_payload.get("historical_ledger") if isinstance(old_payload.get("historical_ledger"), dict) else {"entries": {}, "summary": {}}
     updated_ledger = update_and_grade_ledger(existing_ledger, games_slate, espn_scores, now_utc, porkys_by_gid, old_games=old_games)
 
+    week1_start_utc = datetime(season_year, 9, 2, tzinfo=timezone.utc)
+    dynamic_week = max(1, min(22, ((now_utc - week1_start_utc).days // 7) + 1))
+
     return {
         "slate_info": {
             "league": "NFL_NCAA",
-            "week": 12,
+            "week": dynamic_week,
             "last_updated": now_iso,
-            "telemetry_version": "v231_bd_enhance_only",
+            "telemetry_version": "v232_dynamic_week_bd_enhance",
             "ranked_ncaa_teams": live_ranked_ncaa
         },
         "games": games_slate,
@@ -3002,7 +3005,7 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v231 — BALLS DEEP ENHANCE-ONLY OVERLAY + ZERO TIP OVERRULES)")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v232 — DYNAMIC WEEK ROLLOVER + BALLS DEEP ENHANCE-ONLY)")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("=========================================================")
 
