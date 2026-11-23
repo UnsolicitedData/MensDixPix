@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v259 — PRODUCTION AUDIT LOCK (62-PLAY TOTALS + TIP DOG VISIBILITY + PORKYS ODDS PARITY + LEAGUE-SCOPED ESPN + REMATCH-SAFE LEDGER))
- * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with math_engine.js (v322) & scraper.py (v235)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v260 — 2-KEY-RUNG PERPETUITY + ALWAYS-ON WONG TEASER + INSTANT LEDGER RE-GRADE)
+ * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with math_engine.js (v323) & scraper.py (v237)
  *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
  *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
  *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
@@ -28,7 +28,8 @@ const AppState = {
     filters: { nfl: true, ncaa: true },
     comboFilters: { team: "ALL", market: "ALL", tier: "ALL" },
     selectedParlayLegs: new Set(),
-    safeFloorParlayLegs: new Set(),   // Tracks legs loaded at -2φ Safe Floor (-175) odds
+    safeFloorParlayLegs: new Set(),   // Tracks legs loaded at 2-Key-Rung Floor odds
+    wongTeaserParlayLegs: new Set(),  // Tracks legs loaded in Always-On Wong Teaser mode
     mnfCutoffMs: Infinity,
     processedGames: [],
     processedProps: [],
@@ -496,9 +497,11 @@ window.toggleLegendDrawer = function(memoryKey, targetRenderFnName, event) {
 window.toggleParlayLeg = function(propKey) {
     const savedY = window.scrollY;
     if (!AppState.safeFloorParlayLegs) AppState.safeFloorParlayLegs = new Set();
+    if (!AppState.wongTeaserParlayLegs) AppState.wongTeaserParlayLegs = new Set();
     if (AppState.selectedParlayLegs.has(propKey)) {
         AppState.selectedParlayLegs.delete(propKey);
         AppState.safeFloorParlayLegs.delete(propKey);
+        AppState.wongTeaserParlayLegs.delete(propKey);
     } else {
         AppState.selectedParlayLegs.add(propKey);
     }
@@ -506,15 +509,19 @@ window.toggleParlayLeg = function(propKey) {
     window.scrollTo(window.scrollX, savedY);
 };
 
-window.loadFlagshipPreset = function(onlyMenage = false, useKeyAlts = false) {
+window.loadFlagshipPreset = function(onlyMenage = false, useKeyAlts = false, useWongTeaser = false) {
     const savedY = window.scrollY;
     if (!AppState.safeFloorParlayLegs) AppState.safeFloorParlayLegs = new Set();
+    if (!AppState.wongTeaserParlayLegs) AppState.wongTeaserParlayLegs = new Set();
     AppState.selectedParlayLegs.clear();
     AppState.safeFloorParlayLegs.clear();
+    AppState.wongTeaserParlayLegs.clear();
     AppState.flagshipFivePack.forEach(p => {
         if (!onlyMenage || (p.flagshipSlot && p.flagshipSlot.includes("MÉNAGE"))) {
             AppState.selectedParlayLegs.add(p.propKey);
-            if (useKeyAlts) {
+            if (useWongTeaser) {
+                AppState.wongTeaserParlayLegs.add(p.propKey);
+            } else if (useKeyAlts) {
                 AppState.safeFloorParlayLegs.add(p.propKey);
             }
         }
@@ -530,8 +537,10 @@ window.loadPorkysPreset = function(event) {
     }
     const savedY = window.scrollY;
     if (!AppState.safeFloorParlayLegs) AppState.safeFloorParlayLegs = new Set();
+    if (!AppState.wongTeaserParlayLegs) AppState.wongTeaserParlayLegs = new Set();
     AppState.selectedParlayLegs.clear();
     AppState.safeFloorParlayLegs.clear();
+    AppState.wongTeaserParlayLegs.clear();
     AppState.porkysFivePack.forEach(item => {
         if (item.fadeProp && item.fadeProp.propKey) {
             AppState.selectedParlayLegs.add(item.fadeProp.propKey);
@@ -549,6 +558,7 @@ window.clearParlaySlip = function(event) {
     }
     const savedY = window.scrollY;
     if (AppState.safeFloorParlayLegs) AppState.safeFloorParlayLegs.clear();
+    if (AppState.wongTeaserParlayLegs) AppState.wongTeaserParlayLegs.clear();
     AppState.selectedParlayLegs.clear();
     renderCombinatoricsDeck();
     window.scrollTo(window.scrollX, savedY);
@@ -952,6 +962,8 @@ function recalculateAndRenderAll(opts = {}) {
                 let safeFloorEvPct = 0.0;
                 let keyAltMer = 1.0;
                 let keyAltNote = "";
+                let tier2Line = null;
+                let tier2ProbPct = 78.0;
                 let tier2Approved = false;
                 let tier2Mode = null;
                 let tier2Label = "";
@@ -1004,6 +1016,8 @@ function recalculateAndRenderAll(opts = {}) {
                     safeFloorOdds = keyAltObj.altOdds;
                     keyAltMer = keyAltObj.merRatio;
                     keyAltNote = keyAltObj.keyLabel;
+                    tier2Line = keyAltObj.tier2Line;
+                    tier2ProbPct = keyAltObj.tier2ProbPct || 78.0;
                     tier2Approved = Boolean(keyAltObj.tier2Approved);
                     tier2Mode = keyAltObj.tier2Mode || null;
                     tier2Label = keyAltObj.tier2Label || "";
@@ -1205,6 +1219,8 @@ function recalculateAndRenderAll(opts = {}) {
                     safeFloorEvPct,
                     keyAltMer,
                     keyAltNote,
+                    tier2Line,
+                    tier2ProbPct,
                     tier2Approved,
                     tier2Mode,
                     tier2Label,
@@ -1431,8 +1447,8 @@ function buildBallsDeepBoxHTML(engineProp, isSpread) {
     const tier2RowHTML = (isSpreadKeyBuy && engineProp.tier2Approved && engineProp.tier2Label)
         ? `
             <div style="margin-top: 2px; padding-top: 4px; border-top: 1px dashed rgba(245,158,11,0.32); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 10px;">
-                <span style="color: ${engineProp.tier2Mode === 'WONG_6PT' ? '#34d399' : '#c084fc'}; font-weight: 800;">${engineProp.tier2Label}</span>
-                <span style="color: var(--text-muted); font-size: 9.5px;">Never pay -320 standalone — route into 2-Leg Teaser</span>
+                <span style="color: ${engineProp.tier2Mode === 'WONG_6PT' ? '#34d399' : '#38bdf8'}; font-weight: 800;">${engineProp.tier2Label}</span>
+                <span style="color: var(--text-muted); font-size: 9.5px;">Always-On Wong Teaser (2-Key Variance • Pair in 2-Leg Teaser)</span>
             </div>
         `
         : "";
@@ -1903,20 +1919,32 @@ function renderCombinatoricsDeck() {
     if (!container) return;
 
     if (!AppState.safeFloorParlayLegs) AppState.safeFloorParlayLegs = new Set();
+    if (!AppState.wongTeaserParlayLegs) AppState.wongTeaserParlayLegs = new Set();
 
     const isUnlockedMode = (AppState.activeMode === "balls_deep" || AppState.activeMode === "davinci");
+    const hasWongLegs = AppState.wongTeaserParlayLegs.size > 0;
     const hasFloorLegs = AppState.safeFloorParlayLegs.size > 0;
-    const modeTag = hasFloorLegs
-        ? "🔑 KEY-NUMBER / SAFE FLOOR ALT SLIP ACTIVE"
-        : (AppState.activeMode === "tip"
-            ? "JUST THE TIP BASELINE (M1–M9)"
-            : (AppState.activeMode === "balls_deep" ? "BALLS DEEP v313 GUARDRAILS ACTIVE" : "DAVINCI MOMENTUM ARC ACTIVE"));
+    const modeTag = hasWongLegs
+        ? "🎯 ALWAYS-ON WONG TEASER SLIP ACTIVE (6/7-PT TEASER MATH)"
+        : (hasFloorLegs
+            ? "🔑 2-KEY-RUNG LADDER / SAFE FLOOR ALT SLIP ACTIVE"
+            : (AppState.activeMode === "tip"
+                ? "JUST THE TIP BASELINE (M1–M9)"
+                : (AppState.activeMode === "balls_deep" ? "BALLS DEEP 2-KEY-RUNG ENGINE ACTIVE" : "DAVINCI MOMENTUM ARC ACTIVE")));
 
     const selectedProps = AppState.processedProps.filter(p => AppState.selectedParlayLegs.has(p.propKey));
     const legsPayload = selectedProps.map(p => {
+        const useWong = AppState.wongTeaserParlayLegs.has(p.propKey);
         const useSafeFloor = AppState.safeFloorParlayLegs.has(p.propKey);
+        if (useWong) {
+            // Effective per-leg equivalent for standard 2-leg 6-pt (-120 -> sqrt(1.8333) ~ -282) or 7-pt (-135 -> sqrt(1.7407) ~ -313) teaser
+            const is7Pt = (p.tier2Mode === "WONG_7PT");
+            const perLegAm = is7Pt ? -313 : -282;
+            const wProb = (p.marketType === "spread" && p.tier2ProbPct) ? (p.tier2ProbPct / 100.0) : ((p.safeFloorWinPct || 76.0) / 100.0);
+            return { americanOdds: perLegAm, trueProb: wProb };
+        }
         return {
-            americanOdds: useSafeFloor ? (p.safeFloorOdds || -175) : p.baseOdds,
+            americanOdds: useSafeFloor ? (p.safeFloorOdds || -210) : p.baseOdds,
             trueProb: useSafeFloor ? ((p.safeFloorWinPct || 75.0) / 100.0) : p.activeModelProbRaw
         };
     });
@@ -1940,14 +1968,22 @@ function renderCombinatoricsDeck() {
         <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-subtle); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 11px;">
             <span style="color: var(--accent-cyan); font-weight: 800; margin-right: 4px;">ACTIVE SLIP (${selectedProps.length}):</span>
             ${selectedProps.map(p => {
+                const isWong = AppState.wongTeaserParlayLegs.has(p.propKey);
                 const isFloor = AppState.safeFloorParlayLegs.has(p.propKey);
-                const pillLabel = isFloor
-                    ? `🛡️ ${p.marketType === "spread" ? (p.isHomeSpread ? p.homeTeam : p.awayTeam) : p.matchup} ${p.safeFloorLabel}`
-                    : (p.activePlayerLabel || p.player);
-                const effFloorOdds = p.safeFloorOdds || -175;
-                const pillOdds = isFloor ? (effFloorOdds > 0 ? `+${effFloorOdds}` : `${effFloorOdds}`) : (p.baseOdds > 0 ? `+${p.baseOdds}` : `${p.baseOdds}`);
-                const pillWin = isFloor ? p.safeFloorWinPct : p.activeModelPct;
-                const pillBorder = isFloor ? "rgba(6, 182, 212, 0.55)" : getTierColor(p.tierBadge, true);
+                const fmtWongLine = (p.tier2Line !== null && p.tier2Line !== undefined) ? `${p.tier2Line > 0 ? '+' : ''}${Number(p.tier2Line).toFixed(1)}` : "";
+                const pillLabel = isWong
+                    ? (p.marketType === "spread" && fmtWongLine
+                        ? `🎯 ${p.isHomeSpread ? p.homeTeam : p.awayTeam} ${fmtWongLine} (${p.tier2Mode === "WONG_7PT" ? "7-pt" : "6-pt"} Wong)`
+                        : `🎯 ${p.matchup} ${p.safeFloorLabel}`)
+                    : (isFloor
+                        ? `🔑 ${p.marketType === "spread" ? (p.isHomeSpread ? p.homeTeam : p.awayTeam) : p.matchup} ${p.safeFloorLabel}`
+                        : (p.activePlayerLabel || p.player));
+                const effFloorOdds = p.safeFloorOdds || -210;
+                const pillOdds = isWong
+                    ? (p.tier2Mode === "WONG_7PT" ? "7pt -135" : "6pt -120")
+                    : (isFloor ? (effFloorOdds > 0 ? `+${effFloorOdds}` : `${effFloorOdds}`) : (p.baseOdds > 0 ? `+${p.baseOdds}` : `${p.baseOdds}`));
+                const pillWin = isWong ? (p.marketType === "spread" && p.tier2ProbPct ? p.tier2ProbPct : p.safeFloorWinPct) : (isFloor ? p.safeFloorWinPct : p.activeModelPct);
+                const pillBorder = isWong ? "rgba(52, 211, 153, 0.65)" : (isFloor ? "rgba(6, 182, 212, 0.55)" : getTierColor(p.tierBadge, true));
 
                 return `
                     <span onclick="window.toggleParlayLeg('${p.propKey}')" title="Click to remove from slip" style="cursor: pointer; display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 5px; background: var(--bg-base); border: 1px solid ${pillBorder}; color: var(--text-primary); transition: all 0.15s ease;">
@@ -1978,8 +2014,11 @@ function renderCombinatoricsDeck() {
                     <button class="calc-action-btn" onclick="window.loadFlagshipPreset(false, false)" style="border-color: var(--accent-emerald); color: var(--accent-emerald);">
                         🔥 Load Flagship 5-Pack (5)
                     </button>
-                    <button class="calc-action-btn" onclick="window.loadFlagshipPreset(false, true)" style="border-color: var(--accent-cyan); color: var(--accent-cyan);">
-                        🔑 Load Key-Num Alts (5)
+                    <button class="calc-action-btn" onclick="window.loadFlagshipPreset(false, true, false)" style="border-color: var(--accent-cyan); color: var(--accent-cyan);">
+                        🔑 Load 2-Key Rung Alts (5)
+                    </button>
+                    <button class="calc-action-btn" onclick="window.loadFlagshipPreset(false, false, true)" style="border-color: #34d399; color: #34d399;">
+                        🎯 Load Wong Teasers (5)
                     </button>
                     <button class="calc-action-btn" onclick="window.loadPorkysPreset(event)" style="border-color: #f87171; color: #f87171;">
                         🐷 Load Porky's Safe Floor Fades (5)
@@ -2357,9 +2396,9 @@ const PERMANENT_LEDGER_ARCHIVE = {
             bd_proj: 1.4,
             bd_win_pct: 69.25,
             bd_ev_pct: 32.20,
-            key_alt_line: 7.5,
-            safe_floor_label: "Alt +7.5 (-140)",
-            safe_floor_win_pct: 77.6,
+            key_alt_line: 10.5,
+            safe_floor_label: "Alt +10.5 (-185)",
+            safe_floor_win_pct: 84.9,
             bd_alt_label: "Alt +3.5 (+145)",
             bd_alt_ev_pct: 41.80,
             flagship_slot: "MÉNAGE À TROIS #2",
@@ -2968,17 +3007,27 @@ function renderHistoricalLedger() {
             const keyAltFallback = isSpread
                 ? (archEng && entryLeague === "NCAA" ? archEng.keyAlt(vegasLine, bdProj, baseOdds) : calcKeyNumberAltSpreadSafe(vegasLine, bdProj, baseOdds))
                 : null;
+            // Enforce v237 2-Key-Rung Ladder in Perpetuity on all spreads (auto-upgrades any legacy 1-key archived spread!)
+            const hadLegacyOneKeySpread = isSpread && keyAltFallback && (
+                rec.key_alt_line === undefined || rec.key_alt_line === null ||
+                Math.abs(Number(rec.key_alt_line) - Number(keyAltFallback.altLine)) > 0.05
+            );
             const defaultFloorHook = isSpread
-                ? (rec.key_alt_line !== undefined && rec.key_alt_line !== null ? Number(rec.key_alt_line) : keyAltFallback.altLine)
+                ? keyAltFallback.altLine
                 : ((!hadStaleFlippedTotal && rec.safe_total_line !== undefined && rec.safe_total_line !== null) ? Number(rec.safe_total_line) : (isUnderSafe ? (Math.floor(vegasLine + 4.0) + 0.5) : (Math.floor(vegasLine - 4.0) + 0.5)));
             // Ceiling ALWAYS shares Balls Deep's direction (safeDirChar) — NEVER shows Alt U + Alt O in the same cell!
             const defaultCeilHook = isSpread
                 ? snapToHalfPointHook(vegasLine, -3.0)
                 : (isUnderSafe ? (Math.floor(vegasLine - 3.0) + 0.5) : (Math.floor(vegasLine + 3.0) + 0.5));
+            const wongSubStr = (isSpread && keyAltFallback && keyAltFallback.tier2Line !== null)
+                ? ` • 🎯 Wong ${keyAltFallback.tier2Line > 0 ? '+' : ''}${keyAltFallback.tier2Line.toFixed(1)} (${keyAltFallback.tier2Mode === "WONG_7PT" ? "7pt" : "6pt"})`
+                : "";
             const safeFloorLabel = isSpread
-                ? (rec.key_alt_label || rec.safe_floor_label || rec.safeFloorLabel || keyAltFallback.altStr)
+                ? `${keyAltFallback.altStr}${wongSubStr}`
                 : ((!hadStaleFlippedTotal && (rec.safe_total_label || rec.safe_floor_label || rec.safeFloorLabel)) || `Alt ${safeDirChar} ${defaultFloorHook.toFixed(1)} (-175)`);
-            const safeFloorWinPct = rec.key_alt_win_pct || rec.safe_total_win_pct || rec.safe_floor_win_pct || rec.safeFloorWinPct || (isSpread ? keyAltFallback.altProbPct : 74.5);
+            const safeFloorWinPct = isSpread
+                ? keyAltFallback.altProbPct
+                : (rec.safe_total_win_pct || rec.safe_floor_win_pct || rec.safeFloorWinPct || 74.5);
 
             const bdAltLabel = isSpread
                 ? (rec.bd_alt_label || rec.bdAltLabel || `Alt ${defaultCeilHook > 0 ? '+' + defaultCeilHook.toFixed(1) : defaultCeilHook.toFixed(1)} (+145)`)
@@ -3026,7 +3075,7 @@ function renderHistoricalLedger() {
                 if (gradedBd === "PENDING" || hadStaleFlippedTotal || (gradedBd === "MISS" && !rec.miss_by_pts)) {
                     gradedBd = liveBdObj.outcome;
                 }
-                if (!gradedFloor || gradedFloor === "PENDING" || hadStaleFlippedTotal) {
+                if (!gradedFloor || gradedFloor === "PENDING" || hadStaleFlippedTotal || hadLegacyOneKeySpread) {
                     gradedFloor = liveFloorObj.outcome;
                     floorMissBy = liveFloorObj.missBy;
                 }
@@ -3544,7 +3593,7 @@ function renderHistoricalLedger() {
                         <th>Week &amp; Final Score</th>
                         <th>Market</th>
                         <th>Base Model Pick</th>
-                        <th>🛡️ Safe Floor (-2&phi; / -175)</th>
+                        <th>🔑 2-Key-Rung Floor &amp; Wong Teaser</th>
                         <th>Floor Result</th>
                         <th>🎯 Ceiling Escalator (+&phi;)</th>
                         <th>Ceiling Result</th>
@@ -3828,4 +3877,4 @@ function renderLiveBottomTicker() {
         </div>
     `;
 }
-// === END OF APP_CONTROLLER.JS (v259) ===
+// === END OF APP_CONTROLLER.JS (v260) ===
