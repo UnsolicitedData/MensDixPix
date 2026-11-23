@@ -1,5 +1,5 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v235 — PRODUCTION AUDIT LOCK: SDV NORMALIZED PARSER + 62-PLAY TOTALS + NCAA SLOPE MER + DST + FBS STADIUMS)
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v236 — PRODUCTION AUDIT LOCK: SLASH COMPLETION-ATTEMPTS + TRUE YPP + MEAN-CENTERED NCAA TOTALS)
 Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
   1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
   2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
@@ -618,11 +618,12 @@ def fetch_sportsdataverse_cfb_live_epa(season_year=2026):
 
             ranked = []
             if len(agg_dual) >= 60:
-                for norm_k, d in agg_dual.items():
-                    if d["w_plays"] <= 0:
-                        continue
-                    off_epa_pp = d["w_off_epa"] / d["w_plays"]
-                    def_epa_pp = d["w_def_epa"] / d["w_plays"]
+                raw_dual = [(nk, d, d["w_off_epa"] / d["w_plays"], d["w_def_epa"] / d["w_plays"]) for nk, d in agg_dual.items() if d["w_plays"] > 0]
+                mean_dual_off = (sum(x[2] for x in raw_dual) / len(raw_dual)) if raw_dual else 0.0
+                mean_dual_def = (sum(x[3] for x in raw_dual) / len(raw_dual)) if raw_dual else 0.0
+                for norm_k, d, raw_off, raw_def in raw_dual:
+                    off_epa_pp = raw_off - mean_dual_off
+                    def_epa_pp = raw_def - mean_dual_def
                     net_epa_pp = off_epa_pp - def_epa_pp
                     gp = max(1, d["games"])
                     to_reg = max(-0.85, min(0.85, -0.35 * ((d["takeaways"] - d["giveaways"]) / gp)))
@@ -654,11 +655,11 @@ def fetch_sportsdataverse_cfb_live_epa(season_year=2026):
                         rec["def_p"] += opp_s["plays"]
                         rec["def_e"] += opp_s["epa_pp"] * opp_s["plays"]
                         rec["to_diff"] += (opp_s["tos"] - me_s["tos"])
-                for norm_k, d in agg_s.items():
-                    if d["games"] < 2 or d["off_p"] <= 0 or d["def_p"] <= 0:
-                        continue
-                    off_epa_pp = d["off_e"] / d["off_p"]
-                    def_epa_pp = d["def_e"] / d["def_p"]
+                raw_s = [(nk, d, d["off_e"] / d["off_p"], d["def_e"] / d["def_p"]) for nk, d in agg_s.items() if d["games"] >= 2 and d["off_p"] > 0 and d["def_p"] > 0]
+                mean_s = (sum(x[2] for x in raw_s) / len(raw_s)) if raw_s else 0.0
+                for norm_k, d, raw_off, raw_def in raw_s:
+                    off_epa_pp = raw_off - mean_s
+                    def_epa_pp = raw_def - mean_s
                     net_epa_pp = off_epa_pp - def_epa_pp
                     to_reg = max(-0.85, min(0.85, -0.35 * (d["to_diff"] / d["games"])))
                     rz_dvoa = max(-0.22, min(0.22, def_epa_pp * 1.45))
@@ -697,7 +698,7 @@ def fetch_sportsdataverse_cfb_live_epa(season_year=2026):
                 if not gid_b or not t_name:
                     continue
 
-                ypp_direct = _fval(nrow, "yardsperplay", "ypp", "avgydsperplay", "yardsperpassplay")
+                ypp_direct = _fval(nrow, "yardsperplay", "ypp", "avgydsperplay")
                 yds = _fval(nrow, "totalyards", "nettotalyards", "offenseyards", "yards")
                 if yds is None or yds <= 0:
                     py = _fval(nrow, "netpassingyards", "passingyards", "passyards") or 0.0
@@ -706,17 +707,19 @@ def fetch_sportsdataverse_cfb_live_epa(season_year=2026):
 
                 plays = _fval(nrow, "totaloffensiveplays", "scrimmageplays", "totalplays", "offensiveplays", "plays")
                 if plays is None or plays <= 0:
-                    # Try summing passing attempts + rushing attempts if ESPN split them
+                    # Try summing passing attempts + rushing attempts (ESPN emits completionAttempts as "18/29" or "18-29")
                     ratt = _fval(nrow, "rushingattempts", "rushattempts", "carries") or 0.0
                     patt = _fval(nrow, "passingattempts", "passattempts") or 0.0
                     if patt == 0.0:
-                        ca_str = str(nrow.get("completionattempts") or "")
-                        if "-" in ca_str:
+                        ca_str = str(nrow.get("completionattempts") or nrow.get("completionsattempts") or "").strip()
+                        ca_parts = re.split(r"[-/]", ca_str)
+                        if len(ca_parts) >= 2:
                             try:
-                                patt = float(ca_str.split("-")[1])
+                                patt = float(ca_parts[1].strip())
                             except Exception:
                                 patt = 0.0
-                    plays = (ratt + patt) if (ratt + patt) >= 20.0 else 65.0
+                    # Only trust summed plays when BOTH rush and pass attempts parsed (otherwise default to 68.0 college plays)
+                    plays = (ratt + patt) if (ratt >= 5.0 and patt >= 5.0 and (ratt + patt) >= 35.0) else 68.0
 
                 if ypp_direct is not None and 1.5 <= ypp_direct <= 14.0:
                     ypp_val = ypp_direct
@@ -747,17 +750,22 @@ def fetch_sportsdataverse_cfb_live_epa(season_year=2026):
                     rec["def_ypp"] += opp_s["ypp"]
                     rec["to_diff"] += (opp_s["tos"] - me_s["tos"])
 
-            ranked = []
+            # Compute true dataset mean YPP so off_epa + def_epa is guaranteed zero-centered around NCAA_TOTAL_INTERCEPT
+            valid_ypp_teams = []
             for norm_k, d in agg.items():
                 if d["games"] < 2:
                     continue
-                off_ypp = d["off_ypp"] / d["games"]
-                def_ypp = d["def_ypp"] / d["games"]
-                if off_ypp < 2.0 or def_ypp < 2.0:
-                    continue
-                # Convert net yards-per-play vs FBS 5.55 ypp baseline cleanly into EPA/play units (~0.075 EPA per 1.0 ypp)
-                off_epa_pp = (off_ypp - 5.55) * 0.075
-                def_epa_pp = (def_ypp - 5.55) * 0.075
+                oy = d["off_ypp"] / d["games"]
+                dy = d["def_ypp"] / d["games"]
+                if 2.0 <= oy <= 12.0 and 2.0 <= dy <= 12.0:
+                    valid_ypp_teams.append((norm_k, d, oy, dy))
+
+            league_avg_ypp = (sum(x[2] for x in valid_ypp_teams) / len(valid_ypp_teams)) if valid_ypp_teams else 5.65
+            ranked = []
+            for norm_k, d, off_ypp, def_ypp in valid_ypp_teams:
+                # Convert yards-per-play deviation from true league mean into EPA/play units (~0.075 EPA per 1.0 ypp)
+                off_epa_pp = (off_ypp - league_avg_ypp) * 0.075
+                def_epa_pp = (def_ypp - league_avg_ypp) * 0.075
                 net_epa_pp = off_epa_pp - def_epa_pp
                 to_reg = max(-0.85, min(0.85, -0.35 * (d["to_diff"] / d["games"])))
                 rz_dvoa = max(-0.22, min(0.22, def_epa_pp * 1.45))
@@ -3295,7 +3303,7 @@ def build_master_payload():
             "league": "NFL_NCAA",
             "week": dynamic_week,
             "last_updated": now_iso,
-            "telemetry_version": "v235_production_audit_lock",
+            "telemetry_version": "v236_production_audit_lock",
             "ranked_ncaa_teams": live_ranked_ncaa
         },
         "games": games_slate,
@@ -3310,7 +3318,7 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v235 — PRODUCTION AUDIT LOCK: SDV NORMALIZED PARSER + 62-PLAY TOTALS + NCAA SLOPE MER + DST + FBS STADIUMS)")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v236 — PRODUCTION AUDIT LOCK: SLASH COMPLETION-ATTEMPTS + TRUE YPP + MEAN-CENTERED NCAA TOTALS)")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("=========================================================")
 
