@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v256 — PURE GRENADE COUNTER + FILTER-PROOF TEASE + LIVE BD LIFT)
- * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with onlinemath_engine.js (v319) & scraper.py (v232)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v257 — ZERO-FPI PURE EPA PARITY + 0.618x NCAA SPREADS)
+ * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with onlinemath_engine.js (v320) & scraper.py (v233)
  *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
  *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
  *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
@@ -809,8 +809,7 @@ function recalculateAndRenderAll(opts = {}) {
         const totalIntercept = (gameLeague === "NCAA") ? 51.450 : MODEL_TOTAL_INTERCEPT;
 
         let baseTelemetryTotal;
-        const hasNflSplitEpa = (
-            gameLeague === "NFL" &&
+        const hasSplitEpa = (
             homeTel.off_epa_per_play !== undefined && homeTel.def_epa_per_play !== undefined &&
             awayTel.off_epa_per_play !== undefined && awayTel.def_epa_per_play !== undefined
         );
@@ -819,12 +818,13 @@ function recalculateAndRenderAll(opts = {}) {
             awayTel.off_eff !== undefined && awayTel.def_eff !== undefined
         );
 
-        if (hasNflSplitEpa) {
+        if (hasSplitEpa) {
+            const maxTotCap = (gameLeague === "NCAA") ? 78.0 : 65.0;
             const epaTotDelta = (playScaler * 0.5) * (
                 Number(homeTel.off_epa_per_play) + Number(homeTel.def_epa_per_play) +
                 Number(awayTel.off_epa_per_play) + Number(awayTel.def_epa_per_play)
             );
-            baseTelemetryTotal = Number(Math.max(28.0, Math.min(65.0, totalIntercept + epaTotDelta - windPenalty + m8.delayTotalDragPts)).toFixed(1));
+            baseTelemetryTotal = Number(Math.max(28.0, Math.min(maxTotCap, totalIntercept + epaTotDelta - windPenalty + m8.delayTotalDragPts)).toFixed(1));
         } else if (hasFpiOffDef) {
             const effScaler = (gameLeague === "NCAA") ? 0.16 : 0.12;
             const effDelta = effScaler * (
@@ -3793,4 +3793,4 @@ function renderLiveBottomTicker() {
         </div>
     `;
 }
-// === END OF APP_CONTROLLER.JS (v256) ===
+// === END OF APP_CONTROLLER.JS (v257) ===
