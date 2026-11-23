@@ -1,5 +1,5 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v224 — PRE-GAME LOCK + TRUE 62.3-PLAY NFL EPA + PURE SMASH)
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v227 — FULL 1:1 DUAL-ENGINE PARITY + FINAL-SAFE SUNDAY SCRUB)
 Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
   1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
   2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
@@ -192,6 +192,36 @@ NCAA_TEAM_REGISTRY = {
     "Chattanooga Mocs":           {"code": "UTC",  "lat": 35.0365, "lon": -85.3156,  "elev_m": 206,  "is_dome": False, "tz": -5, "epa": -0.580, "to_reg": 0.2,  "close_pct": 0.350, "streak": 0, "rz_dvoa": 0.14},
     "Samford Bulldogs":           {"code": "SAM",  "lat": 33.4658, "lon": -86.7950,  "elev_m": 215,  "is_dome": False, "tz": -6, "epa": -0.600, "to_reg": 0.2,  "close_pct": 0.300, "streak": 0, "rz_dvoa": 0.15},
     "Tennessee Tech Golden Eagles":{"code": "TNTC","lat": 36.1783, "lon": -85.5078,  "elev_m": 340,  "is_dome": False, "tz": -6, "epa": -0.580, "to_reg": 0.2,  "close_pct": 0.320, "streak": 0, "rz_dvoa": 0.14}
+,
+    "Texas State Bobcats": {'code': 'TXST', 'lat': 29.8884, 'lon': -97.9344, 'elev_m': 185, 'is_dome': False, 'tz': -6, 'epa': 0.045, 'to_reg': -0.1, 'close_pct': 0.61, 'streak': 1, 'rz_dvoa': -0.04},
+    "Georgia State Panthers": {'code': 'GAST', 'lat': 33.753, 'lon': -84.389, 'elev_m': 286, 'is_dome': False, 'tz': -5, 'epa': -0.03, 'to_reg': 0.1, 'close_pct': 0.42, 'streak': 0, 'rz_dvoa': 0.03},
+    "Georgia Southern Eagles": {'code': 'GASO', 'lat': 32.4368, 'lon': -81.7878, 'elev_m': 72, 'is_dome': False, 'tz': -5, 'epa': 0.02, 'to_reg': 0.0, 'close_pct': 0.54, 'streak': 1, 'rz_dvoa': -0.02},
+    "Coastal Carolina Chanticleers": {'code': 'CCU', 'lat': 33.7945, 'lon': -79.0136, 'elev_m': 18, 'is_dome': False, 'tz': -5, 'epa': 0.015, 'to_reg': 0.0, 'close_pct': 0.52, 'streak': 0, 'rz_dvoa': -0.01},
+    "Marshall Thundering Herd": {'code': 'MRSH', 'lat': 38.4257, 'lon': -82.4216, 'elev_m': 173, 'is_dome': False, 'tz': -5, 'epa': 0.04, 'to_reg': -0.1, 'close_pct': 0.6, 'streak': 1, 'rz_dvoa': -0.04},
+    "Western Kentucky Hilltoppers": {'code': 'WKU', 'lat': 36.9852, 'lon': -86.4596, 'elev_m': 152, 'is_dome': False, 'tz': -6, 'epa': 0.048, 'to_reg': -0.1, 'close_pct': 0.63, 'streak': 1, 'rz_dvoa': -0.04},
+    "Louisiana Tech Bulldogs": {'code': 'LT', 'lat': 32.5322, 'lon': -92.6562, 'elev_m': 95, 'is_dome': False, 'tz': -6, 'epa': -0.02, 'to_reg': 0.1, 'close_pct': 0.45, 'streak': 0, 'rz_dvoa': 0.02},
+    "Jacksonville State Gamecocks": {'code': 'JVST', 'lat': 33.8206, 'lon': -85.7647, 'elev_m': 215, 'is_dome': False, 'tz': -6, 'epa': 0.035, 'to_reg': -0.1, 'close_pct': 0.58, 'streak': 1, 'rz_dvoa': -0.03},
+    "Sam Houston Bearkats": {'code': 'SHSU', 'lat': 30.7135, 'lon': -95.5455, 'elev_m': 100, 'is_dome': False, 'tz': -6, 'epa': 0.03, 'to_reg': 0.0, 'close_pct': 0.56, 'streak': 1, 'rz_dvoa': -0.03},
+    "Middle Tennessee Blue Raiders": {'code': 'MTSU', 'lat': 35.8511, 'lon': -86.3686, 'elev_m': 185, 'is_dome': False, 'tz': -6, 'epa': -0.05, 'to_reg': 0.1, 'close_pct': 0.38, 'streak': 0, 'rz_dvoa': 0.05},
+    "Florida Atlantic Owls": {'code': 'FAU', 'lat': 26.3755, 'lon': -80.1018, 'elev_m': 5, 'is_dome': False, 'tz': -5, 'epa': -0.035, 'to_reg': 0.1, 'close_pct': 0.42, 'streak': 0, 'rz_dvoa': 0.04},
+    "Florida International Panthers": {'code': 'FIU', 'lat': 25.7525, 'lon': -80.3782, 'elev_m': 3, 'is_dome': False, 'tz': -5, 'epa': -0.055, 'to_reg': 0.1, 'close_pct': 0.36, 'streak': 0, 'rz_dvoa': 0.06},
+    "Miami (OH) RedHawks": {'code': 'MIOH', 'lat': 39.5087, 'lon': -84.7332, 'elev_m': 250, 'is_dome': False, 'tz': -5, 'epa': 0.045, 'to_reg': -0.1, 'close_pct': 0.62, 'streak': 1, 'rz_dvoa': -0.04},
+    "Ohio Bobcats": {'code': 'OHIO', 'lat': 39.3226, 'lon': -82.1013, 'elev_m': 210, 'is_dome': False, 'tz': -5, 'epa': 0.055, 'to_reg': -0.1, 'close_pct': 0.66, 'streak': 2, 'rz_dvoa': -0.05},
+    "Toledo Rockets": {'code': 'TOL', 'lat': 41.6579, 'lon': -83.6143, 'elev_m': 187, 'is_dome': False, 'tz': -5, 'epa': 0.06, 'to_reg': -0.2, 'close_pct': 0.68, 'streak': 2, 'rz_dvoa': -0.06},
+    "Northern Illinois Huskies": {'code': 'NIU', 'lat': 41.9339, 'lon': -88.7778, 'elev_m': 268, 'is_dome': False, 'tz': -6, 'epa': 0.025, 'to_reg': 0.0, 'close_pct': 0.55, 'streak': 1, 'rz_dvoa': -0.02},
+    "Bowling Green Falcons": {'code': 'BGSU', 'lat': 41.3781, 'lon': -83.6297, 'elev_m': 205, 'is_dome': False, 'tz': -5, 'epa': 0.015, 'to_reg': 0.0, 'close_pct': 0.52, 'streak': 0, 'rz_dvoa': -0.01},
+    "Buffalo Bulls": {'code': 'UB', 'lat': 43.0008, 'lon': -78.7867, 'elev_m': 180, 'is_dome': False, 'tz': -5, 'epa': 0.02, 'to_reg': 0.0, 'close_pct': 0.54, 'streak': 1, 'rz_dvoa': -0.02},
+    "Louisiana Ragin' Cajuns": {'code': 'ULL', 'lat': 30.2155, 'lon': -92.0419, 'elev_m': 11, 'is_dome': False, 'tz': -6, 'epa': 0.05, 'to_reg': -0.1, 'close_pct': 0.64, 'streak': 1, 'rz_dvoa': -0.04},
+    "Louisiana Monroe Warhawks": {'code': 'ULM', 'lat': 32.5308, 'lon': -92.0672, 'elev_m': 24, 'is_dome': False, 'tz': -6, 'epa': -0.02, 'to_reg': 0.1, 'close_pct': 0.45, 'streak': 0, 'rz_dvoa': 0.02},
+    "South Alabama Jaguars": {'code': 'USA', 'lat': 30.6954, 'lon': -88.1819, 'elev_m': 45, 'is_dome': False, 'tz': -6, 'epa': 0.03, 'to_reg': 0.0, 'close_pct': 0.56, 'streak': 1, 'rz_dvoa': -0.02},
+    "Troy Trojans": {'code': 'TROY', 'lat': 31.7971, 'lon': -85.9522, 'elev_m': 140, 'is_dome': False, 'tz': -6, 'epa': 0.01, 'to_reg': 0.0, 'close_pct': 0.5, 'streak': 0, 'rz_dvoa': 0.0},
+    "Arkansas State Red Wolves": {'code': 'ARST', 'lat': 35.8478, 'lon': -90.6744, 'elev_m': 82, 'is_dome': False, 'tz': -6, 'epa': 0.02, 'to_reg': 0.0, 'close_pct': 0.54, 'streak': 0, 'rz_dvoa': -0.01},
+    "Old Dominion Monarchs": {'code': 'ODU', 'lat': 36.8866, 'lon': -76.3064, 'elev_m': 4, 'is_dome': False, 'tz': -5, 'epa': -0.01, 'to_reg': 0.1, 'close_pct': 0.46, 'streak': 0, 'rz_dvoa': 0.01},
+    "Charlotte 49ers": {'code': 'CLT', 'lat': 35.3102, 'lon': -80.7405, 'elev_m': 215, 'is_dome': False, 'tz': -5, 'epa': -0.045, 'to_reg': 0.1, 'close_pct': 0.38, 'streak': 0, 'rz_dvoa': 0.04},
+    "Rice Owls": {'code': 'RICE', 'lat': 29.7166, 'lon': -95.4094, 'elev_m': 15, 'is_dome': False, 'tz': -6, 'epa': -0.025, 'to_reg': 0.1, 'close_pct': 0.44, 'streak': 0, 'rz_dvoa': 0.02},
+    "Tulsa Golden Hurricane": {'code': 'TLSA', 'lat': 36.1486, 'lon': -95.9436, 'elev_m': 215, 'is_dome': False, 'tz': -6, 'epa': -0.055, 'to_reg': 0.1, 'close_pct': 0.36, 'streak': 0, 'rz_dvoa': 0.05},
+    "UAB Blazers": {'code': 'UAB', 'lat': 33.5072, 'lon': -86.8094, 'elev_m': 185, 'is_dome': False, 'tz': -6, 'epa': -0.04, 'to_reg': 0.1, 'close_pct': 0.4, 'streak': 0, 'rz_dvoa': 0.04},
+    "Kennesaw State Owls": {'code': 'KENN', 'lat': 34.0342, 'lon': -84.5819, 'elev_m': 325, 'is_dome': False, 'tz': -5, 'epa': -0.06, 'to_reg': 0.1, 'close_pct': 0.35, 'streak': 0, 'rz_dvoa': 0.05}
 }
 
 # Known elite FCS programs (when playing FBS opponents, closer to -12 FPI than generic -23 FPI)
@@ -1365,6 +1395,7 @@ def calc_regime_safe_total_obj(vegas_total, og_tip_total, env_weather, tz_shift,
     weather_grind_thresh = 52.5 if game_league == "NCAA" else 48.5
     heavy_grind_env = (not is_dome and (temp_f <= 42.0 or wind_mph >= 10.0 or rho >= 1.250 or elev_zone >= 7)) or bool(has_backup_qb)
 
+    k_tot = (LOGISTIC_K_TIGHT * 0.786) if game_league == "NCAA" else LOGISTIC_K_TIGHT
     if v_tot >= shootout_thresh or (is_dome and v_tot >= dome_shootout_thresh and not has_backup_qb):
         regime = "SHOOTOUT_SAFE_OVER"
         fair_tot = v_tot + max(0.8, 1.5 + (0.20 * max(0.0, v_tot - dome_shootout_thresh)) + (0.4 if is_dome else 0.0) + max(-0.5, pace_pull))
@@ -1372,7 +1403,7 @@ def calc_regime_safe_total_obj(vegas_total, og_tip_total, env_weather, tz_shift,
         safe_line = math.floor(v_tot - drop_pts) + 0.5
         safe_odds = -180 if drop_pts >= 5.0 else -175
         safe_dir = "O"
-        raw_p = 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * (fair_tot - safe_line)))
+        raw_p = 1.0 / (1.0 + math.exp(-k_tot * (fair_tot - safe_line)))
         safe_prob = min(0.92, max(0.55, raw_p + 0.04))
     elif v_tot <= grind_thresh or (v_tot <= weather_grind_thresh and heavy_grind_env):
         regime = "GRIND_SAFE_UNDER"
@@ -1380,7 +1411,7 @@ def calc_regime_safe_total_obj(vegas_total, og_tip_total, env_weather, tz_shift,
         safe_line = math.floor(v_tot + 4.0) + 0.5
         safe_odds = -175
         safe_dir = "U"
-        raw_p = 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * (safe_line - fair_tot)))
+        raw_p = 1.0 / (1.0 + math.exp(-k_tot * (safe_line - fair_tot)))
         safe_prob = min(0.92, max(0.55, raw_p + 0.04))
     else:
         regime = "NEUTRAL_PASS"
@@ -1389,7 +1420,7 @@ def calc_regime_safe_total_obj(vegas_total, og_tip_total, env_weather, tz_shift,
         safe_line = (math.floor(v_tot + 3.5) + 0.5) if safe_dir == "U" else (math.floor(v_tot - 3.5) + 0.5)
         safe_odds = -175
         edge = (safe_line - fair_tot) if safe_dir == "U" else (fair_tot - safe_line)
-        safe_prob = min(0.82, max(0.50, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * edge))))
+        safe_prob = min(0.82, max(0.50, 1.0 / (1.0 + math.exp(-k_tot * edge))))
 
     return {
         "regime": regime,
@@ -1772,8 +1803,85 @@ def deduplicate_ledger_entries(entries):
         cleaned[canon_gid] = best_e
     return cleaned
 
+class _NflDedicatedEngine:
+    league = "NFL"
+    hfa_base = PI_OVER_PHI_HFA
+    total_intercept = MODEL_TOTAL_INTERCEPT
+    logistic_k = LOGISTIC_K_TIGHT
+
+    def win_prob(self, gap):
+        return max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-self.logistic_k * gap))))
+
+    def key_alt(self, base_line, fair_line, base_odds=-110):
+        return calc_key_number_alt_spread(base_line, fair_line, base_odds)
+
+    def safe_total(self, vegas_tot, tip_tot, env, tz_s, elev_i, has_qb=False):
+        return calc_regime_safe_total_obj(vegas_tot, tip_tot, env, tz_s, elev_i, "NFL", has_qb)
+
+
+class _NcaaDedicatedEngine:
+    league = "NCAA"
+    hfa_base = NCAA_HFA_BASE
+    total_intercept = NCAA_TOTAL_INTERCEPT
+    logistic_k = LOGISTIC_K_TIGHT * 0.786
+
+    def win_prob(self, gap):
+        return max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-self.logistic_k * gap))))
+
+    def key_alt(self, base_line, fair_line, base_odds=-110):
+        res = calc_key_number_alt_spread(base_line, fair_line, base_odds)
+        line = _f(base_line, 0.0)
+        fair = _f(fair_line if fair_line is not None else line, line)
+        b1, _ = _calc_key_mass_bonus(min(line, res["alt_line"]), max(line, res["alt_line"]))
+        adj_p = min(0.95, max(0.05, self.win_prob(res["alt_line"] - fair) + b1))
+        out = dict(res)
+        out["alt_prob"] = round(adj_p, 4)
+        out["alt_win_pct"] = round(adj_p * 100.0, 1)
+        out["alt_ev_pct"] = calc_ev_pct(adj_p, res["alt_odds"])
+        return out
+
+    def safe_total(self, vegas_tot, tip_tot, env, tz_s, elev_i, has_qb=False):
+        return calc_regime_safe_total_obj(vegas_tot, tip_tot, env, tz_s, elev_i, "NCAA", has_qb)
+
+
+NFL_ENGINE = _NflDedicatedEngine()
+NCAA_ENGINE = _NcaaDedicatedEngine()
+
+def get_dedicated_engine(league):
+    return NCAA_ENGINE if str(league or "NFL").upper() == "NCAA" else NFL_ENGINE
+
+def scrub_live_poisoned_entries(entries, now_utc):
+    """Purges entries whose lines were captured mid-game/halftime on Sunday Nov 22, 2026
+    so only clean pre-game entries remain in the ledger."""
+    scrubbed = {}
+    removed = 0
+    for gid, e in entries.items():
+        if not isinstance(e, dict) or gid == "nfl_mnf_lac_bal_2026_w10":
+            scrubbed[gid] = e
+            continue
+        s_rec = e.get("spread_record") or {}
+        t_rec = e.get("total_record") or {}
+        odds_abs = abs(_i(s_rec.get("odds"), -110))
+        t_odds_abs = abs(_i(t_rec.get("odds"), -110))
+        c_time = str(e.get("commence_time") or "")
+        # Flag Sunday Nov 22 1PM/4PM slate games overwritten with live halftime odds (now IN_PLAY or FINAL; SNF is 2026-11-23T01:20Z UTC!)
+        is_sunday_afternoon_nov22 = c_time.startswith("2026-11-22")
+        was_live_poisoned = (
+            (odds_abs >= 220)
+            or (t_odds_abs >= 220)
+            or (is_sunday_afternoon_nov22 and e.get("status") in ("IN_PLAY", "FINAL") and (odds_abs >= 116 or t_odds_abs >= 116))
+        )
+        if was_live_poisoned:
+            removed += 1
+            continue
+        scrubbed[gid] = e
+    if removed:
+        print(f"[SCRUB] Removed {removed} live-poisoned Sunday entries from ledger.")
+    return scrubbed
+
+
 def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by_gid=None, old_games=None):
-    entries = deduplicate_ledger_entries(ledger.get("entries", {}))
+    entries = scrub_live_poisoned_entries(deduplicate_ledger_entries(ledger.get("entries", {})), now_utc)
     porkys_by_gid = porkys_by_gid or {}
     game_lookup_by_gid = {}
     for og in (old_games or []):
@@ -1868,7 +1976,7 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                 "result_balls_deep": "PENDING",
                 "result_key_alt": "PENDING"
             }
-            existing["engine_version"] = "v224_clean_pregame"
+            existing["engine_version"] = "v227_dual_engines"
             if best_total:
                 existing["total_record"] = {
                     "pick_label": best_total["player"],
@@ -1904,11 +2012,11 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
 
         entries[gid] = existing
 
-    # ONE-TIME v224_clean_pregame MIGRATION (NULL-PROOF):
+    # ONE-TIME v227_dual_engines MIGRATION (NULL-PROOF):
     # Upgrades ALL pre-v222 entries (both games still in data.json AND older archived FINAL entries)
     # to clean ΔQB-only spreads, Key-Number Alt Buys, and Regime Safe Totals, then re-grades against actual scores!
     for gid, entry in entries.items():
-        if entry.get("engine_version") == "v224_clean_pregame" or gid == "nfl_mnf_lac_bal_2026_w10":
+        if entry.get("engine_version") == "v227_dual_engines" or gid == "nfl_mnf_lac_bal_2026_w10":
             continue
         try:
             src_g = game_lookup_by_gid.get(gid)
@@ -1967,11 +2075,12 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                     odds_use = _i(s_rec.get("odds"), -110)
                     if abs(odds_use) >= 220 or odds_use == 0:
                         odds_use = -110
-                    p_tip = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * (pick_line - pick_tip_proj)))))
-                    p_bd = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * (pick_line - pick_bd_proj)))))
+                    lg_eng = get_dedicated_engine(lg)
+                    p_tip = lg_eng.win_prob(pick_line - pick_tip_proj)
+                    p_bd = lg_eng.win_prob(pick_line - pick_bd_proj)
                     ev_t = calc_ev_pct(p_tip, odds_use)
                     ev_b = calc_ev_pct(p_bd, odds_use)
-                    k_alt = calc_key_number_alt_spread(pick_line, pick_bd_proj, odds_use)
+                    k_alt = lg_eng.key_alt(pick_line, pick_bd_proj, odds_use)
                     pfx = "vs" if pick_home else "@"
                     s_rec.update({
                         "pick_label": f"{pick_team} Spread ({'+' if pick_line > 0 else ''}{pick_line}) ({pick_team} {pfx} {opp_team})",
@@ -2006,8 +2115,9 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                     reg_t = calc_regime_safe_total_obj(v_tot, tip_t, env, tz_s, elev_i, lg, bool(h_qb < 0 or a_qb < 0))
                     bd_t = reg_t["balls_deep_total"]
                     t_dir = "U" if tip_t < v_tot else "O"
-                    p_tip_t = max(0.50, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * abs(tip_t - v_tot)))))
-                    p_bd_t = max(0.50, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * abs(bd_t - v_tot)))))
+                    lg_tot_eng = get_dedicated_engine(lg)
+                    p_tip_t = max(0.50, lg_tot_eng.win_prob(abs(tip_t - v_tot)))
+                    p_bd_t = max(0.50, lg_tot_eng.win_prob(abs(bd_t - v_tot)))
                     ev_t_tot = calc_ev_pct(p_tip_t, -110)
                     ev_b_tot = calc_ev_pct(p_bd_t, -110)
                     t_rec.update({
@@ -2044,7 +2154,7 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                     odds_use = _i(s_rec.get("odds"), -110)
                     if abs(odds_use) >= 220 or odds_use == 0:
                         odds_use = -110
-                    k_alt = calc_key_number_alt_spread(pick_line, bd_p, odds_use)
+                    k_alt = get_dedicated_engine(lg).key_alt(pick_line, bd_p, odds_use)
                     s_rec.update({
                         "key_alt_line": k_alt["alt_line"],
                         "key_alt_odds": k_alt["alt_odds"],
@@ -2076,9 +2186,9 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                         "safe_total_ev_pct": reg_t["safe_ev_pct"],
                         "result_safe_total": "PENDING"
                     })
-            entry["engine_version"] = "v224_clean_pregame"
+            entry["engine_version"] = "v227_dual_engines"
         except Exception as mig_err:
-            print(f"[v224 Migration Skip {gid}] {mig_err}")
+            print(f"[v227 Migration Skip {gid}] {mig_err}")
 
     for gid, entry in entries.items():
         espn_info = None
@@ -2143,7 +2253,7 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                     s_rec["result_balls_deep"] = "MISS" if grade == "HIT" else ("HIT" if grade in ("MISS", "BLUE_BALLS") else "PUSH")
 
                 if s_rec.get("key_alt_line") is None:
-                    ka = calc_key_number_alt_spread(line, bd_proj, int(s_rec.get("odds", -110) or -110))
+                    ka = get_dedicated_engine(entry.get("league", "NFL")).key_alt(line, bd_proj, int(s_rec.get("odds", -110) or -110))
                     s_rec["key_alt_line"] = ka["alt_line"]
                     s_rec["key_alt_odds"] = ka["alt_odds"]
                     s_rec["key_alt_label"] = ka["alt_str"]
@@ -2437,12 +2547,13 @@ def build_master_payload():
                     tip_edge_pts = point - model_tip_spread
                     bd_edge_pts = point - model_bd_spread
 
-                    win_prob_tip = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * tip_edge_pts))))
-                    win_prob_bd = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * bd_edge_pts))))
+                    lg_eng = get_dedicated_engine(game_league)
+                    win_prob_tip = lg_eng.win_prob(tip_edge_pts)
+                    win_prob_bd = lg_eng.win_prob(bd_edge_pts)
 
                     ev_tip = calc_ev_pct(win_prob_tip, price)
                     ev_bd = calc_ev_pct(win_prob_bd, price)
-                    key_alt = calc_key_number_alt_spread(point, model_bd_spread, price)
+                    key_alt = lg_eng.key_alt(point, model_bd_spread, price)
                     badge = "SMASH" if ev_tip >= SMASH_EV_THRESHOLD else ("PASS" if ev_tip <= -19.0 else "TOO_CLOSE")
 
                     props_board.append({
@@ -2486,7 +2597,7 @@ def build_master_payload():
 
                     has_backup_qb = bool(home_inj["qb_replacement_delta"] < 0 or away_inj["qb_replacement_delta"] < 0)
                     proj_total_tip = calc_independent_total_tip(home_meta, away_meta, game_league, wind_mph)
-                    reg_tot = calc_regime_safe_total_obj(t_point, proj_total_tip, env_weather, tz_shift, elev_info, game_league, has_backup_qb)
+                    reg_tot = get_dedicated_engine(game_league).safe_total(t_point, proj_total_tip, env_weather, tz_shift, elev_info, has_backup_qb)
                     proj_total_bd = reg_tot["balls_deep_total"]
 
                     is_under = proj_total_tip < t_point
@@ -2497,8 +2608,9 @@ def build_master_payload():
                     total_diff_tip = abs(proj_total_tip - t_point)
                     total_diff_bd = abs(proj_total_bd - t_point)
 
-                    calc_prob_tip = max(0.50, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * total_diff_tip))))
-                    calc_prob_bd = max(0.50, min(0.99, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * total_diff_bd))))
+                    lg_tot_eng = get_dedicated_engine(game_league)
+                    calc_prob_tip = max(0.50, lg_tot_eng.win_prob(total_diff_tip))
+                    calc_prob_bd = max(0.50, lg_tot_eng.win_prob(total_diff_bd))
 
                     ev_tip = calc_ev_pct(calc_prob_tip, active_price)
                     ev_bd = calc_ev_pct(calc_prob_bd, bd_price)
@@ -2697,7 +2809,7 @@ def build_master_payload():
         fade_line = float(fade_p["base_line"])
         floor_hook = math.floor(fade_line + 3.5) + 0.5
         floor_gap = floor_hook - float(fade_p["projected_mean_mu"])
-        floor_prob = max(0.05, min(0.96, 1.0 / (1.0 + math.exp(-LOGISTIC_K_TIGHT * floor_gap))))
+        floor_prob = max(0.05, min(0.96, get_dedicated_engine(g.get("league", "NFL")).win_prob(floor_gap)))
         fade_team = g["home_team"] if fade_p["player"].startswith(f"{g['home_team']} ") else g["away_team"]
         porkys_by_gid[g["game_id"]] = {
             "porkys_slot": slot_lbl,
@@ -2756,7 +2868,7 @@ def build_master_payload():
             "league": "NFL_NCAA",
             "week": 12,
             "last_updated": now_iso,
-            "telemetry_version": "v224_clean_pregame_live",
+            "telemetry_version": "v227_dual_engines_parity",
             "ranked_ncaa_teams": live_ranked_ncaa
         },
         "games": games_slate,
@@ -2771,7 +2883,7 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v224 — PRE-GAME LOCK + TRUE 62.3-PLAY NFL EPA + PURE SMASH)")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v227 — FULL 1:1 DUAL-ENGINE PARITY + FINAL-SAFE SUNDAY SCRUB)")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("=========================================================")
 
