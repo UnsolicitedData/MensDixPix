@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v257 — ZERO-FPI PURE EPA PARITY + 0.618x NCAA SPREADS)
- * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with onlinemath_engine.js (v320) & scraper.py (v233)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v258 — FINAL PRODUCTION LOCK + 0.618x NCAA SPREAD / 0.786x TOTAL PARITY)
+ * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with onlinemath_engine.js (v321) & scraper.py (v234)
  *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
  *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
  *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
@@ -1008,7 +1008,7 @@ function recalculateAndRenderAll(opts = {}) {
                     baseProjectedLine = baseTelemetryTotal;
                     const tipTotalDiff = baseProjectedLine - vegasLine;
                     const lgTotEng = (typeof getLeagueEngine === "function") ? getLeagueEngine(gameLeague) : null;
-                    const totProbFn = (gap) => lgTotEng ? lgTotEng.winProb(gap) : calcPointGapWinProb(gap);
+                    const totProbFn = (gap) => lgTotEng ? (lgTotEng.totalWinProb ? lgTotEng.totalWinProb(gap) : lgTotEng.winProb(gap)) : calcPointGapWinProb(gap);
                     tipModelProb = Math.max(0.50, totProbFn(Math.abs(tipTotalDiff)));
 
                     const bdTotObj = (lgTotEng && gameLeague === "NCAA")
@@ -2899,7 +2899,11 @@ function renderHistoricalLedger() {
             const tipColor = getTierColor(ledgerTier);
 
             const archEng = (typeof getLeagueEngine === "function") ? getLeagueEngine(entryLeague) : null;
-            const archWinProbFn = (gap) => archEng ? archEng.winProb(gap) : calcPointGapWinProb(gap);
+            const archWinProbFn = (gap) => {
+                if (!archEng) return calcPointGapWinProb(gap);
+                if (!isSpread && archEng.totalWinProb) return archEng.totalWinProb(gap);
+                return archEng.winProb(gap);
+            };
 
             let bdProj = rec.bd_proj !== undefined ? Number(rec.bd_proj) : (rec.balls_deep_proj !== undefined ? Number(rec.balls_deep_proj) : Number(rec.bdProjectedMean || tipProj));
             const tipDirChar = !isSpread ? (tipProj < vegasLine ? "U" : "O") : "";
@@ -3793,4 +3797,4 @@ function renderLiveBottomTicker() {
         </div>
     `;
 }
-// === END OF APP_CONTROLLER.JS (v257) ===
+// === END OF APP_CONTROLLER.JS (v258) ===
