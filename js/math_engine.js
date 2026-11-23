@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v320 — PURE PLAY-BY-PLAY EPA + 0.618x NCAA SPREAD DISCIPLINE)
- * Pure OG M1–M9 + Verified ΔQB-Only Filter + Key-Number Alt Buys (MER > 1.15) + Regime Safe Totals (Synced 1:1 with scraper.py v233)
+ * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v321 — FINAL PRODUCTION LOCK (0.618x NCAA SPREADS + 0.786x NCAA TOTALS + ZERO FPI))
+ * Pure OG M1–M9 + Verified ΔQB-Only Filter + Key-Number Alt Buys (MER > 1.15) + Regime Safe Totals (Synced 1:1 with scraper.py v234)
  *  - PURE OG MODULES 1–9 RESTORED: 100% Independent Fair Margin (ZERO Vegas-Spread Anchoring)
  *  - Live Roster/Injury Integration (qb_replacement_delta) + Fixed opp_rz_dvoa Sign
  *  - Strict M1–M9 Firewall in Just the Tip | Full M11–M13 Physics & Sacred Geometry in Balls Deep/DaVinci
@@ -1164,7 +1164,11 @@ const DixPixNflEngine = {
     totalIntercept: 42.986,
     logisticK: LOGISTIC_K_TIGHT,
     playScaler: GOLDEN_PLAY_SCALER,
+    totalLogisticK: LOGISTIC_K_TIGHT,
     winProb(pointGap) {
+        return calcPointGapWinProb(pointGap);
+    },
+    totalWinProb(pointGap) {
         return calcPointGapWinProb(pointGap);
     },
     keyAlt(baseLine, modelFairLine, baseOdds = -110) {
@@ -1180,9 +1184,14 @@ const DixPixNcaaEngine = {
     hfaBase: 2.6180339887,
     totalIntercept: 51.450,
     logisticK: Number((LOGISTIC_K_TIGHT * (1.0 / GOLDEN_RATIO_PHI)).toFixed(6)),
+    totalLogisticK: Number((LOGISTIC_K_TIGHT * 0.786).toFixed(6)),
     playScaler: GOLDEN_PLAY_SCALER,
     winProb(pointGap) {
         const p = 1.0 / (1.0 + Math.exp(-this.logisticK * pointGap));
+        return Math.max(0.01, Math.min(0.99, p));
+    },
+    totalWinProb(pointGap) {
+        const p = 1.0 / (1.0 + Math.exp(-this.totalLogisticK * pointGap));
         return Math.max(0.01, Math.min(0.99, p));
     },
     keyAlt(baseLine, modelFairLine, baseOdds = -110) {
@@ -1209,4 +1218,4 @@ function getLeagueEngine(league = "NFL") {
     return (String(league || "NFL").toUpperCase() === "NCAA") ? DixPixNcaaEngine : DixPixNflEngine;
 }
 
-// === END OF MATH_ENGINE.JS (v320) ===
+// === END OF MATH_ENGINE.JS (v321) ===
