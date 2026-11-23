@@ -1,5 +1,5 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v227 — FULL 1:1 DUAL-ENGINE PARITY + FINAL-SAFE SUNDAY SCRUB)
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v227 — FULL 1:1 DUAL-ENGINE PARITY + FINAL-SAFE SUNDAY SCRUB + O/U SELF-HEAL)
 Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
   1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
   2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
@@ -2190,6 +2190,41 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
         except Exception as mig_err:
             print(f"[v227 Migration Skip {gid}] {mig_err}")
 
+    # SELF-HEALING O/U DIRECTION GUARD:
+    # Repairs any legacy v223 archived total where tip_proj contradicted tip_direction/pick_label
+    # (e.g., IOWA @ ILL Proj 51.7 on 40.5 line erroneously stamped "U 40.5" by v223) and triggers re-grading!
+    for gid, entry in entries.items():
+        if gid == "nfl_mnf_lac_bal_2026_w10":
+            continue
+        t_rec = entry.get("total_record")
+        if not isinstance(t_rec, dict) or t_rec.get("vegas_closing_line") is None or t_rec.get("tip_proj") is None:
+            continue
+        v_tot = _f(t_rec.get("vegas_closing_line"), 45.0)
+        tip_t = _f(t_rec.get("tip_proj"), v_tot)
+        if abs(tip_t - v_tot) < 0.05:
+            continue
+        true_dir = "U" if tip_t < v_tot else "O"
+        cur_dir = str(t_rec.get("tip_direction") or "").upper()
+        cur_lbl = str(t_rec.get("pick_label") or "")
+        if cur_dir != true_dir or f"({true_dir} " not in cur_lbl:
+            lg = entry.get("league") or ("NCAA" if gid.startswith("NCAA_") else "NFL")
+            lg_eng = get_dedicated_engine(lg)
+            p_tip_t = max(0.50, lg_eng.win_prob(abs(tip_t - v_tot)))
+            odds_t = _i(t_rec.get("odds"), -110)
+            if abs(odds_t) >= 220 or odds_t == 0:
+                odds_t = -110
+            ev_t_tot = calc_ev_pct(p_tip_t, odds_t)
+            a_tm = entry.get("away_team", "")
+            h_tm = entry.get("home_team", "")
+            t_rec["tip_direction"] = true_dir
+            t_rec["pick_label"] = f"{a_tm}@{h_tm} Total ({true_dir} {v_tot}) ({a_tm} @ {h_tm})"
+            t_rec["tip_win_pct"] = round(p_tip_t * 100.0, 2)
+            t_rec["tip_ev_pct"] = ev_t_tot
+            t_rec["tier_badge"] = "SMASH" if ev_t_tot >= SMASH_EV_THRESHOLD else ("PASS" if ev_t_tot <= -19.0 else "TOO_CLOSE")
+            t_rec["result_tip"] = "PENDING"
+            t_rec["miss_by_pts"] = None
+            print(f"[TOTAL SELF-HEAL] Fixed {gid}: Proj {tip_t} vs {v_tot} -> {true_dir} {v_tot} (was {cur_dir})")
+
     for gid, entry in entries.items():
         espn_info = None
         a_fn = normalize_team_key(entry.get("away_full_name", ""))
@@ -2883,7 +2918,7 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v227 — FULL 1:1 DUAL-ENGINE PARITY + FINAL-SAFE SUNDAY SCRUB)")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v227 — FULL 1:1 DUAL-ENGINE PARITY + FINAL-SAFE SUNDAY SCRUB + O/U SELF-HEAL)")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("=========================================================")
 
