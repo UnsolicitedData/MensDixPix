@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v253 — ZERO-CONTRADICTION LEDGER & BALLS DEEP PARITY)
- * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with onlinemath_engine.js (v318) & scraper.py (v230)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v254 — BALLS DEEP ENHANCE-ONLY + ZERO TIP OVERRULES)
+ * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with onlinemath_engine.js (v319) & scraper.py (v231)
  *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
  *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
  *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
@@ -688,18 +688,13 @@ function calcReportCalibratedTotalSafe(vegasTotal, ogTipTotal, envPayload = {}, 
     const shootoutThresh = (gameLeague === "NCAA") ? 58.5 : 49.5;
     const domeThresh = (gameLeague === "NCAA") ? 54.5 : 46.5;
     const grindThresh = (gameLeague === "NCAA") ? 44.5 : 41.5;
-    if (vTot >= shootoutThresh || (isDome && vTot >= domeThresh && !hasBackupQb)) {
-        const dropPts = (vTot >= shootoutThresh + 4.0) ? 5.0 : 4.0;
-        const safeLine = Math.floor(vTot - dropPts) + 0.5;
-        return { regime: "SHOOTOUT_SAFE_OVER", ballsDeepTotal: Number((vTot + 2.0).toFixed(1)), safeDir: "O", safeLine, safeOdds: dropPts >= 5 ? -180 : -175, safeProb: 0.76, safeProbPct: 76.0, safeEvPct: 18.0, safeLabel: `Alt O ${safeLine.toFixed(1)} (${dropPts >= 5 ? -180 : -175})` };
-    }
-    if (vTot <= grindThresh || (!isDome && (tempF <= 42 || windMph >= 10) && vTot <= 48.5) || hasBackupQb) {
-        const safeLine = Math.floor(vTot + 4.0) + 0.5;
-        return { regime: "GRIND_SAFE_UNDER", ballsDeepTotal: Number((vTot - 2.0).toFixed(1)), safeDir: "U", safeLine, safeOdds: -175, safeProb: 0.75, safeProbPct: 75.0, safeEvPct: 17.8, safeLabel: `Alt U ${safeLine.toFixed(1)} (-175)` };
-    }
-    const safeDir = Number(ogTipTotal) < vTot ? "U" : "O";
-    const safeLine = safeDir === "U" ? (Math.floor(vTot + 3.5) + 0.5) : (Math.floor(vTot - 3.5) + 0.5);
-    return { regime: "NEUTRAL_PASS", ballsDeepTotal: Number(vTot.toFixed(1)), safeDir, safeLine, safeOdds: -175, safeProb: 0.64, safeProbPct: 64.0, safeEvPct: 0.5, safeLabel: `Alt ${safeDir} ${safeLine.toFixed(1)} (-175)` };
+    const tipTot = Number(ogTipTotal !== undefined && ogTipTotal !== null ? ogTipTotal : vTot);
+    const safeDir = tipTot < vTot ? "U" : "O";
+    const safeLine = safeDir === "U" ? (Math.floor(vTot + 4.0) + 0.5) : (Math.floor(vTot - 4.0) + 0.5);
+    let regime = "TIP_ALIGNED_SAFE";
+    if (safeDir === "O" && (vTot >= shootoutThresh || (isDome && vTot >= domeThresh && !hasBackupQb))) regime = "SHOOTOUT_SAFE_OVER";
+    else if (safeDir === "U" && (vTot <= grindThresh || (!isDome && (tempF <= 42 || windMph >= 10) && vTot <= 48.5) || hasBackupQb)) regime = "GRIND_SAFE_UNDER";
+    return { regime, ballsDeepTotal: Number(tipTot.toFixed(1)), safeDir, safeLine, safeOdds: -175, safeProb: 0.75, safeProbPct: 75.0, safeEvPct: 17.8, safeLabel: `Alt ${safeDir} ${safeLine.toFixed(1)} (-175)` };
 }
 
 // ==========================================
@@ -1038,8 +1033,8 @@ function recalculateAndRenderAll(opts = {}) {
                     const isUnderActive = (mode === "tip") ? (finalCalculatedLine < vegasLine) : (bdTotObj.safeDir === "U");
                     safeFloorOdds = bdTotObj.safeOdds || -175;
                     keyAltNote = (totalRegime === "SHOOTOUT_SAFE_OVER")
-                        ? "🔥 Shootout Safe Over"
-                        : (totalRegime === "GRIND_SAFE_UNDER" ? "🧊 Grind Safe Under" : "⚖️ Neutral Total");
+                        ? "🔥 Confirmed Shootout Over"
+                        : (totalRegime === "GRIND_SAFE_UNDER" ? "🧊 Confirmed Grind Under" : "⚡ Tip-Aligned Safe Alt");
 
                     const safeTotalVal = isActiveMomentumArc
                         ? Number((isUnderActive ? (bdTotObj.safeLine - totalArc) : (bdTotObj.safeLine + totalArc)).toFixed(1))
@@ -2902,10 +2897,20 @@ function renderHistoricalLedger() {
             const archEng = (typeof getLeagueEngine === "function") ? getLeagueEngine(entryLeague) : null;
             const archWinProbFn = (gap) => archEng ? archEng.winProb(gap) : calcPointGapWinProb(gap);
 
-            const bdProj = rec.bd_proj !== undefined ? Number(rec.bd_proj) : (rec.balls_deep_proj !== undefined ? Number(rec.balls_deep_proj) : Number(rec.bdProjectedMean || tipProj));
+            let bdProj = rec.bd_proj !== undefined ? Number(rec.bd_proj) : (rec.balls_deep_proj !== undefined ? Number(rec.balls_deep_proj) : Number(rec.bdProjectedMean || tipProj));
             const tipDirChar = !isSpread ? (tipProj < vegasLine ? "U" : "O") : "";
-            const safeDirChar = !isSpread ? (rec.safe_total_dir || rec.balls_deep_direction || (bdProj < vegasLine ? "U" : "O")) : "";
+            // STRICT NO-OVERRULE GUARDRAIL: Balls Deep ALWAYS enhances/tempers on Tip's side — NEVER flips opposite Tip!
+            if (isSpread) {
+                if ((vegasLine - tipProj) >= 0 && (vegasLine - bdProj) < 0) {
+                    bdProj = Number((vegasLine - Math.min(0.25, Math.abs(vegasLine - tipProj))).toFixed(2));
+                }
+            } else {
+                if (tipDirChar === "U" && bdProj >= vegasLine) bdProj = Number((vegasLine - 0.2).toFixed(1));
+                else if (tipDirChar === "O" && bdProj <= vegasLine) bdProj = Number((vegasLine + 0.2).toFixed(1));
+            }
+            const safeDirChar = !isSpread ? tipDirChar : "";
             const isUnderSafe = (safeDirChar === "U");
+            const hadStaleFlippedTotal = !isSpread && rec.safe_total_dir && String(rec.safe_total_dir).toUpperCase() !== tipDirChar;
 
             // Always compute archived Balls Deep Win% & EV% cleanly from bdProj vs vegasLine (eliminates stale mismatched numbers!)
             const archBdProbRaw = isSpread
@@ -2928,14 +2933,14 @@ function renderHistoricalLedger() {
                 : null;
             const defaultFloorHook = isSpread
                 ? (rec.key_alt_line !== undefined && rec.key_alt_line !== null ? Number(rec.key_alt_line) : keyAltFallback.altLine)
-                : (rec.safe_total_line !== undefined && rec.safe_total_line !== null ? Number(rec.safe_total_line) : (isUnderSafe ? (Math.floor(vegasLine + 4.0) + 0.5) : (Math.floor(vegasLine - 4.0) + 0.5)));
+                : ((!hadStaleFlippedTotal && rec.safe_total_line !== undefined && rec.safe_total_line !== null) ? Number(rec.safe_total_line) : (isUnderSafe ? (Math.floor(vegasLine + 4.0) + 0.5) : (Math.floor(vegasLine - 4.0) + 0.5)));
             // Ceiling ALWAYS shares Balls Deep's direction (safeDirChar) — NEVER shows Alt U + Alt O in the same cell!
             const defaultCeilHook = isSpread
                 ? snapToHalfPointHook(vegasLine, -3.0)
                 : (isUnderSafe ? (Math.floor(vegasLine - 3.0) + 0.5) : (Math.floor(vegasLine + 3.0) + 0.5));
-            const safeFloorLabel = rec.key_alt_label || rec.safe_total_label || rec.safe_floor_label || rec.safeFloorLabel || (isSpread
-                ? keyAltFallback.altStr
-                : `Alt ${safeDirChar} ${defaultFloorHook.toFixed(1)} (-175)`);
+            const safeFloorLabel = isSpread
+                ? (rec.key_alt_label || rec.safe_floor_label || rec.safeFloorLabel || keyAltFallback.altStr)
+                : ((!hadStaleFlippedTotal && (rec.safe_total_label || rec.safe_floor_label || rec.safeFloorLabel)) || `Alt ${safeDirChar} ${defaultFloorHook.toFixed(1)} (-175)`);
             const safeFloorWinPct = rec.key_alt_win_pct || rec.safe_total_win_pct || rec.safe_floor_win_pct || rec.safeFloorWinPct || (isSpread ? keyAltFallback.altProbPct : 74.5);
 
             const bdAltLabel = isSpread
@@ -2981,10 +2986,10 @@ function renderHistoricalLedger() {
                     gradedTip = liveTipObj.outcome;
                     missByPts = liveTipObj.missBy;
                 }
-                if (gradedBd === "PENDING" || (gradedBd === "MISS" && !rec.miss_by_pts)) {
+                if (gradedBd === "PENDING" || hadStaleFlippedTotal || (gradedBd === "MISS" && !rec.miss_by_pts)) {
                     gradedBd = liveBdObj.outcome;
                 }
-                if (!gradedFloor || gradedFloor === "PENDING") {
+                if (!gradedFloor || gradedFloor === "PENDING" || hadStaleFlippedTotal) {
                     gradedFloor = liveFloorObj.outcome;
                     floorMissBy = liveFloorObj.missBy;
                 }
@@ -3765,4 +3770,4 @@ function renderLiveBottomTicker() {
         </div>
     `;
 }
-// === END OF APP_CONTROLLER.JS (v253) ===
+// === END OF APP_CONTROLLER.JS (v254) ===
