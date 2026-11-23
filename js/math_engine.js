@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v318 — DEDICATED NFL + NCAA ENGINES 1:1 PARITY)
- * Pure OG M1–M9 + Verified ΔQB-Only Filter + Key-Number Alt Buys (MER > 1.15) + Regime Safe Totals (Synced 1:1 with scraper.py v227)
+ * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v319 — BALLS DEEP ENHANCE-ONLY OVERLAY (ZERO TIP OVERRULES))
+ * Pure OG M1–M9 + Verified ΔQB-Only Filter + Key-Number Alt Buys (MER > 1.15) + Regime Safe Totals (Synced 1:1 with scraper.py v231)
  *  - PURE OG MODULES 1–9 RESTORED: 100% Independent Fair Margin (ZERO Vegas-Spread Anchoring)
  *  - Live Roster/Injury Integration (qb_replacement_delta) + Fixed opp_rz_dvoa Sign
  *  - Strict M1–M9 Firewall in Just the Tip | Full M11–M13 Physics & Sacred Geometry in Balls Deep/DaVinci
@@ -539,17 +539,25 @@ function calcFullGameFairMargin(gameData, phiCirc, psiCoupled11_12 = 0, mode = "
 
     // Final Fair Spread:
     //  - "tip": 100% Pure Untouched OG M1–M9
-    //  - "balls_deep" / "davinci": Report-Calibrated M11–M13 (anchored off Vegas closing line for 2–5 pt report precision)
+    //  - "balls_deep" / "davinci": Pure Additive M11–M13 + ΔQB Enhancement on top of OG Tip (ZERO Vegas anchoring, NEVER overrules Tip!)
     let fairHomeSpread = pureOgTipHomeSpread;
     if (mode !== "tip") {
-        const fundGap = Math.max(-8.0, Math.min(8.0, pureOgTipHomeSpread - refVegas));
-        const fundPull = 0.20 * fundGap;
         const injOverlay = 0.65 * injurySpreadDiff;
         const isHypoxicHome = Boolean(elevMatrix && elevMatrix.hypoxicOverrideM13);
         const effPsi = activePsi * ((isHypoxicHome && activePsi > 0) ? 0.25 : 0.65);
-        const rawBdDelta = fundPull + injOverlay + effPsi + activeElev + activeRiseAdj;
-        const clampedBdDelta = Math.max(-5.8, Math.min(5.8, rawBdDelta));
-        fairHomeSpread = refVegas + clampedBdDelta;
+        const rawOverlay = injOverlay + effPsi + activeElev + activeRiseAdj;
+        const cappedOverlay = Math.max(-3.5, Math.min(3.5, rawOverlay));
+        let candidateBd = pureOgTipHomeSpread + cappedOverlay;
+
+        // STRICT NO-OVERRULE GUARDRAIL: Balls Deep enhances or tempers Just the Tip — NEVER flips across Vegas onto the opposite team!
+        const tipEdge = pureOgTipHomeSpread - refVegas;
+        if (hasVegasRef && tipEdge !== 0) {
+            const bdEdge = candidateBd - refVegas;
+            if (Math.sign(bdEdge) !== Math.sign(tipEdge)) {
+                candidateBd = refVegas + (Math.sign(tipEdge) * Math.min(0.25, Math.abs(tipEdge)));
+            }
+        }
+        fairHomeSpread = candidateBd;
     }
 
     // DaVinci Continuous Flow Spread Escalator
@@ -902,12 +910,23 @@ function calcReportCalibratedTotal(vegasTotal, ogTipTotal, envPayload = {}, circ
     const ballistics = calcBarometricBallistics(envPayload || {});
     const rho = ballistics.airDensityRho || 1.225;
 
+    const tipTot = Number(ogTipTotal !== undefined && ogTipTotal !== null ? ogTipTotal : vTot);
     const coldDrag = isDome ? 0.0 : -Math.max(0.0, (44.0 - tempF) * 0.14);
     const windDrag = isDome ? 0.0 : -Math.max(0.0, (windMph - 10.0) * 0.28);
     const tzDrag = absTz >= 3 ? -1.50 : (absTz === 2 ? -0.65 : 0.0);
     const qbDrag = hasBackupQb ? -2.75 : 0.0;
-    const envDrag = coldDrag + windDrag + tzDrag + elevTotDrag + qbDrag;
-    const pacePull = 0.15 * Math.max(-6.0, Math.min(6.0, Number(ogTipTotal) - vTot));
+    const domeBoost = (isDome && !hasBackupQb) ? 0.60 : 0.0;
+    const envAdj = Math.max(-3.5, Math.min(2.0, coldDrag + windDrag + tzDrag + elevTotDrag + qbDrag + domeBoost));
+
+    // STRICT NO-OVERRULE GUARDRAIL: Balls Deep enhances or tempers Just the Tip's Total — NEVER flips O <-> U!
+    const tipDir = (tipTot < vTot) ? "U" : "O";
+    const safeDir = tipDir;
+    let fairTotal = tipTot + envAdj;
+    if (tipDir === "U") {
+        fairTotal = Math.min(vTot - 0.2, fairTotal);
+    } else {
+        fairTotal = Math.max(vTot + 0.2, fairTotal);
+    }
 
     const shootoutThresh = (gameLeague === "NCAA") ? 58.5 : 49.5;
     const domeShootoutThresh = (gameLeague === "NCAA") ? 54.5 : 46.5;
@@ -915,35 +934,21 @@ function calcReportCalibratedTotal(vegasTotal, ogTipTotal, envPayload = {}, circ
     const weatherGrindThresh = (gameLeague === "NCAA") ? 52.5 : 48.5;
     const heavyGrindEnv = (!isDome && (tempF <= 42.0 || windMph >= 10.0 || rho >= 1.250 || elevZone >= 7)) || Boolean(hasBackupQb);
 
-    let regime = "NEUTRAL_PASS";
-    let fairTotal = vTot + envDrag + pacePull;
-    let safeDir = fairTotal < vTot ? "U" : "O";
-    let safeLine = (safeDir === "U") ? (Math.floor(vTot + 3.5) + 0.5) : (Math.floor(vTot - 3.5) + 0.5);
-    let safeOdds = -175;
-    let safeProb = 0.65;
+    let regime = "TIP_ALIGNED_SAFE";
+    if (tipDir === "O" && (vTot >= shootoutThresh || (isDome && vTot >= domeShootoutThresh && !hasBackupQb))) {
+        regime = "SHOOTOUT_SAFE_OVER";
+    } else if (tipDir === "U" && (vTot <= grindThresh || (vTot <= weatherGrindThresh && heavyGrindEnv))) {
+        regime = "GRIND_SAFE_UNDER";
+    }
 
     const kTotSlope = (gameLeague === "NCAA") ? (LOGISTIC_K_TIGHT * 0.786) : LOGISTIC_K_TIGHT;
     const totWinProb = (gap) => Math.max(0.01, Math.min(0.99, 1.0 / (1.0 + Math.exp(-kTotSlope * gap))));
 
-    if (vTot >= shootoutThresh || (isDome && vTot >= domeShootoutThresh && !hasBackupQb)) {
-        regime = "SHOOTOUT_SAFE_OVER";
-        fairTotal = vTot + Math.max(0.8, 1.5 + (0.20 * Math.max(0.0, vTot - domeShootoutThresh)) + (isDome ? 0.4 : 0.0) + Math.max(-0.5, pacePull));
-        const dropPts = (vTot >= shootoutThresh + 4.0) ? 5.0 : 4.0;
-        safeLine = Math.floor(vTot - dropPts) + 0.5;
-        safeOdds = (dropPts >= 5.0) ? -180 : -175;
-        safeDir = "O";
-        safeProb = Math.min(0.92, Math.max(0.55, totWinProb(fairTotal - safeLine) + 0.04));
-    } else if (vTot <= grindThresh || (vTot <= weatherGrindThresh && heavyGrindEnv)) {
-        regime = "GRIND_SAFE_UNDER";
-        fairTotal = vTot + Math.min(-1.0, envDrag + Math.min(0.0, pacePull) - 0.8);
-        safeLine = Math.floor(vTot + 4.0) + 0.5;
-        safeOdds = -175;
-        safeDir = "U";
-        safeProb = Math.min(0.92, Math.max(0.55, totWinProb(safeLine - fairTotal) + 0.04));
-    } else {
-        const edge = (safeDir === "U") ? (safeLine - fairTotal) : (fairTotal - safeLine);
-        safeProb = Math.min(0.82, Math.max(0.50, totWinProb(edge)));
-    }
+    const safeLine = (safeDir === "U") ? (Math.floor(vTot + 4.0) + 0.5) : (Math.floor(vTot - 4.0) + 0.5);
+    const safeOdds = -175;
+    const safeEdge = (safeDir === "U") ? (safeLine - fairTotal) : (fairTotal - safeLine);
+    const confirmBonus = (regime !== "TIP_ALIGNED_SAFE") ? 0.03 : 0.0;
+    const safeProb = Math.min(0.94, Math.max(0.55, totWinProb(safeEdge) + confirmBonus));
 
     const safeEvObj = calcExpectedValueAndKelly(safeProb, safeOdds);
     return {
@@ -960,7 +965,7 @@ function calcReportCalibratedTotal(vegasTotal, ogTipTotal, envPayload = {}, circ
         windDrag: Number(windDrag.toFixed(2)),
         tzDrag: Number(tzDrag.toFixed(2)),
         elevTotDrag: Number(elevTotDrag.toFixed(2)),
-        effLean: Number(pacePull.toFixed(2))
+        effLean: Number((tipTot - vTot).toFixed(2))
     };
 }
 
@@ -1204,4 +1209,4 @@ function getLeagueEngine(league = "NFL") {
     return (String(league || "NFL").toUpperCase() === "NCAA") ? DixPixNcaaEngine : DixPixNflEngine;
 }
 
-// === END OF MATH_ENGINE.JS (v318) ===
+// === END OF MATH_ENGINE.JS (v319) ===
