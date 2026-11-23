@@ -1,5 +1,5 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v230 — ZERO-CONTRADICTION BALLS DEEP + ARCHIVE EV/CEILING PARITY)
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v231 — BALLS DEEP ENHANCE-ONLY OVERLAY + ZERO TIP OVERRULES)
 Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
   1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
   2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
@@ -1148,13 +1148,20 @@ def calc_report_calibrated_bd_spread(og_tip_home_spread, vegas_home_spread, home
     m_rise_delta = (GOLDEN_RATIO_PHI / math.pi) * (fn / 76.0) * delta_ctx
     rise_home_adj = round((-1.0 if home_is_dog else 1.0) * (m_rise_delta * 3.5), 2)
 
-    fund_gap = max(-8.0, min(8.0, og_tip_home_spread - vegas_home_spread))
-    fund_pull = 0.20 * fund_gap
     inj_overlay = 0.65 * injury_diff
     eff_psi = psi_11_12 * (0.25 if (elev_info["hypoxic"] and psi_11_12 > 0) else 0.65)
-    raw_bd_delta = fund_pull + inj_overlay + eff_psi + elev_info["psi_elev"] + rise_home_adj
-    clamped_delta = max(-5.8, min(5.8, raw_bd_delta))
-    return round(vegas_home_spread + clamped_delta, 2)
+    raw_overlay = inj_overlay + eff_psi + elev_info["psi_elev"] + rise_home_adj
+    capped_overlay = max(-3.5, min(3.5, raw_overlay))
+    candidate_bd = og_tip_home_spread + capped_overlay
+
+    # STRICT NO-OVERRULE GUARDRAIL: Balls Deep enhances or tempers Just the Tip — NEVER flips across Vegas onto the opposite team!
+    tip_edge = og_tip_home_spread - vegas_home_spread
+    if tip_edge != 0:
+        bd_edge = candidate_bd - vegas_home_spread
+        if (bd_edge > 0) != (tip_edge > 0):
+            sign_tip = 1.0 if tip_edge > 0 else -1.0
+            candidate_bd = vegas_home_spread + (sign_tip * min(0.25, abs(tip_edge)))
+    return round(candidate_bd, 2)
 
 def get_verified_qb_delta(team_tel):
     if not isinstance(team_tel, dict):
@@ -1383,12 +1390,22 @@ def calc_regime_safe_total_obj(vegas_total, og_tip_total, env_weather, tz_shift,
     p_pa = _f(env_weather.get("pressure_hpa"), 1013.25) * 100.0
     rho = 1.204 if is_dome else ((max(0.0, p_pa - 1000.0) / (287.058 * temp_k)) + (1000.0 / (461.495 * temp_k)))
 
+    tip_tot = _f(og_tip_total if og_tip_total is not None else v_tot, v_tot)
     cold_drag = 0.0 if is_dome else -max(0.0, (44.0 - temp_f) * 0.14)
     wind_drag = 0.0 if is_dome else -max(0.0, (wind_mph - 10.0) * 0.28)
     tz_drag = -1.50 if abs_tz >= 3 else (-0.65 if abs_tz == 2 else 0.0)
     qb_drag = -2.75 if has_backup_qb else 0.0
-    env_drag = cold_drag + wind_drag + tz_drag + elev_tot_drag + qb_drag
-    pace_pull = 0.15 * max(-6.0, min(6.0, float(og_tip_total) - v_tot))
+    dome_boost = 0.60 if (is_dome and not has_backup_qb) else 0.0
+    env_adj = max(-3.5, min(2.0, cold_drag + wind_drag + tz_drag + elev_tot_drag + qb_drag + dome_boost))
+
+    # STRICT NO-OVERRULE GUARDRAIL: Balls Deep enhances or tempers Just the Tip's Total — NEVER flips O <-> U!
+    tip_dir = "U" if tip_tot < v_tot else "O"
+    safe_dir = tip_dir
+    fair_tot = tip_tot + env_adj
+    if tip_dir == "U":
+        fair_tot = min(v_tot - 0.2, fair_tot)
+    else:
+        fair_tot = max(v_tot + 0.2, fair_tot)
 
     shootout_thresh = 58.5 if game_league == "NCAA" else 49.5
     dome_shootout_thresh = 54.5 if game_league == "NCAA" else 46.5
@@ -1396,32 +1413,18 @@ def calc_regime_safe_total_obj(vegas_total, og_tip_total, env_weather, tz_shift,
     weather_grind_thresh = 52.5 if game_league == "NCAA" else 48.5
     heavy_grind_env = (not is_dome and (temp_f <= 42.0 or wind_mph >= 10.0 or rho >= 1.250 or elev_zone >= 7)) or bool(has_backup_qb)
 
-    k_tot = (LOGISTIC_K_TIGHT * 0.786) if game_league == "NCAA" else LOGISTIC_K_TIGHT
-    if v_tot >= shootout_thresh or (is_dome and v_tot >= dome_shootout_thresh and not has_backup_qb):
+    regime = "TIP_ALIGNED_SAFE"
+    if tip_dir == "O" and (v_tot >= shootout_thresh or (is_dome and v_tot >= dome_shootout_thresh and not has_backup_qb)):
         regime = "SHOOTOUT_SAFE_OVER"
-        fair_tot = v_tot + max(0.8, 1.5 + (0.20 * max(0.0, v_tot - dome_shootout_thresh)) + (0.4 if is_dome else 0.0) + max(-0.5, pace_pull))
-        drop_pts = 5.0 if v_tot >= (shootout_thresh + 4.0) else 4.0
-        safe_line = math.floor(v_tot - drop_pts) + 0.5
-        safe_odds = -180 if drop_pts >= 5.0 else -175
-        safe_dir = "O"
-        raw_p = 1.0 / (1.0 + math.exp(-k_tot * (fair_tot - safe_line)))
-        safe_prob = min(0.92, max(0.55, raw_p + 0.04))
-    elif v_tot <= grind_thresh or (v_tot <= weather_grind_thresh and heavy_grind_env):
+    elif tip_dir == "U" and (v_tot <= grind_thresh or (v_tot <= weather_grind_thresh and heavy_grind_env)):
         regime = "GRIND_SAFE_UNDER"
-        fair_tot = v_tot + min(-1.0, env_drag + min(0.0, pace_pull) - 0.8)
-        safe_line = math.floor(v_tot + 4.0) + 0.5
-        safe_odds = -175
-        safe_dir = "U"
-        raw_p = 1.0 / (1.0 + math.exp(-k_tot * (safe_line - fair_tot)))
-        safe_prob = min(0.92, max(0.55, raw_p + 0.04))
-    else:
-        regime = "NEUTRAL_PASS"
-        fair_tot = v_tot + env_drag + pace_pull
-        safe_dir = "U" if fair_tot < v_tot else "O"
-        safe_line = (math.floor(v_tot + 3.5) + 0.5) if safe_dir == "U" else (math.floor(v_tot - 3.5) + 0.5)
-        safe_odds = -175
-        edge = (safe_line - fair_tot) if safe_dir == "U" else (fair_tot - safe_line)
-        safe_prob = min(0.82, max(0.50, 1.0 / (1.0 + math.exp(-k_tot * edge))))
+
+    k_tot = (LOGISTIC_K_TIGHT * 0.786) if game_league == "NCAA" else LOGISTIC_K_TIGHT
+    safe_line = (math.floor(v_tot + 4.0) + 0.5) if safe_dir == "U" else (math.floor(v_tot - 4.0) + 0.5)
+    safe_odds = -175
+    edge = (safe_line - fair_tot) if safe_dir == "U" else (fair_tot - safe_line)
+    confirm_bonus = 0.03 if regime != "TIP_ALIGNED_SAFE" else 0.0
+    safe_prob = min(0.94, max(0.55, (1.0 / (1.0 + math.exp(-k_tot * edge))) + confirm_bonus))
 
     return {
         "regime": regime,
@@ -1979,7 +1982,7 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                 "result_balls_deep": "PENDING",
                 "result_key_alt": "PENDING"
             }
-            existing["engine_version"] = "v230_zero_contradiction"
+            existing["engine_version"] = "v231_bd_enhance_only"
             if best_total:
                 existing["total_record"] = {
                     "pick_label": best_total["player"],
@@ -2017,11 +2020,11 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
 
         entries[gid] = existing
 
-    # ONE-TIME v230_zero_contradiction MIGRATION (NULL-PROOF):
+    # ONE-TIME v231_bd_enhance_only MIGRATION (NULL-PROOF):
     # Upgrades ALL pre-v222 entries (both games still in data.json AND older archived FINAL entries)
     # to clean ΔQB-only spreads, Key-Number Alt Buys, and Regime Safe Totals, then re-grades against actual scores!
     for gid, entry in entries.items():
-        if entry.get("engine_version") == "v230_zero_contradiction" or gid == "nfl_mnf_lac_bal_2026_w10":
+        if entry.get("engine_version") == "v231_bd_enhance_only" or gid == "nfl_mnf_lac_bal_2026_w10":
             continue
         try:
             src_g = game_lookup_by_gid.get(gid)
@@ -2155,18 +2158,28 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                 s_rec = entry.get("spread_record")
                 if s_rec and s_rec.get("vegas_closing_line") is not None:
                     pick_line = _f(s_rec.get("vegas_closing_line"), 0.0)
-                    bd_p = _f(s_rec.get("balls_deep_proj", s_rec.get("tip_proj")), pick_line)
+                    tip_p = _f(s_rec.get("tip_proj"), pick_line)
+                    bd_p = _f(s_rec.get("balls_deep_proj", tip_p), tip_p)
+                    # Enforce No-Overrule Guardrail on archived spreads too!
+                    if (pick_line - tip_p) >= 0 and (pick_line - bd_p) < 0:
+                        bd_p = round(pick_line - min(0.25, abs(pick_line - tip_p)), 2)
                     odds_use = _i(s_rec.get("odds"), -110)
                     if abs(odds_use) >= 220 or odds_use == 0:
                         odds_use = -110
-                    k_alt = get_dedicated_engine(lg).key_alt(pick_line, bd_p, odds_use)
+                    lg_sp_eng = get_dedicated_engine(lg)
+                    p_bd_arch = lg_sp_eng.win_prob(pick_line - bd_p)
+                    k_alt = lg_sp_eng.key_alt(pick_line, bd_p, odds_use)
                     s_rec.update({
+                        "balls_deep_proj": bd_p,
+                        "balls_deep_win_pct": round(p_bd_arch * 100.0, 2),
+                        "balls_deep_ev_pct": calc_ev_pct(p_bd_arch, odds_use),
                         "key_alt_line": k_alt["alt_line"],
                         "key_alt_odds": k_alt["alt_odds"],
                         "key_alt_label": k_alt["alt_str"],
                         "key_alt_mer": k_alt["mer"],
                         "key_alt_win_pct": k_alt["alt_win_pct"],
                         "key_alt_ev_pct": k_alt["alt_ev_pct"],
+                        "result_balls_deep": "PENDING",
                         "result_key_alt": "PENDING"
                     })
                 t_rec = entry.get("total_record")
@@ -2204,9 +2217,9 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                         "result_balls_deep": "PENDING",
                         "result_safe_total": "PENDING"
                     })
-            entry["engine_version"] = "v230_zero_contradiction"
+            entry["engine_version"] = "v231_bd_enhance_only"
         except Exception as mig_err:
-            print(f"[v230 Migration Skip {gid}] {mig_err}")
+            print(f"[v231 Migration Skip {gid}] {mig_err}")
 
     # SELF-HEALING O/U DIRECTION GUARD:
     # Repairs any legacy v223 archived total where tip_proj contradicted tip_direction/pick_label
@@ -2243,18 +2256,38 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
             t_rec["miss_by_pts"] = None
             print(f"[TOTAL SELF-HEAL] Fixed {gid}: Proj {tip_t} vs {v_tot} -> {true_dir} {v_tot} (was {cur_dir})")
 
-        # Also lock Balls Deep Total win%/EV% & Ceiling label/EV% mathematically to balls_deep_proj + safe_total_dir!
-        bd_t_cur = _f(t_rec.get("balls_deep_proj"), tip_t)
+        # Enforce Balls Deep Enhance-Only Alignment on Totals: safe_total_dir & balls_deep_direction ALWAYS match true_dir!
         lg_c = entry.get("league") or ("NCAA" if gid.startswith("NCAA_") else "NFL")
         lg_eng_c = get_dedicated_engine(lg_c)
-        bd_dir_c = str(t_rec.get("safe_total_dir") or t_rec.get("balls_deep_direction") or ("U" if bd_t_cur < v_tot else "O")).upper()
+        bd_t_cur = _f(t_rec.get("balls_deep_proj"), tip_t)
+        if true_dir == "U" and bd_t_cur >= v_tot:
+            bd_t_cur = round(v_tot - 0.2, 1)
+            t_rec["result_balls_deep"] = "PENDING"
+            t_rec["result_safe_total"] = "PENDING"
+        elif true_dir == "O" and bd_t_cur <= v_tot:
+            bd_t_cur = round(v_tot + 0.2, 1)
+            t_rec["result_balls_deep"] = "PENDING"
+            t_rec["result_safe_total"] = "PENDING"
+        if str(t_rec.get("safe_total_dir") or "").upper() != true_dir or str(t_rec.get("balls_deep_direction") or "").upper() != true_dir:
+            t_rec["result_balls_deep"] = "PENDING"
+            t_rec["result_safe_total"] = "PENDING"
+        t_rec["balls_deep_proj"] = bd_t_cur
+        t_rec["balls_deep_direction"] = true_dir
+        t_rec["safe_total_dir"] = true_dir
+        s_line_c = (math.floor(v_tot + 4.0) + 0.5) if true_dir == "U" else (math.floor(v_tot - 4.0) + 0.5)
+        s_edge_c = (s_line_c - bd_t_cur) if true_dir == "U" else (bd_t_cur - s_line_c)
+        s_prob_c = min(0.94, max(0.55, lg_eng_c.win_prob(s_edge_c)))
+        t_rec["safe_total_line"] = s_line_c
+        t_rec["safe_total_odds"] = -175
+        t_rec["safe_total_label"] = f"Alt {true_dir} {s_line_c:.1f} (-175)"
+        t_rec["safe_total_win_pct"] = round(s_prob_c * 100.0, 1)
+        t_rec["safe_total_ev_pct"] = calc_ev_pct(s_prob_c, -175)
         p_bd_c = max(0.50, lg_eng_c.win_prob(abs(bd_t_cur - v_tot)))
-        t_rec["balls_deep_direction"] = bd_dir_c
         t_rec["balls_deep_win_pct"] = round(p_bd_c * 100.0, 2)
         t_rec["balls_deep_ev_pct"] = calc_ev_pct(p_bd_c, -110)
-        c_line_c = (math.floor(v_tot - 3.0) + 0.5) if bd_dir_c == "U" else (math.floor(v_tot + 3.0) + 0.5)
-        c_edge_c = (c_line_c - bd_t_cur) if bd_dir_c == "U" else (bd_t_cur - c_line_c)
-        t_rec["bd_alt_label"] = f"Alt {bd_dir_c} {c_line_c:.1f} (+155)"
+        c_line_c = (math.floor(v_tot - 3.0) + 0.5) if true_dir == "U" else (math.floor(v_tot + 3.0) + 0.5)
+        c_edge_c = (c_line_c - bd_t_cur) if true_dir == "U" else (bd_t_cur - c_line_c)
+        t_rec["bd_alt_label"] = f"Alt {true_dir} {c_line_c:.1f} (+155)"
         t_rec["bd_alt_ev_pct"] = calc_ev_pct(lg_eng_c.win_prob(c_edge_c), 155)
 
     # Also enforce Spread Ceiling EV% consistency on EVERY archived spread
@@ -2310,7 +2343,7 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                 entry["final_score"] = f"{entry['away_team']} {a_pts} - {entry['home_team']} {h_pts}"
 
             s_rec = entry.get("spread_record")
-            if s_rec and (s_rec.get("result_tip") == "PENDING" or s_rec.get("result_key_alt") in (None, "", "PENDING") or s_rec.get("miss_by_pts") is None):
+            if s_rec and (s_rec.get("result_tip") == "PENDING" or s_rec.get("result_balls_deep") == "PENDING" or s_rec.get("result_key_alt") in (None, "", "PENDING") or s_rec.get("miss_by_pts") is None):
                 pick_team = s_rec["pick_team"]
                 line = float(s_rec["vegas_closing_line"])
                 team_margin = (h_pts - a_pts) if pick_team == entry["home_team"] else (a_pts - h_pts)
@@ -2347,7 +2380,7 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                 s_rec["result_key_alt"] = "HIT" if ka_diff > 0 else ("PUSH" if ka_diff == 0 else ("BLUE_BALLS" if ka_miss <= 3.0 else "MISS"))
 
             t_rec = entry.get("total_record")
-            if t_rec and (t_rec.get("result_tip") == "PENDING" or t_rec.get("result_safe_total") in (None, "", "PENDING") or t_rec.get("miss_by_pts") is None):
+            if t_rec and (t_rec.get("result_tip") == "PENDING" or t_rec.get("result_balls_deep") == "PENDING" or t_rec.get("result_safe_total") in (None, "", "PENDING") or t_rec.get("miss_by_pts") is None):
                 total_pts = h_pts + a_pts
                 t_line = float(t_rec["vegas_closing_line"])
                 for mode_key, dir_key in [("result_tip", "tip_direction"), ("result_balls_deep", "balls_deep_direction")]:
@@ -2954,7 +2987,7 @@ def build_master_payload():
             "league": "NFL_NCAA",
             "week": 12,
             "last_updated": now_iso,
-            "telemetry_version": "v230_zero_contradiction",
+            "telemetry_version": "v231_bd_enhance_only",
             "ranked_ncaa_teams": live_ranked_ncaa
         },
         "games": games_slate,
@@ -2969,7 +3002,7 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v230 — ZERO-CONTRADICTION BALLS DEEP + ARCHIVE EV/CEILING PARITY)")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v231 — BALLS DEEP ENHANCE-ONLY OVERLAY + ZERO TIP OVERRULES)")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("=========================================================")
 
