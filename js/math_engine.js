@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v322 — PRODUCTION AUDIT LOCK (62-PLAY TOTALS PARITY + NCAA SLOPE MER/TEASERS + SAME-TZ FIX + 4.0% KELLY CAP))
- * Pure OG M1–M9 + Verified ΔQB-Only Filter + Key-Number Alt Buys (MER > 1.15) + Regime Safe Totals (Synced 1:1 with scraper.py v235)
+ * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v323 — 2-KEY-RUNG LADDER IN PERPETUITY + ALWAYS-ON WONG TEASER ENGINE)
+ * Pure OG M1–M9 + Verified ΔQB-Only Filter + Key-Number Alt Buys (MER > 1.15) + Regime Safe Totals (Synced 1:1 with scraper.py v237)
  *  - PURE OG MODULES 1–9 RESTORED: 100% Independent Fair Margin (ZERO Vegas-Spread Anchoring)
  *  - Live Roster/Injury Integration (qb_replacement_delta) + Fixed opp_rz_dvoa Sign
  *  - Strict M1–M9 Firewall in Just the Tip | Full M11–M13 Physics & Sacred Geometry in Balls Deep/DaVinci
@@ -682,199 +682,128 @@ function getVerifiedQbDelta(teamTel) {
 // Tier-2 (1-Dev Safer):      Evaluates exact 6-pt Wong Teasers (-7.5..-8.5 -> -1.5..-2.5; +1.5..+2.5 -> +7.5..+8.5)
 //                            and multi-key 6-pt/7-pt teaser jumps without paying -320 standalone alt juice!
 // ==========================================
+function _getInfiniteKeyNumbers(minK = -105, maxK = 105) {
+    // Generates the infinite football scoring key-number ladder:
+    // ..., -28, -24, -21, -17, -14, -10, -7, -3, 0, 3, 7, 10, 14, 17, 21, 24, 28, ...
+    // (alternating +3 / +4 scoring increments: 7*n and +/-(7*n + 3) in perpetuity)
+    const keySet = new Set([0]);
+    for (let n = 0; ; n++) {
+        const k7 = 7 * n;
+        const k3 = 7 * n + 3;
+        if (k7 > maxK && k3 > maxK) break;
+        if (k7 <= maxK) {
+            keySet.add(k7);
+            keySet.add(-k7);
+        }
+        if (k3 <= maxK) {
+            keySet.add(k3);
+            keySet.add(-k3);
+        }
+    }
+    return Array.from(keySet).filter(k => k >= minK && k <= maxK).sort((a, b) => a - b);
+}
+
+const _PERPETUAL_KEY_NUMBERS = _getInfiniteKeyNumbers(-105, 105);
+
 function _calcKeyMassBonus(lo, hi) {
-    const keyMasses = [
-        [3.0, 0.045], [-3.0, 0.045],
-        [7.0, 0.035], [-7.0, 0.035],
-        [10.0, 0.025], [-10.0, 0.025],
-        [13.0, 0.016], [-13.0, 0.016],
-        [14.0, 0.022], [-14.0, 0.022],
-        [17.0, 0.020], [-17.0, 0.020],
-        [21.0, 0.014], [-21.0, 0.014]
-    ];
+    // Sums historical probability mass across ALL key numbers crossed in [lo, hi) in perpetuity.
+    // Because a push is NOT a win (blue balls), crossing a whole key number at lo (lo <= k < hi) earns full mass credit.
+    const coreWeights = {
+        0: 0.015,
+        3: 0.045,
+        7: 0.035,
+        10: 0.025,
+        13: 0.016,
+        14: 0.022,
+        17: 0.020,
+        21: 0.014
+    };
+    const maxNeeded = Math.max(105, Math.ceil(Math.max(Math.abs(lo), Math.abs(hi))) + 14);
+    const baseKeys = maxNeeded <= 105 ? _PERPETUAL_KEY_NUMBERS : _getInfiniteKeyNumbers(-maxNeeded, maxNeeded);
+    const checkSet = new Set(baseKeys);
+    checkSet.add(-13);
+    checkSet.add(13);
+    const checkKeys = Array.from(checkSet).sort((a, b) => a - b);
+
     let bonus = 0.0;
     let count = 0;
-    for (let i = 0; i < keyMasses.length; i++) {
-        if (lo < keyMasses[i][0] && keyMasses[i][0] < hi) {
-            bonus += keyMasses[i][1];
-            count += 1;
+    for (let i = 0; i < checkKeys.length; i++) {
+        const kn = checkKeys[i];
+        if ((lo - 1e-9) <= kn && kn < (hi - 1e-9)) {
+            const absK = Math.abs(kn);
+            const w = coreWeights[absK] !== undefined ? coreWeights[absK] : 0.010;
+            bonus += w;
+            if (absK !== 13) count += 1;
         }
     }
     return { bonus, count };
 }
 
 function calcKeyNumberAltSpread(baseLine, modelFairLine, baseOdds = -110, logisticK = LOGISTIC_K_TIGHT) {
+    // MODULE 3 UPGRADE (v323): 2-KEY-RUNG LADDER IN PERPETUITY (VARIANCE OF 2) + ALWAYS-ON WONG TEASER.
+    // Every spread buys across STRICTLY TWO full football key-number rungs in perpetuity
+    // (e.g. -20.5 -> -12.5, -14.5 -> -9.5, -8.5 -> -2.5, +2.5 -> +7.5, +5.5 -> +10.5, +13.5 -> +17.5),
+    // and ALWAYS pairs an active 6-pt (-120) or 7-pt (-135) Wong Teaser on every spread.
     const line = Number(baseLine || 0);
     const fair = Number(modelFairLine !== undefined ? modelFairLine : line);
-    const bo = Number(baseOdds || -110);
+    const bo = Number(baseOdds || -110) || -110;
     const probAtK = (gap) => Math.max(0.01, Math.min(0.99, 1.0 / (1.0 + Math.exp(-logisticK * gap))));
     const baseProb = probAtK(line - fair);
 
-    let altLine = line;
-    let altOdds = bo;
-    let keyLabel = "Hold Base";
+    const maxBound = Math.max(105, Math.ceil(Math.abs(line)) + 28);
+    const keys = maxBound <= 105 ? _PERPETUAL_KEY_NUMBERS : _getInfiniteKeyNumbers(-maxBound, maxBound);
+    const above = keys.filter(k => k >= line - 1e-9);
+    const k1 = above[0];
+    const k2 = above[1];
 
-    let tier2Line = null;
-    let tier2Mode = null; // "WONG_6PT" | "TEASER_6PT" | "TEASER_7PT"
-    let tier2Note = "";
+    // Clear k2 cleanly with a .5 hook (never push); when k2 == -14, also clear -13 -> -12.5!
+    const altLine = (k2 === -14) ? -12.5 : Number((k2 + 0.5).toFixed(1));
+    const ptsBought = Number((altLine - line).toFixed(1));
+    let altOdds = -295;
+    if (ptsBought <= 4.0) altOdds = -185;
+    else if (ptsBought <= 5.0) altOdds = -210;
+    else if (ptsBought <= 6.0) altOdds = -235;
+    else if (ptsBought <= 7.0) altOdds = -265;
 
-    if (line < 0) {
-        if (line >= -2.5) {
-            altLine = line; altOdds = bo; keyLabel = "Hold Under Key #3";
-        } else if (line >= -4.5) {
-            altLine = -2.5; altOdds = (line >= -3.5) ? -145 : -165; keyLabel = "Key #3 Buy (-2.5)";
-        } else if (line >= -6.0) {
-            altLine = -2.5; altOdds = -175; keyLabel = "Key #3/#6 Buy (-2.5)";
-        } else if (line >= -6.5) {
-            altLine = -6.5; altOdds = bo; keyLabel = "Hold Under Key #7";
-            tier2Line = -0.5; tier2Mode = "TEASER_6PT"; tier2Note = "1-Dev Safer (-0.5 via 6-pt Teaser)";
-        } else if (line >= -9.5) {
-            altLine = -6.5;
-            altOdds = (line >= -7.5) ? -135 : ((line >= -8.5) ? -155 : -170);
-            keyLabel = "Key #7 Buy (-6.5)";
-            if (line >= -8.5 && line <= -7.5) {
-                tier2Line = Number((line + 6.0).toFixed(1));
-                tier2Mode = "WONG_6PT";
-                tier2Note = `Wong 6-pt Teaser (${tier2Line > 0 ? '+' : ''}${tier2Line.toFixed(1)} crosses 7 & 3)`;
-            } else {
-                tier2Line = Number((line + 7.0).toFixed(1));
-                tier2Mode = "TEASER_7PT";
-                tier2Note = `1-Dev Safer (${tier2Line > 0 ? '+' : ''}${tier2Line.toFixed(1)} via 7-pt Teaser)`;
-            }
-        } else if (line >= -12.5) {
-            altLine = -9.5;
-            altOdds = (line >= -10.5) ? -140 : ((line >= -11.5) ? -160 : -175);
-            keyLabel = "Key #10 Buy (-9.5)";
-            tier2Line = Number((line + 6.0).toFixed(1));
-            tier2Mode = "TEASER_6PT";
-            tier2Note = `1-Dev Safer (${tier2Line > 0 ? '+' : ''}${tier2Line.toFixed(1)} via 6-pt Teaser)`;
-        } else if (line >= -16.0) {
-            altLine = -12.5;
-            altOdds = (line >= -14.0) ? -145 : ((line >= -15.5) ? -165 : -175);
-            keyLabel = "Key #13/#14 Buy (-12.5)";
-            tier2Line = Number((line + 6.0).toFixed(1));
-            tier2Mode = "TEASER_6PT";
-            tier2Note = `1-Dev Safer (${tier2Line > 0 ? '+' : ''}${tier2Line.toFixed(1)} via 6-pt Teaser)`;
-        } else if (line >= -19.5) {
-            altLine = -16.5;
-            altOdds = (line === -16.5) ? bo : ((line >= -17.5) ? -145 : -165);
-            keyLabel = (line === -16.5) ? "Hold Under Key #17" : "Key #17 Buy (-16.5)";
-            tier2Line = Number((line + 6.0).toFixed(1));
-            tier2Mode = "TEASER_6PT";
-            tier2Note = `1-Dev Safer (${tier2Line > 0 ? '+' : ''}${tier2Line.toFixed(1)} via 6-pt Teaser)`;
-        } else if (line >= -24.0) {
-            altLine = (line >= -20.5) ? -16.5 : -20.5;
-            altOdds = (line >= -20.5) ? -170 : ((line >= -22.0) ? -145 : -165);
-            keyLabel = (altLine === -16.5) ? "Key #17 Buy (-16.5)" : "Key #21 Buy (-20.5)";
-            tier2Line = Number((line + 6.0).toFixed(1));
-            tier2Mode = "TEASER_6PT";
-            tier2Note = `1-Dev Safer (${tier2Line > 0 ? '+' : ''}${tier2Line.toFixed(1)} via 6-pt Teaser)`;
-        } else {
-            altLine = Math.floor(line + 3.5) + 0.5;
-            altOdds = -160;
-            keyLabel = `Blowout Fav Buy (${altLine > 0 ? '+' : ''}${altLine.toFixed(1)})`;
-            tier2Line = Number((line + 6.0).toFixed(1));
-            tier2Mode = "TEASER_6PT";
-            tier2Note = `1-Dev Safer (${tier2Line > 0 ? '+' : ''}${tier2Line.toFixed(1)} via 6-pt Teaser)`;
-        }
-    } else {
-        if (line <= 3.0) {
-            altLine = 3.5;
-            altOdds = (line >= 2.0) ? -135 : -160;
-            keyLabel = "Key #3 Dog Buy (+3.5)";
-            if (line >= 1.5 && line <= 2.5) {
-                tier2Line = Number((line + 6.0).toFixed(1));
-                tier2Mode = "WONG_6PT";
-                tier2Note = `Wong 6-pt Teaser (+${tier2Line.toFixed(1)} crosses 3 & 7)`;
-            } else if (line >= 0.5 && line < 1.5) {
-                tier2Line = Number((line + 7.0).toFixed(1));
-                tier2Mode = "TEASER_7PT";
-                tier2Note = `1-Dev Safer (+${tier2Line.toFixed(1)} via 7-pt Teaser)`;
-            }
-        } else if (line <= 3.5) {
-            altLine = 3.5; altOdds = bo; keyLabel = "Hold Over Key #3";
-            tier2Line = 9.5; tier2Mode = "TEASER_6PT"; tier2Note = "1-Dev Safer (+9.5 via 6-pt Teaser)";
-        } else if (line <= 6.5) {
-            altLine = 7.5;
-            altOdds = (line >= 6.0) ? -140 : ((line >= 4.5) ? -155 : -170);
-            keyLabel = "Key #7 Dog Buy (+7.5)";
-            tier2Line = Number((line + 6.0).toFixed(1));
-            tier2Mode = "TEASER_6PT";
-            tier2Note = `1-Dev Safer (+${tier2Line.toFixed(1)} via 6-pt Teaser)`;
-        } else if (line <= 7.5) {
-            altLine = 7.5; altOdds = bo; keyLabel = "Hold Over Key #7";
-            tier2Line = 13.5; tier2Mode = "TEASER_6PT"; tier2Note = "1-Dev Safer (+13.5 via 6-pt Teaser)";
-        } else if (line <= 10.0) {
-            altLine = 10.5;
-            altOdds = (line >= 9.0) ? -140 : -160;
-            keyLabel = "Key #10 Dog Buy (+10.5)";
-            tier2Line = Number((line + 6.0).toFixed(1));
-            tier2Mode = "TEASER_6PT";
-            tier2Note = `1-Dev Safer (+${tier2Line.toFixed(1)} via 6-pt Teaser)`;
-        } else if (line <= 13.0) {
-            altLine = 13.5;
-            altOdds = (line >= 12.0) ? -140 : -160;
-            keyLabel = "Key #13 Dog Buy (+13.5)";
-            tier2Line = Number((line + 6.0).toFixed(1));
-            tier2Mode = "TEASER_6PT";
-            tier2Note = `1-Dev Safer (+${tier2Line.toFixed(1)} via 6-pt Teaser)`;
-        } else if (line <= 13.5) {
-            altLine = 14.5; altOdds = -130; keyLabel = "Key #14 Dog Buy (+14.5)";
-            tier2Line = 19.5; tier2Mode = "TEASER_6PT"; tier2Note = "1-Dev Safer (+19.5 via 6-pt Teaser)";
-        } else if (line <= 17.0) {
-            altLine = 17.5;
-            altOdds = (line >= 16.0) ? -140 : -160;
-            keyLabel = "Key #17 Dog Buy (+17.5)";
-            tier2Line = Number((line + 6.0).toFixed(1));
-            tier2Mode = "TEASER_6PT";
-            tier2Note = `1-Dev Safer (+${tier2Line.toFixed(1)} via 6-pt Teaser)`;
-        } else if (line <= 20.5) {
-            altLine = 21.5;
-            altOdds = (line >= 19.0) ? -145 : -165;
-            keyLabel = "Key #21 Dog Buy (+21.5)";
-            tier2Line = Number((line + 6.0).toFixed(1));
-            tier2Mode = "TEASER_6PT";
-            tier2Note = `1-Dev Safer (+${tier2Line.toFixed(1)} via 6-pt Teaser)`;
-        } else {
-            altLine = Math.floor(line + 3.5) + 0.5;
-            altOdds = -160;
-            keyLabel = `Blowout Dog Floor (+${altLine.toFixed(1)})`;
-            tier2Line = Number((line + 6.0).toFixed(1));
-            tier2Mode = "TEASER_6PT";
-            tier2Note = `1-Dev Safer (+${tier2Line.toFixed(1)} via 6-pt Teaser)`;
-        }
-    }
+    const k1Lbl = k1 !== 0 ? `#${Math.abs(k1)}` : "#0";
+    const k2Lbl = (k2 === -14) ? "#13/#14" : (k2 !== 0 ? `#${Math.abs(k2)}` : "#0");
+    const fmtAlt = `${altLine > 0 ? '+' : ''}${altLine.toFixed(1)}`;
+    const keyLabel = `2-Key Buy (${k1Lbl}/${k2Lbl} -> ${fmtAlt})`;
 
     const km1 = _calcKeyMassBonus(Math.min(line, altLine), Math.max(line, altLine));
-    const altProb = Math.min(0.95, Math.max(0.05, probAtK(altLine - fair) + km1.bonus));
+    const altProb = Math.min(0.96, Math.max(0.05, probAtK(altLine - fair) + km1.bonus));
     const beBase = calcImpliedProbability(bo);
     const beAlt = calcImpliedProbability(altOdds);
     const dTax = Math.max(0.01, beAlt - beBase);
     const merRatio = (altLine !== line) ? Number(((altProb - baseProb) / dTax).toFixed(2)) : 1.0;
     const evObj = calcExpectedValueAndKelly(altProb, altOdds);
-    const fmtAlt = `${altLine > 0 ? '+' : ''}${altLine.toFixed(1)}`;
 
-    // Tier-2 (1-Deviation Safer / Wong 6-pt Teaser) Gate
-    let tier2ProbPct = null;
-    let tier2EvPct = null;
-    let tier2Approved = false;
-    let tier2Label = "";
-    if (tier2Line !== null) {
-        const km2 = _calcKeyMassBonus(Math.min(line, tier2Line), Math.max(line, tier2Line));
-        const t2Prob = Math.min(0.96, Math.max(0.05, probAtK(tier2Line - fair) + km2.bonus));
-        tier2ProbPct = Number((t2Prob * 100).toFixed(1));
-        const t2TicketDec = americanToDecimal(tier2Mode === "TEASER_7PT" ? -135 : -120);
-        tier2EvPct = Number((((t2Prob * t2Prob) * t2TicketDec - 1.0) * 100.0).toFixed(2));
-        const onModelSide = (line - fair) >= -0.25;
-        tier2Approved = Boolean(onModelSide && (
-            (tier2Mode === "WONG_6PT" && tier2EvPct > 0) ||
-            (km2.count >= 2 && tier2EvPct >= 8.0)
-        ));
-        const fmtT2 = `${tier2Line > 0 ? '+' : ''}${tier2Line.toFixed(1)}`;
-        tier2Label = (tier2Mode === "WONG_6PT")
-            ? `🎯 WONG TEASER (${fmtT2} via 6-pt • ${tier2ProbPct}% Win • ${tier2EvPct > 0 ? '+' : ''}${tier2EvPct}% 2L EV)`
-            : `🛡️ 1-DEV SAFER (${fmtT2} via ${tier2Mode === "TEASER_7PT" ? '7-pt' : '6-pt'} Teaser • ${tier2ProbPct}% Win • ${tier2EvPct > 0 ? '+' : ''}${tier2EvPct}% 2L EV)`;
+    // ALWAYS-ON WONG TEASER: 6-pt (-120) if it crosses >=2 keys without landing on a push; else 7-pt (-135)
+    const t6 = Number((line + 6.0).toFixed(1));
+    const crossed6 = keys.filter(k => (line - 1e-9) <= k && k < (t6 - 1e-9));
+    const landsOnKey6 = keys.some(k => Math.abs(t6 - k) < 1e-9);
+    let tier2Line, tier2Mode, tPtsStr;
+    if (crossed6.length >= 2 && !landsOnKey6) {
+        tier2Line = t6;
+        tier2Mode = "WONG_6PT";
+        tPtsStr = "6-pt";
+    } else {
+        tier2Line = Number((line + 7.0).toFixed(1));
+        tier2Mode = "WONG_7PT";
+        tPtsStr = "7-pt";
     }
+
+    const km2 = _calcKeyMassBonus(Math.min(line, tier2Line), Math.max(line, tier2Line));
+    const t2Prob = Math.min(0.96, Math.max(0.05, probAtK(tier2Line - fair) + km2.bonus));
+    const tier2ProbPct = Number((t2Prob * 100).toFixed(1));
+    const t2TicketDec = americanToDecimal(tier2Mode === "WONG_7PT" ? -135 : -120);
+    const tier2EvPct = Number((((t2Prob * t2Prob) * t2TicketDec - 1.0) * 100.0).toFixed(2));
+    const onModelSide = (line - fair) >= -0.25;
+    // Wong Teaser ALWAYS plays on the model's favored side!
+    const tier2Approved = Boolean(onModelSide);
+    const fmtT2 = `${tier2Line > 0 ? '+' : ''}${tier2Line.toFixed(1)}`;
+    const tier2Note = `Wong ${tPtsStr} Teaser (${fmtT2} crosses ${km2.count} keys)`;
+    const tier2Label = `🎯 WONG TEASER (${fmtT2} via ${tPtsStr} • ${tier2ProbPct}% Win • ${tier2EvPct > 0 ? '+' : ''}${tier2EvPct}% 2L EV)`;
 
     return {
         altLine: Number(altLine.toFixed(1)),
@@ -1254,4 +1183,4 @@ function getLeagueEngine(league = "NFL") {
     return (String(league || "NFL").toUpperCase() === "NCAA") ? DixPixNcaaEngine : DixPixNflEngine;
 }
 
-// === END OF MATH_ENGINE.JS (v322) ===
+// === END OF MATH_ENGINE.JS (v323) ===
