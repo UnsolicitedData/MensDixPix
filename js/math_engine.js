@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v321 — FINAL PRODUCTION LOCK (0.618x NCAA SPREADS + 0.786x NCAA TOTALS + ZERO FPI))
- * Pure OG M1–M9 + Verified ΔQB-Only Filter + Key-Number Alt Buys (MER > 1.15) + Regime Safe Totals (Synced 1:1 with scraper.py v234)
+ * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v322 — PRODUCTION AUDIT LOCK (62-PLAY TOTALS PARITY + NCAA SLOPE MER/TEASERS + SAME-TZ FIX + 4.0% KELLY CAP))
+ * Pure OG M1–M9 + Verified ΔQB-Only Filter + Key-Number Alt Buys (MER > 1.15) + Regime Safe Totals (Synced 1:1 with scraper.py v235)
  *  - PURE OG MODULES 1–9 RESTORED: 100% Independent Fair Margin (ZERO Vegas-Spread Anchoring)
  *  - Live Roster/Injury Integration (qb_replacement_delta) + Fixed opp_rz_dvoa Sign
  *  - Strict M1–M9 Firewall in Just the Tip | Full M11–M13 Physics & Sacred Geometry in Balls Deep/DaVinci
@@ -68,11 +68,14 @@ function calcExpectedValueAndKelly(modelProb, americanOdds) {
     const fullKelly = b > 0 ? ((modelProb * b) - (1 - modelProb)) / b : 0;
     const rawQuarterKellyPct = fullKelly > 0 ? (fullKelly * 0.25 * 100) : 0;
 
+    const isKellyCapped = rawQuarterKellyPct > QUARTER_KELLY_MAX_CAP_PCT;
+    const cappedQuarterKellyPct = isKellyCapped ? QUARTER_KELLY_MAX_CAP_PCT : rawQuarterKellyPct;
+
     return {
         evPercentage: expectedValue * 100,
-        quarterKellyStakePct: rawQuarterKellyPct,
+        quarterKellyStakePct: cappedQuarterKellyPct,
         rawQuarterKellyPct: rawQuarterKellyPct,
-        isKellyCapped: false
+        isKellyCapped: isKellyCapped
     };
 }
 
@@ -267,7 +270,7 @@ function calcCircadianStrain(circPayload, kickoffLocalHour) {
     const dAccl = circPayload.acclimation_days || 1;
 
     const bodyClockKickoff = (kickoffLocalHour || 13) - tzShift;
-    const troughPenalty = Math.max(0, 13 - bodyClockKickoff);
+    const troughPenalty = absTz > 0 ? Math.max(0, 13 - bodyClockKickoff) : 0;
 
     const alpha = 0.45, gamma = 0.35, beta = 0.30;
     const phiCirc = alpha * (absTz * omegaDir * Math.exp(-gamma * dAccl)) + (beta * troughPenalty);
@@ -700,11 +703,12 @@ function _calcKeyMassBonus(lo, hi) {
     return { bonus, count };
 }
 
-function calcKeyNumberAltSpread(baseLine, modelFairLine, baseOdds = -110) {
+function calcKeyNumberAltSpread(baseLine, modelFairLine, baseOdds = -110, logisticK = LOGISTIC_K_TIGHT) {
     const line = Number(baseLine || 0);
     const fair = Number(modelFairLine !== undefined ? modelFairLine : line);
     const bo = Number(baseOdds || -110);
-    const baseProb = calcPointGapWinProb(line - fair);
+    const probAtK = (gap) => Math.max(0.01, Math.min(0.99, 1.0 / (1.0 + Math.exp(-logisticK * gap))));
+    const baseProb = probAtK(line - fair);
 
     let altLine = line;
     let altOdds = bo;
@@ -842,7 +846,7 @@ function calcKeyNumberAltSpread(baseLine, modelFairLine, baseOdds = -110) {
     }
 
     const km1 = _calcKeyMassBonus(Math.min(line, altLine), Math.max(line, altLine));
-    const altProb = Math.min(0.95, Math.max(0.05, calcPointGapWinProb(altLine - fair) + km1.bonus));
+    const altProb = Math.min(0.95, Math.max(0.05, probAtK(altLine - fair) + km1.bonus));
     const beBase = calcImpliedProbability(bo);
     const beAlt = calcImpliedProbability(altOdds);
     const dTax = Math.max(0.01, beAlt - beBase);
@@ -857,7 +861,7 @@ function calcKeyNumberAltSpread(baseLine, modelFairLine, baseOdds = -110) {
     let tier2Label = "";
     if (tier2Line !== null) {
         const km2 = _calcKeyMassBonus(Math.min(line, tier2Line), Math.max(line, tier2Line));
-        const t2Prob = Math.min(0.96, Math.max(0.05, calcPointGapWinProb(tier2Line - fair) + km2.bonus));
+        const t2Prob = Math.min(0.96, Math.max(0.05, probAtK(tier2Line - fair) + km2.bonus));
         tier2ProbPct = Number((t2Prob * 100).toFixed(1));
         const t2TicketDec = americanToDecimal(tier2Mode === "TEASER_7PT" ? -135 : -120);
         tier2EvPct = Number((((t2Prob * t2Prob) * t2TicketDec - 1.0) * 100.0).toFixed(2));
@@ -1150,6 +1154,49 @@ function calcMasterFibonacciAggregate(moduleScores, fibLookupFn = 13, intensityS
     };
 }
 
+// ==========================================
+// SHARED INDEPENDENT TOTAL HELPER (v322 — 62.32-PLAY PARITY WITH SCRAPER.PY v235)
+// ==========================================
+function calcIndependentTotalTip(homeTel = {}, awayTel = {}, gameLeague = "NFL", windMph = 0.0, delayTotalDragPts = 0.0) {
+    const windPenalty = Math.max(0, (Number(windMph || 0) - 10.0) * 0.25);
+    const totalIntercept = (gameLeague === "NCAA") ? 51.450 : 42.986;
+    const delayDrag = Number(delayTotalDragPts || 0);
+
+    const hasSplitEpa = (
+        homeTel.off_epa_per_play !== undefined && homeTel.off_epa_per_play !== null &&
+        homeTel.def_epa_per_play !== undefined && homeTel.def_epa_per_play !== null &&
+        awayTel.off_epa_per_play !== undefined && awayTel.off_epa_per_play !== null &&
+        awayTel.def_epa_per_play !== undefined && awayTel.def_epa_per_play !== null
+    );
+    const hasFpiOffDef = (
+        homeTel.off_eff !== undefined && homeTel.off_eff !== null &&
+        homeTel.def_eff !== undefined && homeTel.def_eff !== null &&
+        awayTel.off_eff !== undefined && awayTel.off_eff !== null &&
+        awayTel.def_eff !== undefined && awayTel.def_eff !== null
+    );
+
+    if (hasSplitEpa) {
+        const maxTotCap = (gameLeague === "NCAA") ? 78.0 : 65.0;
+        const epaTotDelta = (GOLDEN_PLAY_SCALER * GOLDEN_RATIO_PHI * 0.5) * (
+            Number(homeTel.off_epa_per_play) + Number(homeTel.def_epa_per_play) +
+            Number(awayTel.off_epa_per_play) + Number(awayTel.def_epa_per_play)
+        );
+        return Number(Math.max(28.0, Math.min(maxTotCap, totalIntercept + epaTotDelta - windPenalty + delayDrag)).toFixed(1));
+    }
+    if (hasFpiOffDef) {
+        const effScaler = (gameLeague === "NCAA") ? 0.16 : 0.12;
+        const effDelta = effScaler * (
+            (Number(homeTel.off_eff) - 50.0) + (Number(awayTel.off_eff) - 50.0) -
+            (Number(homeTel.def_eff) - 50.0) - (Number(awayTel.def_eff) - 50.0)
+        );
+        return Number(Math.max(28.0, Math.min(78.0, totalIntercept + effDelta - windPenalty + delayDrag)).toFixed(1));
+    }
+    const epaSum = Math.max(-0.20, Math.min(0.20, (Number(homeTel.net_epa_per_play || 0)) + (Number(awayTel.net_epa_per_play || 0))));
+    const epaTotalPts = epaSum * GOLDEN_PLAY_SCALER;
+    const rzTotalPts = (Number(homeTel.opp_rz_dvoa || 0) + Number(awayTel.opp_rz_dvoa || 0)) * 10.0;
+    return Number(Math.max(28.0, Math.min(78.0, totalIntercept + epaTotalPts + rzTotalPts - windPenalty + delayDrag)).toFixed(1));
+}
+
 // ==============================================================================
 // DEDICATED DUAL-ENGINE ARCHITECTURE (v317 — SEPARATE NFL ENGINE & NCAA ENGINE)
 //   - DixPixNflEngine:  62.32-play NFL volume, tight logistic spread slope (1.0x),
@@ -1195,19 +1242,8 @@ const DixPixNcaaEngine = {
         return Math.max(0.01, Math.min(0.99, p));
     },
     keyAlt(baseLine, modelFairLine, baseOdds = -110) {
-        const res = calcKeyNumberAltSpread(baseLine, modelFairLine, baseOdds);
-        const line = Number(baseLine || 0);
-        const fair = Number(modelFairLine !== undefined ? modelFairLine : line);
-        const altP = this.winProb(res.altLine - fair);
-        const km1 = _calcKeyMassBonus(Math.min(line, res.altLine), Math.max(line, res.altLine));
-        const adjP = Math.min(0.95, Math.max(0.05, altP + km1.bonus));
-        const evObj = calcExpectedValueAndKelly(adjP, res.altOdds);
-        return Object.assign({}, res, {
-            altProb: adjP,
-            altProbPct: Number((adjP * 100.0).toFixed(1)),
-            altEvPct: Number(evObj.evPercentage.toFixed(2)),
-            engineLeague: "NCAA"
-        });
+        const res = calcKeyNumberAltSpread(baseLine, modelFairLine, baseOdds, this.logisticK);
+        return Object.assign({}, res, { engineLeague: "NCAA" });
     },
     safeTotal(vegasTotal, ogTipTotal, envPayload = {}, circPayload = {}, elevMatrix = null, hasBackupQb = false) {
         return calcReportCalibratedTotal(vegasTotal, ogTipTotal, envPayload, circPayload, elevMatrix, "NCAA", hasBackupQb);
@@ -1218,4 +1254,4 @@ function getLeagueEngine(league = "NFL") {
     return (String(league || "NFL").toUpperCase() === "NCAA") ? DixPixNcaaEngine : DixPixNflEngine;
 }
 
-// === END OF MATH_ENGINE.JS (v321) ===
+// === END OF MATH_ENGINE.JS (v322) ===
