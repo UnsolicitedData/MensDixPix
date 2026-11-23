@@ -2,15 +2,23 @@ name: DixPix Auto-Scraper
 
 on:
   schedule:
-    # Standard 8-hour pulse (change to */4 if you want 4-hour updates)
+    # Standard 8-hour pulse (00:00, 08:00, 16:00 UTC)
     - cron: '0 */8 * * *'
-    # Sunday Early Slate Closing Line Lock: 12:00 PM EST (17:00 UTC)
-    - cron: '0 17 * * 0'
-    # Sunday Late Slate Closing Line Lock: 4:00 PM EST (21:00 UTC)
-    - cron: '0 21 * * 0'
-    # Primetime Kickoff Locks (TNF, SNF, MNF): 7:50 PM EST (00:50 UTC next day)
-    - cron: '50 0 * * 1,2,5'
+    # Saturday NCAA Closing Line Locks (DST-safe for both EDT & EST):
+    # 11:30 AM EDT / 10:30 AM EST (Noon slate) & 3:00 PM EDT / 2:00 PM EST (3:30 PM slate)
+    - cron: '30 15 * * 6'
+    - cron: '0 19 * * 6'
+    # Sunday NFL Early Closing Lock: 12:45 PM EDT / 11:45 AM EST (after 11:30 AM inactives, before 1:00 PM kickoff year-round)
+    - cron: '45 16 * * 0'
+    # Sunday NFL Late Closing Lock: 3:45 PM EDT / 2:45 PM EST (after 2:35 PM inactives, before 4:05 PM kickoff year-round)
+    - cron: '45 19 * * 0'
+    # Primetime NFL Locks (TNF Thu, SNF Sun, MNF Mon): 7:55 PM EDT / 6:55 PM EST (after 6:45 PM inactives, before 8:15 PM kickoff year-round)
+    - cron: '55 23 * * 0,1,4'
   workflow_dispatch:
+
+concurrency:
+  group: dixpix-auto-scraper
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -44,6 +52,6 @@ jobs:
           git add data.json
           git diff --quiet && git diff --staged --quiet || (
             git commit -m "Auto-update calibrated odds & graded ledger"
-            git pull --rebase -X ours origin main
+            git pull --rebase -X theirs origin main
             git push
           )
