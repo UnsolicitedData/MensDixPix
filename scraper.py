@@ -1,5 +1,5 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v236 — PRODUCTION AUDIT LOCK: SLASH COMPLETION-ATTEMPTS + TRUE YPP + MEAN-CENTERED NCAA TOTALS)
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v237 — 2-KEY-RUNG LADDER IN PERPETUITY + ALWAYS-ON WONG TEASER ENGINE)
 Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
   1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
   2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
@@ -1477,26 +1477,59 @@ def _implied_prob_am(odds):
     o = float(odds or -110)
     return (abs(o) / (abs(o) + 100.0)) if o < 0 else (100.0 / (o + 100.0))
 
+def _get_infinite_key_numbers(min_k=-105, max_k=105):
+    """Generates the infinite football scoring key-number ladder:
+    ..., -28, -24, -21, -17, -14, -10, -7, -3, 0, 3, 7, 10, 14, 17, 21, 24, 28, ...
+    (alternating +3 / +4 scoring increments: 7*n and +/-(7*n + 3) in perpetuity)."""
+    keys = {0.0}
+    n = 0
+    while True:
+        k7 = 7 * n
+        k3 = 7 * n + 3
+        if k7 > max_k and k3 > max_k:
+            break
+        if k7 <= max_k:
+            keys.add(float(k7))
+            keys.add(float(-k7))
+        if k3 <= max_k:
+            keys.add(float(k3))
+            keys.add(float(-k3))
+        n += 1
+    return sorted(k for k in keys if min_k <= k <= max_k)
+
+_PERPETUAL_KEY_NUMBERS = _get_infinite_key_numbers(-105, 105)
+
 def _calc_key_mass_bonus(lo, hi):
-    masses = (
-        (3.0, 0.045), (-3.0, 0.045),
-        (7.0, 0.035), (-7.0, 0.035),
-        (10.0, 0.025), (-10.0, 0.025),
-        (13.0, 0.016), (-13.0, 0.016),
-        (14.0, 0.022), (-14.0, 0.022),
-        (17.0, 0.020), (-17.0, 0.020),
-        (21.0, 0.014), (-21.0, 0.014),
-    )
+    """Sums historical probability mass across ALL key numbers crossed in [lo, hi) in perpetuity.
+    Because a push is NOT a win (blue balls), crossing a whole key number at lo (lo <= k < hi) earns full mass credit."""
+    core_weights = {
+        0.0: 0.015,
+        3.0: 0.045,
+        7.0: 0.035,
+        10.0: 0.025,
+        13.0: 0.016,
+        14.0: 0.022,
+        17.0: 0.020,
+        21.0: 0.014,
+    }
     bonus = 0.0
     cnt = 0
-    for kn, w in masses:
-        if lo < kn < hi:
+    # Check all perpetual keys plus secondary +/-13 cluster
+    check_keys = sorted(set(_PERPETUAL_KEY_NUMBERS) | {-13.0, 13.0})
+    for kn in check_keys:
+        if (lo - 1e-9) <= kn < (hi - 1e-9):
+            w = core_weights.get(abs(kn), 0.010)
             bonus += w
-            cnt += 1
+            # Count primary key rungs (exclude secondary 13 from rung count so 13/14 acts as one scoring cluster)
+            if abs(kn) != 13.0:
+                cnt += 1
     return bonus, cnt
 
 def calc_key_number_alt_spread(base_line, model_fair_line, base_odds=-110, logistic_k=LOGISTIC_K_TIGHT):
-    """MODULE 3 FULL-BOARD KEY-NUMBER ALT-BUY + 1-DEV SAFER WONG ENGINE (1:1 parity with math_engine.js v316)."""
+    """MODULE 3 UPGRADE (v237): 2-KEY-RUNG LADDER IN PERPETUITY (VARIANCE OF 2) + ALWAYS-ON WONG TEASER.
+    Every spread buys across STRICTLY TWO full football key-number rungs in perpetuity
+    (e.g. -20.5 -> -12.5, -14.5 -> -9.5, -8.5 -> -2.5, +2.5 -> +7.5, +5.5 -> +10.5, +13.5 -> +17.5),
+    and ALWAYS pairs an active 6-pt (-120) or 7-pt (-135) Wong Teaser on every spread."""
     line = _f(base_line, 0.0)
     fair = _f(model_fair_line if model_fair_line is not None else line, line)
     bo = _i(base_odds, -110)
@@ -1504,157 +1537,67 @@ def calc_key_number_alt_spread(base_line, model_fair_line, base_odds=-110, logis
         bo = -110
     base_prob = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-logistic_k * (line - fair)))))
 
-    tier2_line = None
-    tier2_mode = None
-    tier2_note = ""
+    # Dynamic key-number window in perpetuity (handles any line magnitude, even +/- 60+)
+    max_bound = max(105, int(abs(line)) + 28)
+    keys = _PERPETUAL_KEY_NUMBERS if max_bound <= 105 else _get_infinite_key_numbers(-max_bound, max_bound)
+    above = [k for k in keys if k >= line - 1e-9]
+    k1, k2 = above[0], above[1]
 
-    if line < 0:
-        if line >= -2.5:
-            alt_line, alt_odds, key_lbl = line, bo, "Hold Under Key #3"
-        elif line >= -4.5:
-            alt_line, alt_odds, key_lbl = -2.5, (-145 if line >= -3.5 else -165), "Key #3 Buy (-2.5)"
-        elif line >= -6.0:
-            alt_line, alt_odds, key_lbl = -2.5, -175, "Key #3/#6 Buy (-2.5)"
-        elif line >= -6.5:
-            alt_line, alt_odds, key_lbl = -6.5, bo, "Hold Under Key #7"
-            tier2_line, tier2_mode, tier2_note = -0.5, "TEASER_6PT", "1-Dev Safer (-0.5 via 6-pt Teaser)"
-        elif line >= -9.5:
-            alt_line = -6.5
-            alt_odds = -135 if line >= -7.5 else (-155 if line >= -8.5 else -170)
-            key_lbl = "Key #7 Buy (-6.5)"
-            if -8.5 <= line <= -7.5:
-                tier2_line = round(line + 6.0, 1)
-                tier2_mode = "WONG_6PT"
-                tier2_note = f"Wong 6-pt Teaser ({'+' if tier2_line > 0 else ''}{tier2_line:.1f} crosses 7 & 3)"
-            else:
-                tier2_line = round(line + 7.0, 1)
-                tier2_mode = "TEASER_7PT"
-                tier2_note = f"1-Dev Safer ({'+' if tier2_line > 0 else ''}{tier2_line:.1f} via 7-pt Teaser)"
-        elif line >= -12.5:
-            alt_line = -9.5
-            alt_odds = -140 if line >= -10.5 else (-160 if line >= -11.5 else -175)
-            key_lbl = "Key #10 Buy (-9.5)"
-            tier2_line = round(line + 6.0, 1)
-            tier2_mode = "TEASER_6PT"
-            tier2_note = f"1-Dev Safer ({'+' if tier2_line > 0 else ''}{tier2_line:.1f} via 6-pt Teaser)"
-        elif line >= -16.0:
-            alt_line = -12.5
-            alt_odds = -145 if line >= -14.0 else (-165 if line >= -15.5 else -175)
-            key_lbl = "Key #13/#14 Buy (-12.5)"
-            tier2_line = round(line + 6.0, 1)
-            tier2_mode = "TEASER_6PT"
-            tier2_note = f"1-Dev Safer ({'+' if tier2_line > 0 else ''}{tier2_line:.1f} via 6-pt Teaser)"
-        elif line >= -19.5:
-            alt_line = -16.5
-            alt_odds = bo if line == -16.5 else (-145 if line >= -17.5 else -165)
-            key_lbl = "Hold Under Key #17" if line == -16.5 else "Key #17 Buy (-16.5)"
-            tier2_line = round(line + 6.0, 1)
-            tier2_mode = "TEASER_6PT"
-            tier2_note = f"1-Dev Safer ({'+' if tier2_line > 0 else ''}{tier2_line:.1f} via 6-pt Teaser)"
-        elif line >= -24.0:
-            alt_line = -16.5 if line >= -20.5 else -20.5
-            alt_odds = -170 if line >= -20.5 else (-145 if line >= -22.0 else -165)
-            key_lbl = "Key #17 Buy (-16.5)" if alt_line == -16.5 else "Key #21 Buy (-20.5)"
-            tier2_line = round(line + 6.0, 1)
-            tier2_mode = "TEASER_6PT"
-            tier2_note = f"1-Dev Safer ({'+' if tier2_line > 0 else ''}{tier2_line:.1f} via 6-pt Teaser)"
-        else:
-            alt_line = math.floor(line + 3.5) + 0.5
-            alt_odds, key_lbl = -160, f"Blowout Fav Buy ({'+' if alt_line > 0 else ''}{alt_line:.1f})"
-            tier2_line = round(line + 6.0, 1)
-            tier2_mode = "TEASER_6PT"
-            tier2_note = f"1-Dev Safer ({'+' if tier2_line > 0 else ''}{tier2_line:.1f} via 6-pt Teaser)"
+    # Clear k2 cleanly with a .5 hook (never push); when k2 == -14, also clear -13 -> -12.5!
+    if k2 == -14.0:
+        alt_line = -12.5
     else:
-        if line <= 3.0:
-            alt_line = 3.5
-            alt_odds = -135 if line >= 2.0 else -160
-            key_lbl = "Key #3 Dog Buy (+3.5)"
-            if 1.5 <= line <= 2.5:
-                tier2_line = round(line + 6.0, 1)
-                tier2_mode = "WONG_6PT"
-                tier2_note = f"Wong 6-pt Teaser (+{tier2_line:.1f} crosses 3 & 7)"
-            elif 0.5 <= line < 1.5:
-                tier2_line = round(line + 7.0, 1)
-                tier2_mode = "TEASER_7PT"
-                tier2_note = f"1-Dev Safer (+{tier2_line:.1f} via 7-pt Teaser)"
-        elif line <= 3.5:
-            alt_line, alt_odds, key_lbl = 3.5, bo, "Hold Over Key #3"
-            tier2_line, tier2_mode, tier2_note = 9.5, "TEASER_6PT", "1-Dev Safer (+9.5 via 6-pt Teaser)"
-        elif line <= 6.5:
-            alt_line = 7.5
-            alt_odds = -140 if line >= 6.0 else (-155 if line >= 4.5 else -170)
-            key_lbl = "Key #7 Dog Buy (+7.5)"
-            tier2_line = round(line + 6.0, 1)
-            tier2_mode = "TEASER_6PT"
-            tier2_note = f"1-Dev Safer (+{tier2_line:.1f} via 6-pt Teaser)"
-        elif line <= 7.5:
-            alt_line, alt_odds, key_lbl = 7.5, bo, "Hold Over Key #7"
-            tier2_line, tier2_mode, tier2_note = 13.5, "TEASER_6PT", "1-Dev Safer (+13.5 via 6-pt Teaser)"
-        elif line <= 10.0:
-            alt_line = 10.5
-            alt_odds = -140 if line >= 9.0 else -160
-            key_lbl = "Key #10 Dog Buy (+10.5)"
-            tier2_line = round(line + 6.0, 1)
-            tier2_mode = "TEASER_6PT"
-            tier2_note = f"1-Dev Safer (+{tier2_line:.1f} via 6-pt Teaser)"
-        elif line <= 13.0:
-            alt_line = 13.5
-            alt_odds = -140 if line >= 12.0 else -160
-            key_lbl = "Key #13 Dog Buy (+13.5)"
-            tier2_line = round(line + 6.0, 1)
-            tier2_mode = "TEASER_6PT"
-            tier2_note = f"1-Dev Safer (+{tier2_line:.1f} via 6-pt Teaser)"
-        elif line <= 13.5:
-            alt_line, alt_odds, key_lbl = 14.5, -130, "Key #14 Dog Buy (+14.5)"
-            tier2_line, tier2_mode, tier2_note = 19.5, "TEASER_6PT", "1-Dev Safer (+19.5 via 6-pt Teaser)"
-        elif line <= 17.0:
-            alt_line = 17.5
-            alt_odds = -140 if line >= 16.0 else -160
-            key_lbl = "Key #17 Dog Buy (+17.5)"
-            tier2_line = round(line + 6.0, 1)
-            tier2_mode = "TEASER_6PT"
-            tier2_note = f"1-Dev Safer (+{tier2_line:.1f} via 6-pt Teaser)"
-        elif line <= 20.5:
-            alt_line = 21.5
-            alt_odds = -145 if line >= 19.0 else -165
-            key_lbl = "Key #21 Dog Buy (+21.5)"
-            tier2_line = round(line + 6.0, 1)
-            tier2_mode = "TEASER_6PT"
-            tier2_note = f"1-Dev Safer (+{tier2_line:.1f} via 6-pt Teaser)"
-        else:
-            alt_line = math.floor(line + 3.5) + 0.5
-            alt_odds, key_lbl = -160, f"Blowout Dog Floor (+{alt_line:.1f})"
-            tier2_line = round(line + 6.0, 1)
-            tier2_mode = "TEASER_6PT"
-            tier2_note = f"1-Dev Safer (+{tier2_line:.1f} via 6-pt Teaser)"
+        alt_line = round(k2 + 0.5, 1)
+
+    pts_bought = round(alt_line - line, 1)
+    if pts_bought <= 4.0:
+        alt_odds = -185
+    elif pts_bought <= 5.0:
+        alt_odds = -210
+    elif pts_bought <= 6.0:
+        alt_odds = -235
+    elif pts_bought <= 7.0:
+        alt_odds = -265
+    else:
+        alt_odds = -295
+
+    k1_lbl = f"#{int(abs(k1))}" if k1 != 0 else "#0"
+    k2_lbl = "#13/#14" if k2 == -14.0 else (f"#{int(abs(k2))}" if k2 != 0 else "#0")
+    fmt_alt = f"{'+' if alt_line > 0 else ''}{alt_line:.1f}"
+    key_lbl = f"2-Key Buy ({k1_lbl}/{k2_lbl} -> {fmt_alt})"
 
     raw_alt_p = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-logistic_k * (alt_line - fair)))))
     bonus1, _ = _calc_key_mass_bonus(min(line, alt_line), max(line, alt_line))
-    alt_prob = min(0.95, max(0.05, raw_alt_p + bonus1))
+    alt_prob = min(0.96, max(0.05, raw_alt_p + bonus1))
     d_tax = max(0.01, _implied_prob_am(alt_odds) - _implied_prob_am(bo))
     mer = round((alt_prob - base_prob) / d_tax, 2) if alt_line != line else 1.0
     alt_ev = calc_ev_pct(alt_prob, alt_odds)
-    fmt_alt = f"{'+' if alt_line > 0 else ''}{alt_line:.1f}"
 
-    tier2_prob_pct = None
-    tier2_ev_pct = None
-    tier2_approved = False
-    tier2_label = ""
-    if tier2_line is not None:
-        raw_t2 = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-logistic_k * (tier2_line - fair)))))
-        bonus2, cnt2 = _calc_key_mass_bonus(min(line, tier2_line), max(line, tier2_line))
-        t2_prob = min(0.96, max(0.05, raw_t2 + bonus2))
-        tier2_prob_pct = round(t2_prob * 100.0, 1)
-        t2_dec = (100.0 / 135.0) + 1.0 if tier2_mode == "TEASER_7PT" else (100.0 / 120.0) + 1.0
-        tier2_ev_pct = round(((t2_prob * t2_prob) * t2_dec - 1.0) * 100.0, 2)
-        on_model_side = (line - fair) >= -0.25
-        tier2_approved = bool(on_model_side and ((tier2_mode == "WONG_6PT" and tier2_ev_pct > 0) or (cnt2 >= 2 and tier2_ev_pct >= 8.0)))
-        fmt_t2 = f"{'+' if tier2_line > 0 else ''}{tier2_line:.1f}"
-        if tier2_mode == "WONG_6PT":
-            tier2_label = f"🎯 WONG TEASER ({fmt_t2} via 6-pt • {tier2_prob_pct}% Win • {'+' if tier2_ev_pct > 0 else ''}{tier2_ev_pct}% 2L EV)"
-        else:
-            t_pts = "7-pt" if tier2_mode == "TEASER_7PT" else "6-pt"
-            tier2_label = f"🛡️ 1-DEV SAFER ({fmt_t2} via {t_pts} Teaser • {tier2_prob_pct}% Win • {'+' if tier2_ev_pct > 0 else ''}{tier2_ev_pct}% 2L EV)"
+    # ALWAYS-ON WONG TEASER: 6-pt (-120) if it crosses >=2 keys without landing on a push; else 7-pt (-135)
+    t6 = round(line + 6.0, 1)
+    crossed_6 = [k for k in keys if (line - 1e-9) <= k < (t6 - 1e-9)]
+    lands_on_key_6 = any(abs(t6 - k) < 1e-9 for k in keys)
+    if len(crossed_6) >= 2 and not lands_on_key_6:
+        tier2_line = t6
+        tier2_mode = "WONG_6PT"
+        t_pts_str = "6-pt"
+    else:
+        tier2_line = round(line + 7.0, 1)
+        tier2_mode = "WONG_7PT"
+        t_pts_str = "7-pt"
+
+    raw_t2 = max(0.01, min(0.99, 1.0 / (1.0 + math.exp(-logistic_k * (tier2_line - fair)))))
+    bonus2, cnt2 = _calc_key_mass_bonus(min(line, tier2_line), max(line, tier2_line))
+    t2_prob = min(0.96, max(0.05, raw_t2 + bonus2))
+    tier2_prob_pct = round(t2_prob * 100.0, 1)
+    t2_dec = (100.0 / 135.0) + 1.0 if tier2_mode == "WONG_7PT" else (100.0 / 120.0) + 1.0
+    tier2_ev_pct = round(((t2_prob * t2_prob) * t2_dec - 1.0) * 100.0, 2)
+    on_model_side = (line - fair) >= -0.25
+    # Wong Teaser ALWAYS plays on the model's favored side!
+    tier2_approved = bool(on_model_side)
+    fmt_t2 = f"{'+' if tier2_line > 0 else ''}{tier2_line:.1f}"
+    tier2_note = f"Wong {t_pts_str} Teaser ({fmt_t2} crosses {cnt2} keys)"
+    tier2_label = f"🎯 WONG TEASER ({fmt_t2} via {t_pts_str} • {tier2_prob_pct}% Win • {'+' if tier2_ev_pct > 0 else ''}{tier2_ev_pct}% 2L EV)"
 
     return {
         "alt_line": round(alt_line, 1),
@@ -2284,7 +2227,7 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                 "result_balls_deep": "PENDING",
                 "result_key_alt": "PENDING"
             }
-            existing["engine_version"] = "v231_bd_enhance_only"
+            existing["engine_version"] = "v237_2key_rung_perpetuity"
             if best_total:
                 existing["total_record"] = {
                     "pick_label": best_total["player"],
@@ -2326,7 +2269,7 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
     # Upgrades ALL pre-v222 entries (both games still in data.json AND older archived FINAL entries)
     # to clean ΔQB-only spreads, Key-Number Alt Buys, and Regime Safe Totals, then re-grades against actual scores!
     for gid, entry in entries.items():
-        if entry.get("engine_version") == "v231_bd_enhance_only" or gid == "nfl_mnf_lac_bal_2026_w10":
+        if entry.get("engine_version") == "v237_2key_rung_perpetuity" or gid == "nfl_mnf_lac_bal_2026_w10":
             continue
         try:
             src_g = game_lookup_by_gid.get(gid)
@@ -2519,7 +2462,7 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                         "result_balls_deep": "PENDING",
                         "result_safe_total": "PENDING"
                     })
-            entry["engine_version"] = "v231_bd_enhance_only"
+            entry["engine_version"] = "v237_2key_rung_perpetuity"
         except Exception as mig_err:
             print(f"[v231 Migration Skip {gid}] {mig_err}")
 
@@ -3239,9 +3182,8 @@ def build_master_payload():
         slot_lbl = f"DAY-SHIFT TRAP #{idx}" if idx <= 3 else f"KEEP IT IN YOUR PANTS #{idx}"
         trap_p["porkys_slot"] = slot_lbl
         fade_line = float(fade_p["base_line"])
-        floor_hook = math.floor(fade_line + 3.5) + 0.5
-        floor_gap = floor_hook - float(fade_p["projected_mean_mu"])
-        floor_prob = max(0.05, min(0.96, get_dedicated_engine(g.get("league", "NFL")).win_prob(floor_gap)))
+        p_ka = get_dedicated_engine(g.get("league", "NFL")).key_alt(fade_line, float(fade_p["projected_mean_mu"]), int(fade_p.get("base_odds_over", -110)))
+        floor_hook = float(p_ka["alt_line"])
         fade_team = g["home_team"] if fade_p["player"].startswith(f"{g['home_team']} ") else g["away_team"]
         porkys_by_gid[g["game_id"]] = {
             "porkys_slot": slot_lbl,
@@ -3256,8 +3198,8 @@ def build_master_payload():
             "fade_proj": float(fade_p["projected_mean_mu"]),
             "fade_ev_pct": float(fade_p["ev_pct"]),
             "safe_floor_hook": floor_hook,
-            "safe_floor_label": f"Alt {'+' if floor_hook > 0 else ''}{floor_hook:.1f} (-175)",
-            "safe_floor_win_pct": round(floor_prob * 100.0, 1),
+            "safe_floor_label": p_ka["alt_str"],
+            "safe_floor_win_pct": p_ka["alt_win_pct"],
             "result_floor": "PENDING",
             "result_straight": "PENDING",
             "floor_miss_by": 0.0,
@@ -3303,7 +3245,7 @@ def build_master_payload():
             "league": "NFL_NCAA",
             "week": dynamic_week,
             "last_updated": now_iso,
-            "telemetry_version": "v236_production_audit_lock",
+            "telemetry_version": "v237_2key_rung_perpetuity",
             "ranked_ncaa_teams": live_ranked_ncaa
         },
         "games": games_slate,
@@ -3318,7 +3260,7 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v236 — PRODUCTION AUDIT LOCK: SLASH COMPLETION-ATTEMPTS + TRUE YPP + MEAN-CENTERED NCAA TOTALS)")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v237 — 2-KEY-RUNG LADDER IN PERPETUITY + ALWAYS-ON WONG TEASER ENGINE)")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("=========================================================")
 
