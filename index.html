@@ -1,447 +1,467 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DixPix</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>DixPix — Weather-Powered Sports Research</title>
 
   <!-- SMS & Social Media Link Preview Tags -->
-  <meta property="og:title" content="DixPix">
-  <meta property="og:description" content="Open for more than 'Just the Tip' ;)">
-  <meta property="og:type" content="website">
-  <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="DixPix">
-  <meta name="twitter:description" content="Open for more than 'Just the Tip' ;)">
+  <meta property="og:title" content="DixPix" />
+  <meta property="og:description" content="Open for more than 'Just the Tip' ;)" />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="DixPix" />
+  <meta name="twitter:description" content="Open for more than 'Just the Tip' ;)" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700;800&display=swap" rel="stylesheet" />
 
   <style>
     :root {
-      --bg-base: #090d16;
-      --bg-surface: #111827;
-      --bg-elevated: #1e293b;
-      --border-subtle: #26334d;
-      --text-primary: #f8fafc;
-      --text-secondary: #94a3b8;
-      --text-muted: #64748b;
-      --accent-cyan: #06b6d4;
-      --accent-emerald: #10b981;
-      --accent-gold: #f59e0b;
-      --accent-danger: #ef4444;
+      /* PickFinder-Inspired Crisp Obsidian App Palette (Neutral Chrome) */
+      --bg-app: #0a0b0e;
+      --bg-surface: #12141a;
+      --bg-card: #161922;
+      --bg-card-hover: #1c202c;
+      --bg-input: #0e1015;
+      --border: #232734;
+      --border-strong: #32384b;
+
+      --text-1: #f4f6fb;
+      --text-2: #9ba3b8;
+      --text-3: #646d85;
+
+      /* Strictly Reserved Betting Signal & Badge Colors */
+      --emerald: #10b981;
+      --emerald-bg: rgba(16, 185, 129, 0.13);
+      --emerald-bd: rgba(16, 185, 129, 0.38);
+
+      --cyan: #06b6d4;
+      --cyan-bg: rgba(6, 182, 212, 0.13);
+      --cyan-bd: rgba(6, 182, 212, 0.38);
+
+      --gold: #f59e0b;
+      --gold-bg: rgba(245, 158, 11, 0.13);
+      --gold-bd: rgba(245, 158, 11, 0.40);
+
+      --red: #ef4444;
+      --red-bg: rgba(239, 68, 68, 0.13);
+      --red-bd: rgba(239, 68, 68, 0.38);
+
+      --blue: #60a5fa;
+      --blue-bg: rgba(59, 130, 246, 0.13);
+      --blue-bd: rgba(96, 165, 250, 0.38);
+
+      --purple: #c084fc;
+      --purple-bg: rgba(168, 85, 247, 0.14);
+      --purple-bd: rgba(168, 85, 247, 0.40);
+
+      /* Legacy Variable Aliases (Safety Fallback) */
+      --bg-base: var(--bg-app);
+      --bg-elevated: var(--bg-card);
+      --border-subtle: var(--border);
+      --text-primary: var(--text-1);
+      --text-secondary: var(--text-2);
+      --text-muted: var(--text-3);
+      --accent-emerald: var(--emerald);
+      --accent-cyan: var(--cyan);
+      --accent-gold: var(--gold);
+      --accent-danger: var(--red);
+
       --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+      --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+
+      --r-sm: 8px;
+      --r-md: 12px;
+      --r-lg: 16px;
+      --r-pill: 999px;
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { min-height: 100%; }
 
     body {
-      background-color: var(--bg-base);
-      color: var(--text-primary);
+      background: var(--bg-app);
+      color: var(--text-1);
       font-family: var(--font-sans);
-      font-size: 14px;
-      line-height: 1.5;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
+      font-size: 13.5px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+      padding-bottom: 52px;
     }
 
-    .tab-radio, .mode-radio {
-      display: none;
-    }
+    .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+    button { font-family: inherit; cursor: pointer; }
+    a { color: inherit; text-decoration: none; }
 
-    /* Unified Sticky Top Shell (Locks Header + Mode Switch + Tab Bar Together) */
-    .sticky-command-shell {
+    /* =======================================================
+       SLIM SINGLE-ROW APP TOP BAR (54px — ZERO BLOAT)
+    ======================================================= */
+    .topbar {
       position: sticky;
       top: 0;
-      z-index: 1000;
-      background-color: rgba(17, 24, 39, 0.98);
-      backdrop-filter: blur(10px);
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+      z-index: 400;
+      background: rgba(10, 11, 14, 0.92);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
     }
 
-    .app-header {
-      border-bottom: 1px solid var(--border-subtle);
-      padding: 12px 24px;
+    .topbar-inner {
+      max-width: 1440px;
+      margin: 0 auto;
+      height: 54px;
+      padding: 0 18px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 20px;
-      flex-wrap: wrap;
-    }
-
-    .brand-cluster {
-      display: flex;
-      align-items: center;
-      gap: 20px;
-      flex-wrap: wrap;
-    }
-
-    .brand-title {
-      font-size: 18px;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--text-primary);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .brand-badge {
-      font-family: var(--font-mono);
-      font-size: 11px;
-      font-weight: 600;
-      background: rgba(6, 182, 212, 0.15);
-      color: var(--accent-cyan);
-      border: 1px solid rgba(6, 182, 212, 0.4);
-      padding: 2px 8px;
-      border-radius: 4px;
-    }
-
-    .league-filters {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding-left: 16px;
-      border-left: 1px solid var(--border-subtle);
-    }
-
-    .league-checkbox-label {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      cursor: pointer;
-      font-family: var(--font-mono);
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text-secondary);
-      background: var(--bg-base);
-      padding: 5px 10px;
-      border-radius: 4px;
-      border: 1px solid var(--border-subtle);
-      user-select: none;
-      transition: all 0.15s ease;
-    }
-
-    .league-checkbox-label input {
-      accent-color: var(--accent-cyan);
-      width: 14px;
-      height: 14px;
-      cursor: pointer;
-    }
-
-    .league-checkbox-label:has(input:checked) {
-      color: var(--text-primary);
-      border-color: var(--accent-cyan);
-      background: rgba(6, 182, 212, 0.08);
-    }
-
-    .controls-cluster {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-
-    .mode-switch-group {
-      display: inline-flex;
-      background: var(--bg-base);
-      padding: 3px;
-      border-radius: 6px;
-      border: 1px solid var(--border-subtle);
-    }
-
-    .mode-switch-label {
-      padding: 5px 12px;
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--text-secondary);
-      border-radius: 4px;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      user-select: none;
-    }
-
-    #mode-tip:checked ~ .sticky-command-shell label[for="mode-tip"] {
-      background: var(--bg-elevated);
-      color: var(--accent-cyan);
-      box-shadow: 0 1px 2px rgba(0,0,0,0.4);
-    }
-
-    #mode-balls-deep:checked ~ .sticky-command-shell label[for="mode-balls-deep"] {
-      background: rgba(16, 185, 129, 0.18);
-      color: var(--accent-emerald);
-      border: 1px solid rgba(16, 185, 129, 0.4);
-      box-shadow: 0 0 8px rgba(16, 185, 129, 0.25);
-    }
-
-    #mode-davinci:checked ~ .sticky-command-shell label[for="mode-davinci"] {
-      background: rgba(245, 158, 11, 0.15);
-      color: var(--accent-gold);
-      border: 1px solid rgba(245, 158, 11, 0.3);
-    }
-
-    .davinci-drawer {
-      display: none;
-      width: 100%;
-      align-items: center;
-      justify-content: space-between;
-      gap: 24px;
-      padding-top: 14px;
-      margin-top: 8px;
-      border-top: 1px solid rgba(245, 158, 11, 0.35);
-    }
-
-    #mode-davinci:checked ~ .sticky-command-shell .davinci-drawer {
-      display: flex;
-      flex-wrap: wrap;
-    }
-
-    .slider-meta {
-      display: flex;
-      align-items: center;
       gap: 12px;
     }
 
-    .slider-title {
-      font-family: var(--font-mono);
-      font-size: 12px;
-      font-weight: 700;
-      text-transform: uppercase;
-      color: var(--accent-gold);
-      letter-spacing: 0.05em;
-    }
-
-    .slider-control-wrap {
+    .brand {
       display: flex;
       align-items: center;
-      gap: 14px;
-      flex: 1;
-      max-width: 520px;
+      gap: 9px;
+      font-weight: 800;
+      font-size: 16px;
+      letter-spacing: -0.02em;
+      color: var(--text-1);
+      flex-shrink: 0;
+      cursor: pointer;
     }
 
-    .scale-marker {
+    .brand-mark {
+      width: 26px;
+      height: 26px;
+      border-radius: 7px;
+      background: var(--text-1);
+      color: var(--bg-app);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .nav-pills {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .nav-pills::-webkit-scrollbar { display: none; }
+
+    .nav-btn {
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-2);
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: var(--r-sm);
+      white-space: nowrap;
+      transition: 0.14s ease;
+    }
+    .nav-btn:hover { color: var(--text-1); background: rgba(255, 255, 255, 0.04); }
+    .nav-btn.active {
+      color: var(--text-1);
+      background: var(--bg-card);
+      border-color: var(--border-strong);
+    }
+
+    .top-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    /* Compact Engine Tier Switcher (Tip | Balls Deep | DaVinci) */
+    .mode-seg {
+      display: inline-flex;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 2px;
+    }
+
+    .mode-btn {
+      border: none;
+      background: transparent;
+      color: var(--text-2);
+      font-size: 11.5px;
+      font-weight: 700;
+      padding: 5px 10px;
+      border-radius: 6px;
+      transition: 0.14s ease;
+      white-space: nowrap;
+    }
+    .mode-btn:hover { color: var(--text-1); }
+    .mode-btn.active-tip { background: var(--bg-card-hover); color: var(--text-1); }
+    .mode-btn.active-bd  { background: var(--emerald-bg); color: var(--emerald); }
+    .mode-btn.active-dv  { background: var(--gold-bg); color: var(--gold); }
+
+    .mob-faq-btn {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border-radius: var(--r-sm);
+      border: 1px solid var(--border-strong);
+      background: var(--bg-card);
+      color: var(--text-2);
       font-family: var(--font-mono);
       font-size: 12px;
-      color: var(--text-secondary);
+      font-weight: 800;
+      transition: 0.14s ease;
     }
+    .mob-faq-btn.active { color: var(--text-1); border-color: var(--text-1); }
 
-    input[type="range"].davinci-range {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 100%;
-      height: 6px;
-      background: var(--bg-base);
-      border: 1px solid var(--border-subtle);
-      border-radius: 4px;
-      outline: none;
+    .slip-trigger {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border: 1px solid var(--border-strong);
+      background: var(--bg-card);
+      color: var(--text-1);
+      font-size: 12px;
+      font-weight: 700;
+      padding: 6px 12px;
+      border-radius: var(--r-sm);
+      transition: 0.14s ease;
     }
+    .slip-trigger:hover { background: var(--bg-card-hover); }
+    .slip-trigger.has-legs { border-color: var(--cyan-bd); color: var(--cyan); background: var(--cyan-bg); }
 
-    input[type="range"].davinci-range::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 18px;
+    .slip-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 18px;
       height: 18px;
-      border-radius: 50%;
-      background: var(--accent-gold);
-      cursor: pointer;
-      border: 2px solid var(--bg-base);
-      box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
-    }
-
-    /* Navigation Bar (Locked inside Sticky Shell) */
-    .tab-nav {
-   background-color: rgba(17, 24, 39, 0.98);
-   border-bottom: 1px solid var(--border-subtle);
-   padding: 0 24px;
-   display: flex;
-   gap: 4px;
-   overflow-x: auto;
-   scrollbar-width: thin;
-   scrollbar-color: var(--accent-cyan) var(--bg-base);
- }
-
- .tab-nav::-webkit-scrollbar {
-   height: 6px;
- }
-
- .tab-nav::-webkit-scrollbar-track {
-   background: var(--bg-base);
- }
-
- .tab-nav::-webkit-scrollbar-thumb {
-   background: var(--border-subtle);
-   border-radius: 3px;
- }
-
- .tab-nav::-webkit-scrollbar-thumb:hover {
-   background: var(--accent-cyan);
- }
-
-    .tab-link {
-      padding: 12px 18px;
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--text-secondary);
-      border-bottom: 2px solid transparent;
-      cursor: pointer;
-      white-space: nowrap;
-      transition: all 0.15s ease;
-      user-select: none;
-    }
-
-    .tab-link:hover {
-      color: var(--text-primary);
-      background: rgba(255, 255, 255, 0.02);
-    }
-
-    .tab-link-teaser {
-      color: var(--accent-gold);
+      padding: 0 5px;
+      border-radius: var(--r-pill);
+      background: var(--border-strong);
+      color: var(--text-1);
       font-family: var(--font-mono);
+      font-size: 10.5px;
       font-weight: 800;
     }
+    .slip-trigger.has-legs .slip-count { background: var(--cyan); color: #051317; }
 
-    #tab-1:checked ~ .sticky-command-shell .tab-nav label[for="tab-1"],
-    #tab-2:checked ~ .sticky-command-shell .tab-nav label[for="tab-2"],
-    #tab-compendium:checked ~ .sticky-command-shell .tab-nav label[for="tab-compendium"],
-    #tab-3:checked ~ .sticky-command-shell .tab-nav label[for="tab-3"],
-    #tab-4:checked ~ .sticky-command-shell .tab-nav label[for="tab-4"],
-    #tab-horsecocks:checked ~ .sticky-command-shell .tab-nav label[for="tab-horsecocks"],
-    #tab-5:checked ~ .sticky-command-shell .tab-nav label[for="tab-5"] {
-      color: var(--accent-cyan);
-      border-bottom-color: var(--accent-cyan);
-      background: rgba(6, 182, 212, 0.08);
-    }
-
-    .workspace {
-      flex: 1;
-      padding: 24px;
-      max-width: 1600px;
-      width: 100%;
-      margin: 0 auto;
-    }
-
-    .tab-panel {
+    /* Slim DaVinci Eye-Test Flow Drawer */
+    .davinci-bar {
       display: none;
+      border-top: 1px solid var(--border);
+      background: rgba(245, 158, 11, 0.05);
+    }
+    .davinci-bar.open { display: block; }
+    .davinci-bar-inner {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 8px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .dv-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 1;
+      min-width: 240px;
+      max-width: 520px;
+    }
+    .dv-range {
+      -webkit-appearance: none;
+      appearance: none;
+      flex: 1;
+      height: 5px;
+      border-radius: var(--r-pill);
+      background: var(--border-strong);
+      outline: none;
+    }
+    .dv-range::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--gold);
+      border: 2px solid var(--bg-app);
+      cursor: pointer;
     }
 
-    #tab-1:checked ~ .workspace #panel-master,
-    #tab-2:checked ~ .workspace #panel-combinatorics,
-    #tab-compendium:checked ~ .workspace #panel-compendium,
-    #tab-3:checked ~ .workspace #panel-telemetry,
-    #tab-4:checked ~ .workspace #panel-biolab,
-    #tab-horsecocks:checked ~ .workspace #panel-horsecocks,
-    #tab-5:checked ~ .workspace #panel-ledger {
-      display: block;
+    /* =======================================================
+       SUB-BAR: SPORT, MARKET & WEATHER FILTER STRIP
+    ======================================================= */
+    .filter-bar {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 12px 18px 8px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
     }
 
-    .panel-card {
+    .chip-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .chip-divider {
+      width: 1px;
+      height: 16px;
+      background: var(--border);
+      margin: 0 2px;
+    }
+
+    .chip {
+      border: 1px solid var(--border);
       background: var(--bg-surface);
-      border: 1px solid var(--border-subtle);
-      border-radius: 8px;
-      overflow: hidden;
-      margin-bottom: 24px;
+      color: var(--text-2);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 5px 11px;
+      border-radius: var(--r-pill);
+      transition: 0.14s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+    }
+    .chip:hover { color: var(--text-1); border-color: var(--border-strong); }
+    .chip.active {
+      background: var(--text-1);
+      color: var(--bg-app);
+      border-color: var(--text-1);
+      font-weight: 700;
+    }
+    .chip.active-smash   { background: var(--emerald-bg); color: var(--emerald); border-color: var(--emerald-bd); }
+    .chip.active-weather { background: var(--cyan-bg);    color: var(--cyan);    border-color: var(--cyan-bd); }
+    .chip.active-gold    { background: var(--gold-bg);    color: var(--gold);    border-color: var(--gold-bd); }
+    .chip.active-red     { background: var(--red-bg);     color: var(--red);     border-color: var(--red-bd); }
+
+    .search-input,
+    .search-select {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      color: var(--text-1);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 5px 10px;
+      border-radius: var(--r-sm);
+      outline: none;
+      transition: border-color 0.14s ease;
+    }
+    .search-input { width: 155px; font-weight: 500; }
+    .search-input::placeholder { color: var(--text-3); }
+    .search-input:focus, .search-select:focus { border-color: var(--border-strong); }
+
+    /* =======================================================
+       SIGNAL BADGES (STRICT EMERALD / CYAN / GOLD / RED)
+    ======================================================= */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      padding: 2px 7px;
+      border-radius: 5px;
+      white-space: nowrap;
+    }
+    .b-smash  { background: var(--emerald-bg); color: var(--emerald); border: 1px solid var(--emerald-bd); }
+    .b-pass   { background: var(--red-bg);     color: var(--red);     border: 1px solid var(--red-bd); }
+    .b-gold   { background: var(--gold-bg);    color: var(--gold);    border: 1px solid var(--gold-bd); }
+    .b-cyan   { background: var(--cyan-bg);    color: var(--cyan);    border: 1px solid var(--cyan-bd); }
+    .b-blue   { background: var(--blue-bg);    color: var(--blue);    border: 1px solid var(--blue-bd); }
+    .b-purple { background: var(--purple-bg);  color: var(--purple);  border: 1px solid var(--purple-bd); }
+    .b-muted  { background: rgba(255, 255, 255, 0.05); color: var(--text-2); border: 1px solid var(--border); }
+
+    .weather-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: var(--r-pill);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      color: var(--text-2);
+      white-space: nowrap;
+    }
+    .weather-pill.edge {
+      background: var(--cyan-bg);
+      border-color: var(--cyan-bd);
+      color: var(--cyan);
     }
 
-    .panel-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border-subtle);
+    /* =======================================================
+       MAIN CONTAINER & PICKFINDER MASTER-DETAIL SPLIT VIEW
+    ======================================================= */
+    .main-wrap {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 6px 18px 40px 18px;
+    }
+
+    .view-section { display: none; }
+    .view-section.active { display: block; }
+
+    .section-head {
+      margin-bottom: 14px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       flex-wrap: wrap;
       gap: 10px;
     }
-
-    .panel-title {
-      font-size: 15px;
-      font-weight: 700;
-      letter-spacing: 0.02em;
-      color: var(--text-primary);
-    }
-
-    .badge-smash {
-      display: inline-block;
-      font-family: var(--font-mono);
-      font-size: 10px;
+    .section-title {
+      font-size: 17px;
       font-weight: 800;
-      padding: 2px 6px;
-      border-radius: 4px;
-      background: rgba(16, 185, 129, 0.18);
-      color: var(--accent-emerald);
-      border: 1px solid rgba(16, 185, 129, 0.45);
-      letter-spacing: 0.05em;
+      letter-spacing: -0.015em;
+    }
+    .section-sub {
+      font-size: 12.5px;
+      color: var(--text-2);
+      margin-top: 2px;
     }
 
-    .badge-pass {
-      display: inline-block;
-      font-family: var(--font-mono);
-      font-size: 10px;
-      font-weight: 700;
-      padding: 2px 6px;
-      border-radius: 4px;
-      background: rgba(100, 116, 139, 0.15);
-      color: var(--text-secondary);
-      border: 1px solid rgba(100, 116, 139, 0.3);
-      letter-spacing: 0.05em;
+    /* Split Research Layout */
+    .split-board {
+      display: grid;
+      grid-template-columns: minmax(0, 1.38fr) minmax(350px, 0.92fr);
+      gap: 16px;
+      align-items: start;
     }
 
-    .badge-menage {
-      display: inline-block;
-      font-family: var(--font-mono);
-      font-size: 10px;
-      font-weight: 800;
-      padding: 2px 7px;
-      border-radius: 4px;
-      background: rgba(245, 158, 11, 0.18);
-      color: var(--accent-gold);
-      border: 1px solid rgba(245, 158, 11, 0.5);
-      letter-spacing: 0.04em;
-    }
-
-    .badge-flex {
-      display: inline-block;
-      font-family: var(--font-mono);
-      font-size: 10px;
-      font-weight: 800;
-      padding: 2px 7px;
-      border-radius: 4px;
-      background: rgba(6, 182, 212, 0.18);
-      color: var(--accent-cyan);
-      border: 1px solid rgba(6, 182, 212, 0.5);
-      letter-spacing: 0.04em;
-    }
-
-    /* 100% Opaque, Borderless Balls Deep Lock Bar (Zero Spoilers Before Click) */
-    .bd-preview-locked {
-      margin-top: 6px;
-      padding: 7px 12px;
-      border-radius: 5px;
-      background: #0f172a;
-      border: none;
-      opacity: 1;
+    .feed-col {
       display: flex;
-      justify-content: center;
-      align-items: center;
-      font-family: var(--font-mono);
-      font-size: 11px;
-      font-weight: 700;
-      color: var(--accent-gold);
-      cursor: pointer;
-      transition: background 0.15s ease;
+      flex-direction: column;
+      gap: 8px;
     }
 
-    .bd-preview-locked:hover {
-      background: #172554;
-    }
-
-    .bd-preview-unlocked {
-      margin-top: 6px;
-      padding: 6px 10px;
-      border-radius: 5px;
-      background: rgba(16, 185, 129, 0.10);
-      border: none;
+    .lookahead-divider {
+      margin: 14px 0 6px 0;
+      padding: 9px 14px;
+      border-radius: var(--r-md);
+      background: var(--bg-surface);
+      border: 1px solid var(--gold-bd);
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -449,373 +469,960 @@
       gap: 8px;
       font-family: var(--font-mono);
       font-size: 11px;
-      color: var(--text-primary);
     }
 
-    /* Embedded Top Calculator on Tab 2 (Scrolls naturally on mobile) */
-    .combinatorics-embedded-calc {
-      position: relative;
+    /* Clean Scannable Pick Row */
+    .pick-row {
       background: var(--bg-surface);
-      border: 1px solid var(--accent-cyan);
-      border-radius: 8px;
-      padding: 16px 20px;
-      margin-bottom: 20px;
-      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
-    }
-
-    .calc-action-btn {
-      font-family: var(--font-mono);
-      font-size: 11px;
-      font-weight: 700;
-      padding: 6px 12px;
-      border-radius: 5px;
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 13px 15px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) auto auto auto;
+      align-items: center;
+      gap: 14px;
       cursor: pointer;
-      border: 1px solid var(--border-subtle);
-      background: var(--bg-elevated);
-      color: var(--text-primary);
-      transition: all 0.15s ease;
+      transition: background 0.14s ease, border-color 0.14s ease;
     }
 
-    .calc-action-btn:hover {
-      border-color: var(--accent-cyan);
-      color: var(--accent-cyan);
+    .pick-row:hover {
+      background: var(--bg-card);
+      border-color: var(--border-strong);
     }
 
-    /* HorseCoCKs Caution Tape X & Red Stamp Stage */
-    .horsecocks-stage {
-      position: relative;
-      min-height: 540px;
-      background: radial-gradient(circle at center, #1e293b 0%, #090d16 80%);
-      border: 2px solid #f59e0b;
-      border-radius: 12px;
-      overflow: hidden;
+    .pick-row.selected {
+      background: var(--bg-card);
+      border-color: var(--text-2);
+      box-shadow: inset 3px 0 0 var(--text-1);
+    }
+
+    .pick-row.is-live {
+      border-color: var(--gold-bd);
+    }
+
+    .pick-id-col { min-width: 0; }
+
+    .pick-top-meta {
       display: flex;
-      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      font-size: 11px;
+      color: var(--text-3);
+      margin-bottom: 4px;
+    }
+
+    .pick-title {
+      font-size: 14.5px;
+      font-weight: 700;
+      color: var(--text-1);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .pick-line-col {
+      text-align: right;
+      font-family: var(--font-mono);
+    }
+    .line-main { font-size: 13.5px; font-weight: 800; color: var(--text-1); }
+    .line-sub  { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+
+    .prob-col {
+      width: 112px;
+      font-family: var(--font-mono);
+    }
+    .prob-nums {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 5px;
+    }
+    .meter-track {
+      height: 6px;
+      background: rgba(255, 255, 255, 0.07);
+      border-radius: var(--r-pill);
+      overflow: hidden;
+    }
+    .meter-fill {
+      height: 100%;
+      border-radius: var(--r-pill);
+    }
+
+    .add-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: var(--r-sm);
+      border: 1px solid var(--border-strong);
+      background: var(--bg-input);
+      color: var(--text-1);
+      font-family: var(--font-mono);
+      font-size: 16px;
+      font-weight: 700;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-      padding: 40px 20px;
-      text-align: center;
-      box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.85);
+      transition: 0.14s ease;
+      flex-shrink: 0;
+    }
+    .add-btn:hover { background: var(--bg-card-hover); }
+    .add-btn.in-slip {
+      background: var(--cyan);
+      border-color: var(--cyan);
+      color: #041318;
+      font-size: 13px;
     }
 
-    .caution-tape {
-      position: absolute;
-      width: 160%;
-      height: 54px;
-      background: repeating-linear-gradient(
-        -45deg,
-        #facc15,
-        #facc15 28px,
-        #090d16 28px,
-        #090d16 56px
-      );
-      border-top: 3px solid #000;
-      border-bottom: 3px solid #000;
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.75);
-      z-index: 1;
-      opacity: 0.88;
-      pointer-events: none;
+    /* =======================================================
+       RIGHT RESEARCH INSPECTOR (STICKY DESKTOP / SHEET MOBILE)
+    ======================================================= */
+    .inspector-card {
+      position: sticky;
+      top: 66px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      overflow: hidden;
     }
 
-    .caution-tape-1 {
-      transform: rotate(24deg);
+    .insp-head {
+      padding: 15px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
     }
 
-    .caution-tape-2 {
-      transform: rotate(-24deg);
+    .insp-body {
+      padding: 15px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      max-height: calc(100vh - 165px);
+      overflow-y: auto;
     }
 
-    .horsecocks-centerpiece {
-      position: relative;
-      z-index: 5;
-      background: rgba(9, 13, 22, 0.92);
-      border: 2px solid rgba(250, 204, 21, 0.75);
-      border-radius: 14px;
-      padding: 38px 48px;
-      backdrop-filter: blur(8px);
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.9);
-      max-width: 92%;
+    .stat-trio {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
     }
-
-    .horsecocks-title {
-      font-size: clamp(38px, 7vw, 76px);
-      font-weight: 900;
-      letter-spacing: 0.04em;
-      color: #f8fafc;
-      text-shadow: 0 4px 20px rgba(245, 158, 11, 0.45);
-      line-height: 1.05;
+    .stat-box {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 10px 11px;
     }
-
-    .horsecocks-sup {
-      display: block;
-      margin-top: 10px;
-      font-family: var(--font-mono);
-      font-size: clamp(12px, 2.2vw, 18px);
+    .stat-k {
+      font-size: 10px;
+      color: var(--text-3);
       font-weight: 700;
-      color: #facc15;
-      letter-spacing: 0.06em;
-    }
-
-    .red-stamp-coming-soon {
-      margin-top: 28px;
-      display: inline-block;
-      font-family: var(--font-mono);
-      font-size: clamp(26px, 5vw, 48px);
-      font-weight: 900;
       text-transform: uppercase;
-      letter-spacing: 0.14em;
-      color: #ef4444;
-      border: 6px double #ef4444;
-      padding: 10px 28px;
-      border-radius: 8px;
-      transform: rotate(-8deg);
-      background: rgba(239, 68, 68, 0.08);
-      box-shadow: 0 0 25px rgba(239, 68, 68, 0.35), inset 0 0 15px rgba(239, 68, 68, 0.25);
-      text-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+      letter-spacing: 0.04em;
+    }
+    .stat-v {
+      font-family: var(--font-mono);
+      font-size: 15.5px;
+      font-weight: 800;
+      margin-top: 3px;
     }
 
-    .table-responsive {
+    .weather-edge-box {
+      background: var(--bg-card);
+      border: 1px solid var(--cyan-bd);
+      border-radius: var(--r-md);
+      padding: 13px 14px;
+    }
+    .weather-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .w-metric {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 8px 10px;
+      font-family: var(--font-mono);
+    }
+    .w-metric-k { font-size: 10px; color: var(--text-3); }
+    .w-metric-v { font-size: 12.5px; font-weight: 700; color: var(--text-1); margin-top: 2px; }
+
+    .chart-box {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 13px 14px;
+    }
+    .bar-chart {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      margin-top: 10px;
+    }
+    .bar-row {
+      display: grid;
+      grid-template-columns: 98px 1fr 62px;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+    .bar-track {
+      height: 8px;
+      border-radius: var(--r-pill);
+      background: rgba(255, 255, 255, 0.06);
+      overflow: hidden;
+    }
+    .bar-fill { height: 100%; border-radius: var(--r-pill); }
+
+    .bd-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-md);
+      padding: 13px 14px;
+    }
+    .bd-panel.locked {
+      border-color: var(--gold-bd);
+      background: linear-gradient(180deg, rgba(245, 158, 11, 0.06), var(--bg-card));
+      text-align: center;
+      padding: 18px 14px;
+    }
+
+    .exec-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      gap: 8px;
+    }
+    .exec-row:last-child { border-bottom: none; padding-bottom: 0; }
+
+    .guardrail-alert {
+      padding: 7px 10px;
+      border-radius: 7px;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
+    .guardrail-alert.hard { background: var(--red-bg); border: 1px solid var(--red-bd); color: #fca5a5; }
+    .guardrail-alert.warn { background: var(--gold-bg); border: 1px solid var(--gold-bd); color: var(--gold); }
+
+    .primary-btn {
       width: 100%;
+      border: none;
+      border-radius: var(--r-sm);
+      padding: 10px 14px;
+      font-size: 12.5px;
+      font-weight: 700;
+      background: var(--text-1);
+      color: var(--bg-app);
+      transition: 0.14s ease;
+    }
+    .primary-btn:hover { opacity: 0.92; }
+    .primary-btn.gold { background: var(--gold); color: #170f02; }
+    .primary-btn.cyan { background: var(--cyan); color: #041318; }
+
+    /* =======================================================
+       CARDS, WEATHER LAB, 13 MODULES, LEDGER & TABLES
+    ======================================================= */
+    .card-grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+      gap: 12px;
+    }
+
+    .clean-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 15px 16px;
+    }
+
+    .home-perspective-banner {
+      background: var(--bg-card);
+      border: 1px solid var(--cyan-bd);
+      border-radius: var(--r-md);
+      padding: 13px 16px;
+      margin-bottom: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .module-guide-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .guide-tile {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 12px 14px;
+      font-size: 12px;
+      color: var(--text-2);
+      line-height: 1.55;
+    }
+    .guide-tile strong { color: var(--text-1); }
+
+    .vault-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .vault-tile {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 14px;
+      cursor: pointer;
+      transition: 0.14s ease;
+    }
+    .vault-tile:hover { border-color: var(--border-strong); background: var(--bg-card); }
+    .vault-tile.active { border-color: var(--text-1); background: var(--bg-card); }
+
+    .vault-drawer {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-md);
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    .vault-drawer-head {
+      padding: 12px 16px;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .table-box {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
       overflow-x: auto;
     }
-
-    .quant-table {
+    table.pf-table {
       width: 100%;
       border-collapse: collapse;
       text-align: left;
     }
-
-    .quant-table th {
-      background: var(--bg-elevated);
-      color: var(--text-secondary);
+    table.pf-table th {
       font-family: var(--font-mono);
-      font-size: 11px;
+      font-size: 10.5px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--border-subtle);
+      letter-spacing: 0.05em;
+      color: var(--text-3);
+      padding: 11px 14px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+      background: rgba(14, 16, 21, 0.75);
     }
-
-    .quant-table td {
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--border-subtle);
+    table.pf-table td {
+      padding: 11px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
       font-family: var(--font-mono);
-      font-size: 13px;
-      color: var(--text-primary);
+      font-size: 12px;
+      vertical-align: middle;
     }
+    table.pf-table tbody tr:hover { background: rgba(255, 255, 255, 0.025); }
 
-    .quant-table tbody tr:hover {
-      background: rgba(255, 255, 255, 0.02);
-    }
-
-    .empty-placeholder {
-      padding: 48px 24px;
+    /* =======================================================
+       HORSECOCKS CAUTION-TAPE PREVIEW STAGE
+    ======================================================= */
+    .horsecocks-stage {
+      position: relative;
+      min-height: 360px;
+      background: radial-gradient(circle at center, #1b1f2e 0%, #0a0b0e 78%);
+      border: 1px solid var(--gold-bd);
+      border-radius: var(--r-lg);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 36px 20px;
       text-align: center;
-      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+    .caution-tape {
+      position: absolute;
+      width: 165%;
+      height: 44px;
+      background: repeating-linear-gradient(-45deg, #facc15, #facc15 24px, #0a0b0e 24px, #0a0b0e 48px);
+      border-top: 2px solid #000;
+      border-bottom: 2px solid #000;
+      opacity: 0.82;
+      pointer-events: none;
+    }
+    .caution-tape-1 { transform: rotate(20deg); }
+    .caution-tape-2 { transform: rotate(-20deg); }
+    .horsecocks-center {
+      position: relative;
+      z-index: 3;
+      background: rgba(10, 11, 14, 0.92);
+      border: 1px solid rgba(250, 204, 21, 0.65);
+      border-radius: var(--r-md);
+      padding: 28px 36px;
+      max-width: 92%;
+    }
+    .horsecocks-title {
+      font-size: clamp(32px, 6vw, 58px);
+      font-weight: 900;
+      color: var(--text-1);
+      line-height: 1.05;
+    }
+    .red-stamp {
+      margin-top: 18px;
+      display: inline-block;
       font-family: var(--font-mono);
+      font-size: clamp(20px, 4vw, 34px);
+      font-weight: 900;
+      letter-spacing: 0.14em;
+      color: var(--red);
+      border: 4px double var(--red);
+      padding: 6px 20px;
+      border-radius: 8px;
+      transform: rotate(-7deg);
+      background: rgba(239, 68, 68, 0.08);
+    }
+
+    /* =======================================================
+       FAGQUESTIONS ACCORDION & FOOTER
+    ======================================================= */
+    .faq-hero {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 20px 22px;
+      margin-bottom: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .faq-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .faq-item {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      overflow: hidden;
+      transition: border-color 0.14s ease;
+    }
+    .faq-item:hover { border-color: var(--border-strong); }
+    .faq-item.open { border-color: var(--border-strong); background: var(--bg-card); }
+    .faq-q {
+      width: 100%;
+      background: transparent;
+      border: none;
+      color: var(--text-1);
+      padding: 14px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      text-align: left;
+      font-size: 13.5px;
+      font-weight: 700;
+    }
+    .faq-chev {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-3);
+      transition: transform 0.16s ease;
+      flex-shrink: 0;
+    }
+    .faq-item.open .faq-chev { transform: rotate(180deg); color: var(--text-1); }
+    .faq-a {
+      display: none;
+      padding: 12px 16px 15px 16px;
+      color: var(--text-2);
       font-size: 13px;
+      line-height: 1.62;
+      border-top: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    .faq-item.open .faq-a { display: block; }
+    .faq-a strong { color: var(--text-1); }
+
+    .faq-thanks-card {
+      margin-top: 16px;
+      background: linear-gradient(90deg, rgba(245, 158, 11, 0.08), rgba(6, 182, 212, 0.07));
+      border: 1px solid var(--gold-bd);
+      border-radius: var(--r-md);
+      padding: 16px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .app-footer {
+      max-width: 1440px;
+      margin: 28px auto 0 auto;
+      padding: 16px 4px 12px 4px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 11.5px;
+      color: var(--text-3);
+    }
+
+    /* =======================================================
+       SLIDE-OVER BET SLIP & ROUND ROBIN DRAWER
+    ======================================================= */
+    .drawer-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(4px);
+      z-index: 600;
+      display: none;
+    }
+    .drawer-backdrop.open { display: block; }
+
+    .slip-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: min(440px, 100vw);
+      background: var(--bg-surface);
+      border-left: 1px solid var(--border-strong);
+      z-index: 650;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .slip-drawer.open { transform: translateX(0); }
+
+    .drawer-head {
+      padding: 15px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .drawer-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .drawer-foot {
+      padding: 14px 18px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-input);
+    }
+
+    .slip-leg-item {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 10px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .rr-matrix-box {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 9px 11px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .mobile-close-btn { display: none; }
+
+    /* =======================================================
+       SLIM LIVE WIRE TICKER & NATIVE MOBILE TAB BAR
+    ======================================================= */
+    .live-wire-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 34px;
+      background: rgba(10, 11, 14, 0.96);
+      backdrop-filter: blur(12px);
+      border-top: 1px solid var(--border);
+      z-index: 480;
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    .live-wire-tag {
+      flex-shrink: 0;
+      height: 100%;
+      padding: 0 12px;
+      background: var(--bg-card);
+      border-right: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--text-1);
+      font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+
+    .live-pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--emerald);
+      box-shadow: 0 0 8px var(--emerald);
+    }
+
+    .live-wire-viewport {
+      flex: 1;
+      overflow: hidden;
+      white-space: nowrap;
+      position: relative;
+    }
+
+    .live-wire-track {
+      display: inline-block;
+      white-space: nowrap;
+      padding-left: 24px;
+      animation: dixpixMarqueeScroll 45s linear infinite;
+    }
+    .live-wire-track:hover { animation-play-state: paused !important; }
+
+    @keyframes dixpixMarqueeScroll {
+      0% { transform: translateX(0%); }
+      100% { transform: translateX(-50%); }
+    }
+
+    .mobile-tabbar {
+      display: none;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 58px;
+      background: rgba(12, 13, 18, 0.97);
+      backdrop-filter: blur(16px);
+      border-top: 1px solid var(--border);
+      z-index: 500;
+      grid-template-columns: repeat(5, 1fr);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .mob-tab {
+      border: none;
+      background: transparent;
+      color: var(--text-3);
+      font-size: 10.5px;
+      font-weight: 700;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+    }
+    .mob-tab.active { color: var(--text-1); }
+    .mob-tab .ico { font-size: 16px; line-height: 1; }
+
+    .empty-state {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 34px 18px;
+      text-align: center;
+      color: var(--text-2);
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+
+    /* =======================================================
+       RESPONSIVE BREAKPOINTS
+    ======================================================= */
+    @media (max-width: 960px) {
+      .split-board { grid-template-columns: 1fr; }
+      .inspector-wrap {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 620;
+        transform: translateY(105%);
+        transition: transform 0.22s ease;
+        padding: 0 8px 8px 8px;
+      }
+      .inspector-wrap.mobile-open { transform: translateY(0); }
+      .inspector-card {
+        position: static;
+        border-color: var(--border-strong);
+        box-shadow: 0 -20px 50px rgba(0, 0, 0, 0.82);
+      }
+      .insp-body { max-height: 70vh; }
+      .mobile-close-btn { display: inline-flex; }
     }
 
     @media (max-width: 768px) {
-      .app-header {
-        flex-direction: column;
-        align-items: flex-start;
-        padding: 12px 14px;
+      body { padding-bottom: 104px; }
+      .nav-pills { display: none; }
+      .mob-faq-btn { display: inline-flex; }
+      .mobile-tabbar { display: grid; }
+      .live-wire-bar { bottom: 58px; height: 30px; font-size: 10.5px; }
+      .topbar-inner { padding: 0 12px; }
+      .filter-bar { padding: 10px 12px 6px 12px; }
+      .main-wrap { padding: 6px 12px 24px 12px; }
+      .pick-row {
+        grid-template-columns: minmax(0, 1fr) auto auto;
         gap: 10px;
-      }
-      .brand-cluster {
-        width: 100%;
-        justify-content: space-between;
-      }
-      .league-filters {
-        border-left: none;
-        padding-left: 0;
-      }
-      .controls-cluster {
-        width: 100%;
-      }
-      .mode-switch-group {
-        width: 100%;
-        display: flex;
-      }
-      .mode-switch-label {
-        flex: 1;
-        text-align: center;
-      }
-      .slider-control-wrap {
-        max-width: 100%;
-      }
-      .tab-nav {
-        padding: 0 10px;
-      }
-      .tab-link {
-        padding: 10px 14px;
-        font-size: 12px;
-      }
-      .workspace {
-        padding: 14px 10px;
-      }
-      .combinatorics-embedded-calc {
         padding: 12px;
       }
-      .horsecocks-centerpiece {
-        padding: 28px 20px;
-      }
-    }
-
-    @media (max-height: 500px) {
-      .app-header {
-        padding: 6px 12px;
-        gap: 8px;
-      }
-      .brand-title {
-        font-size: 13px;
-      }
-      .brand-badge {
-        display: none;
-      }
-      .league-checkbox-label,
-      .mode-switch-label {
-        padding: 3px 8px;
-        font-size: 10px;
-      }
-      .tab-nav {
-        padding: 0 12px;
-      }
-      .tab-link {
-        padding: 6px 10px;
-        font-size: 11px;
-      }
-      .davinci-drawer {
-        padding-top: 6px;
-      }
-      .workspace {
-        padding: 8px 12px;
-      }
+      .prob-col { display: none; }
+      .mode-btn { padding: 5px 8px; font-size: 11px; }
+      .slip-trigger .slip-txt { display: none; }
+      .search-input { width: 125px; }
     }
   </style>
 </head>
 <body>
 
-  <!-- Pure CSS Tab State Controllers -->
-  <input type="radio" name="nav-tab" id="tab-1" class="tab-radio" checked>
-  <input type="radio" name="nav-tab" id="tab-2" class="tab-radio">
-  <input type="radio" name="nav-tab" id="tab-compendium" class="tab-radio">
-  <input type="radio" name="nav-tab" id="tab-3" class="tab-radio">
-  <input type="radio" name="nav-tab" id="tab-4" class="tab-radio">
-  <input type="radio" name="nav-tab" id="tab-horsecocks" class="tab-radio">
-  <input type="radio" name="nav-tab" id="tab-5" class="tab-radio">
-
-  <!-- Pure CSS Operating Mode State Controllers -->
-  <input type="radio" name="engine-mode" id="mode-tip" class="mode-radio" checked>
-  <input type="radio" name="engine-mode" id="mode-balls-deep" class="mode-radio">
-  <input type="radio" name="engine-mode" id="mode-davinci" class="mode-radio">
-
-  <!-- Unified Sticky Command Shell -->
-  <div class="sticky-command-shell">
-    <header class="app-header">
-      <div class="brand-cluster">
-        <div class="brand-title">
-          DixPix <span class="brand-badge">QUANT ENGINE</span>
-        </div>
-        <div class="league-filters">
-          <label class="league-checkbox-label">
-            <input type="checkbox" id="filter-nfl" checked> NFL
-          </label>
-          <label class="league-checkbox-label">
-            <input type="checkbox" id="filter-ncaa" checked> NCAA
-          </label>
-        </div>
+  <!-- SLIM SINGLE-ROW TOPBAR -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand" onclick="window.setAppView('picks')">
+        <span class="brand-mark">D</span>
+        <span>DixPix</span>
       </div>
 
-      <div class="controls-cluster">
-        <div class="mode-switch-group">
-          <label for="mode-tip" class="mode-switch-label">Just the Tip</label>
-          <label for="mode-balls-deep" class="mode-switch-label">Balls Deep</label>
-          <label for="mode-davinci" class="mode-switch-label">DaVinci</label>
+      <nav class="nav-pills" id="desktop-nav">
+        <button type="button" class="nav-btn active" data-view="picks" onclick="window.setAppView('picks')">Picks</button>
+        <button type="button" class="nav-btn" data-view="fivepack" onclick="window.setAppView('fivepack')">5-Pack &amp; Porky's</button>
+        <button type="button" class="nav-btn" data-view="weather" onclick="window.setAppView('weather')">Weather Lab</button>
+        <button type="button" class="nav-btn" data-view="ledger" onclick="window.setAppView('ledger')">Ledger</button>
+        <button type="button" class="nav-btn" data-view="modules" onclick="window.setAppView('modules')">13 Modules</button>
+        <button type="button" class="nav-btn" data-view="faq" onclick="window.setAppView('faq')">FAGquestions</button>
+      </nav>
+
+      <div class="top-right">
+        <div class="mode-seg" role="group" aria-label="Engine Tier">
+          <button type="button" class="mode-btn active-tip" id="btn-mode-tip" onclick="window.setEngineMode('tip')">Tip</button>
+          <button type="button" class="mode-btn" id="btn-mode-bd" onclick="window.setEngineMode('balls_deep')">Balls Deep</button>
+          <button type="button" class="mode-btn" id="btn-mode-dv" onclick="window.setEngineMode('davinci')">DaVinci</button>
+        </div>
+
+        <button type="button" class="mob-faq-btn" data-view="faq" title="FAGquestions" onclick="window.setAppView('faq')">?</button>
+
+        <button type="button" class="slip-trigger" id="slip-trigger-btn" onclick="window.toggleSlipDrawer(true)">
+          <span class="slip-txt">Slip</span>
+          <span class="slip-count" id="slip-count-badge">0</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Slim DaVinci Eye-Test Flow Bar (opens only in DaVinci mode) -->
+    <div class="davinci-bar" id="davinci-bar">
+      <div class="davinci-bar-inner">
+        <span class="mono" style="font-size:11px; font-weight:800; color:var(--gold);">
+          DAVINCI EYE-TEST FLOW // I_flow &in; [-2&phi;, +2&phi;]
+        </span>
+        <div class="dv-controls">
+          <span class="mono" style="font-size:10.5px; color:var(--text-3);">-3.236</span>
+          <input type="range" class="dv-range" id="davinci-intensity-slider" min="-3.236" max="3.236" step="0.1" value="0" />
+          <span class="mono" style="font-size:10.5px; color:var(--text-3);">+3.236</span>
+          <output class="badge b-gold" id="davinci-readout">0.0</output>
+          <button type="button" class="chip" style="padding:3px 9px; font-size:11px;" onclick="window.resetDavinciSlider()">Reset</button>
         </div>
       </div>
+    </div>
+  </header>
 
-      <!-- DaVinci Mode Override Slider Container (Spectrum: -3.236 to +3.236) -->
-      <div id="davinci-slider-container" class="davinci-drawer">
-        <div class="slider-meta">
-          <span class="slider-title">DaVinci Continuous Flow // Sacred Geometry Escalator (I_flow &in; [-2&phi;, +2&phi;])</span>
-        </div>
-        <div class="slider-control-wrap">
-          <span class="scale-marker">-3.236</span>
-          <input type="range" id="davinci-intensity-slider" class="davinci-range" min="-3.236" max="3.236" step="0.1" value="0">
-          <span class="scale-marker">+3.236</span>
-          <output id="davinci-readout" style="display: block; text-align: center; margin-left: 6px; font-weight: bold; color: #38bdf8;">0.0</output>
-        </div>
-      </div>
-    </header>
+  <!-- FILTER STRIP (Active on Picks View) -->
+  <div class="filter-bar" id="picks-filter-bar">
+    <div class="chip-group">
+      <button type="button" class="chip active" id="f-lg-ALL" onclick="window.setLeagueFilter('ALL')">All</button>
+      <button type="button" class="chip" id="f-lg-NFL" onclick="window.setLeagueFilter('NFL')">NFL</button>
+      <button type="button" class="chip" id="f-lg-NCAA" onclick="window.setLeagueFilter('NCAA')">NCAA Top-25</button>
+      <span class="chip-divider"></span>
+      <button type="button" class="chip active" id="f-mk-ALL" onclick="window.setMarketFilter('ALL')">Spreads &amp; O/U</button>
+      <button type="button" class="chip" id="f-mk-spread" onclick="window.setMarketFilter('spread')">Spreads</button>
+      <button type="button" class="chip" id="f-mk-total" onclick="window.setMarketFilter('total')">Totals</button>
+      <button type="button" class="chip" id="f-smash" onclick="window.toggleSmashFilter()">🔥 SMASH</button>
+      <button type="button" class="chip" id="f-weather" onclick="window.toggleWeatherFilter()">🌬️ Weather Edge</button>
+    </div>
 
-    <!-- Primary Navigation Bar (Locked inside Sticky Shell) -->
-    <nav class="tab-nav">
-      <label for="tab-1" class="tab-link">Master Pick Board</label>
-      <label for="tab-2" class="tab-link">Combinatorics &amp; Round Robin Deck</label>
-      <label for="tab-compendium" class="tab-link">13-Module Compendium</label>
-      <label for="tab-3" class="tab-link">Module Telemetry</label>
-      <label for="tab-4" class="tab-link">Biophysical &amp; Weather Lab</label>
-      <label for="tab-horsecocks" class="tab-link tab-link-teaser">DixPixProudlyPresents:</label>
-      <label for="tab-5" class="tab-link">Historical Ledger</label>
-    </nav>
+    <div class="chip-group">
+      <input type="text" class="search-input" id="picks-search-input" placeholder="Filter team..." oninput="window.setSearchFilter(this.value)" />
+      <select class="search-select" id="sort-select" onchange="window.setSortOrder(this.value)">
+        <option value="ev">Sort: Highest EV%</option>
+        <option value="prob">Sort: Highest Win %</option>
+        <option value="weather">Sort: Biggest Weather Shift</option>
+        <option value="kickoff">Sort: Kickoff Time</option>
+      </select>
+    </div>
   </div>
 
-  <!-- Main Content Containers -->
-  <main class="workspace">
+  <!-- MAIN APPLICATION WORKSPACE -->
+  <main class="main-wrap">
 
-    <!-- Tab 1: Master Pick Board -->
-    <section id="panel-master" class="tab-panel">
-      <div id="flagship-five-pack-container" class="panel-card"></div>
-
-      <div class="panel-card">
-        <div class="panel-header" style="justify-content: center; text-align: center; flex-direction: column;">
-          <h2 class="panel-title" style="width: 100%; text-align: center;">Master Pick Board // Slate Matchup Cards</h2>
-          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); width: 100%; text-align: center;">For informational, educational, and entertainment purposes only. DixPix Quant Engine is not a sportsbook and does not accept wagers. If you live in your mother's basement, you probably shouldn't be here...</span>
+    <!-- VIEW 1: PICKFINDER-STYLE PICKS FEED + SPLIT RESEARCH INSPECTOR -->
+    <section class="view-section active" id="view-picks">
+      <div class="split-board">
+        <div class="feed-col" id="picks-feed-list">
+          <div class="empty-state">Loading live DixPix slate from data.json...</div>
         </div>
-        <div id="master-board-body" style="padding: 16px;"></div>
+
+        <div class="inspector-wrap" id="inspector-wrap">
+          <div class="inspector-card" id="pick-inspector">
+            <div class="empty-state" style="border:none;">Select any pick to open Weather &amp; Model Research.</div>
+          </div>
+        </div>
       </div>
     </section>
 
-    <!-- Tab 2: Combinatorics & Round Robin Deck -->
-    <section id="panel-combinatorics" class="tab-panel">
-      <div id="combinatorics-container"></div>
+    <!-- VIEW 2: FLAGSHIP 5-PACK & PORKY'S SAFE FLOOR FADES -->
+    <section class="view-section" id="view-fivepack">
+      <div class="section-head">
+        <div class="chip-group">
+          <button type="button" class="chip active" id="fp-tab-main" onclick="window.setFivePackView('main_stage')">👑 Flagship 5-Pack</button>
+          <button type="button" class="chip" id="fp-tab-porkys" onclick="window.setFivePackView('porkys')">🐷 Porky's Safe Floor Fades</button>
+        </div>
+        <div class="chip-group">
+          <button type="button" class="chip" onclick="window.loadFlagshipPreset(true, false, false)">+ Load Ménage (3)</button>
+          <button type="button" class="chip" onclick="window.loadFlagshipPreset(false, false, false)">+ Load Full 5-Pack</button>
+          <button type="button" class="chip" onclick="window.loadPorkysPreset(event)">+ Load Porky's Fades</button>
+        </div>
+      </div>
+      <div id="flagship-five-pack-container" class="feed-col"></div>
     </section>
 
-    <!-- Tab: 13-Module Compendium Reference & Master Score -->
-    <section id="panel-compendium" class="tab-panel">
-      <div class="panel-card">
-        <div class="panel-header">
-          <h2 class="panel-title">DixPix 13-Module Quantitative Compendium Reference (&Sigma;F = 76)</h2>
+    <!-- VIEW 3: SYNOPTIC WEATHER, AIR DENSITY & 10-ZONE ALTITUDE LAB -->
+    <section class="view-section" id="view-weather">
+      <div class="section-head">
+        <div>
+          <h2 class="section-title">Synoptic Weather, Air Density &amp; 10-Zone Altitude Lab</h2>
+          <p class="section-sub">Live Open-Meteo barometrics, kick/pass drag shifts (&Delta;D_FG / &Delta;Y), somatic density, and Q1–Q4 hypoxic ascent curves.</p>
         </div>
-        <div style="padding: 20px; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); line-height: 1.6;">
-          <p style="margin-bottom: 12px; color: var(--text-primary);"><strong>Architectural Definition of All 13 Governing Modules:</strong></p>
-          <ul style="padding-left: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px;">
-            <li><strong>M1: Vig-Free Baseline (F9=34)</strong> — Strips bookmaker juice &amp; anchors Tier 1 efficiency (44.7%).</li>
-            <li><strong>M2: Quarter-Kelly &amp; 50% Rollover (F7=13)</strong> — Optimal bankroll sizing (&lambda; = 0.25) &amp; profit lock.</li>
-            <li><strong>M3: Spread Point-Buy MER (F7=13)</strong> — Key-number marginal efficiency verification (&gt;1.15).</li>
-            <li><strong>M4: Discrete Count Props (F6=8)</strong> — Poisson &amp; Negative Binomial count distributions.</li>
-            <li><strong>M5: Continuous Yardage Gamma (F9=34)</strong> — Right-skewed Gamma survival integration.</li>
-            <li><strong>M6: Prop Alt-Line Arbitrage (F8=21)</strong> — True probability gain vs. break-even juice tax.</li>
-            <li><strong>M7: Barometric Air Density (F9=34)</strong> — Ballistic drag &amp; effective FG shift (&Delta;D_FG).</li>
-            <li><strong>M8: Circadian Fatigue &amp; Delay (F6=8)</strong> — Travel mileage, TZ shifts &amp; body-clock troughs.</li>
-            <li><strong>M9: Full-Game Fair Margin</strong> — 38.5145 Play Scaler, Net EPA, &Delta;RZ_fin, &pi;/&phi; HFA &amp; Tier-1 Anchor.</li>
-            <li><strong>M10: Profit Boost Parlay EV (F8=21)</strong> — Compounding 30% profit boost &amp; Round Robin matrix.</li>
-            <li><strong>M11: Biophysical &amp; 10-Zone Elevation (F7=13)</strong> — Gravity g(h), &Phi;_bio &amp; 0.1&times;F_z Ascent/Descent (&Psi;_elev).</li>
-            <li><strong>M12: Turnover EPA Matrix (F8=21)</strong> — Short-field conversion value &amp; Q4 takeaway weights.</li>
-            <li><strong>M13: Sacred Geometry Overlay (M_rise)</strong> — &phi;/&pi; (0.5150) Market-to-EPA divergence &amp; underdog havoc lift.</li>
-          </ul>
+        <div class="chip-group">
+          <button type="button" class="chip active" id="wl-view-cards" onclick="window.setWeatherLabView('cards')">Cards</button>
+          <button type="button" class="chip" id="wl-view-table" onclick="window.setWeatherLabView('table')">Lab Table</button>
+        </div>
+      </div>
+      <div id="weather-lab-grid" class="card-grid-2"></div>
+      <div id="biolab-container" class="table-box" style="display:none;"></div>
+    </section>
+
+    <!-- VIEW 4: LIVING HISTORICAL LEDGER & 6 SCOREBOARD VAULTS -->
+    <section class="view-section" id="view-ledger">
+      <div class="section-head">
+        <div>
+          <h2 class="section-title">Living Historical Archive &amp; Auto-Graded Ledger</h2>
+          <p class="section-sub">Lines lock automatically at kickoff and grade live against ESPN final scores (SMASH &ge; +10.0% EV).</p>
+        </div>
+        <span class="badge b-cyan">AUTO-GRADED VIA ESPN</span>
+      </div>
+      <div id="ledger-container"></div>
+    </section>
+
+    <!-- VIEW 5: 13-MODULE COMPENDIUM, TELEMETRY & HORSECOCKS -->
+    <section class="view-section" id="view-modules">
+      <div class="section-head">
+        <div>
+          <h2 class="section-title">13-Module Fibonacci Compendium (&Sigma;F = 76)</h2>
+          <p class="section-sub">Full-slate module telemetry, Fibonacci tier weighting, and unified win-and-cover probabilities.</p>
+        </div>
+        <div class="chip-group">
+          <button type="button" class="chip active" id="mod-tab-comp" onclick="window.setModulesSubView('compendium')">Compendium Matrix</button>
+          <button type="button" class="chip" id="mod-tab-tel" onclick="window.setModulesSubView('telemetry')">Spread Telemetry</button>
+          <button type="button" class="chip" id="mod-tab-guide" onclick="window.toggleModuleGuide()">How to Read ▼</button>
+          <button type="button" class="chip" id="mod-tab-horse" onclick="window.toggleHorseCocks()">🐎 HorseCoCKs</button>
         </div>
       </div>
 
-      <div class="panel-card">
-        <div class="panel-header">
-          <h2 class="panel-title">Slate Matchup Module Breakdown, Master Fibonacci Score (&Omega;_fib,rise) &amp; Unified Win Probability (P_agg)</h2>
+      <!-- Explicit Home-Team Perspective Callout -->
+      <div class="home-perspective-banner">
+        <div style="font-size:12.5px; color:var(--text-2); line-height:1.5;">
+          <strong style="color:var(--text-1);">Home-Team Frame Rule:</strong> Every column and variable in the 13-Module Compendium below feeds directly into the <strong style="color:var(--cyan);">Home Team's Unified Win &amp; Cover Probability (P_agg)</strong>. Even when M8 (Travel CSI) or M11 (10-Zone Altitude) measures strain hitting the visiting team, it enters the composite as an edge for or against the Home Team.
         </div>
-        <div class="table-responsive">
-          <table class="quant-table">
+        <button type="button" class="chip" onclick="window.setAppView('faq')">Full Guide in FAGquestions →</button>
+      </div>
+
+      <!-- Collapsible On-Page Module Reading Guide -->
+      <div id="module-reader-guide" class="module-guide-grid" style="display:none;">
+        <div class="guide-tile">
+          <div class="mono" style="font-size:10.5px; font-weight:800; color:var(--cyan); margin-bottom:5px;">M7 AIR DENSITY (&rho;) &amp; M8 CIRCADIAN (CSI)</div>
+          <strong>M7:</strong> Sea-level baseline is <strong>1.225 kg/m&sup3;</strong> (domes lock at 1.204). Lower = thinner air (balls fly farther); higher = cold/heavy air (drags kicks &amp; deep throws).<br />
+          <strong>M8:</strong> Measures the <strong>away team's</strong> travel/jet-lag strain. <strong>Red (&gt; 0.80) helps the Home Team</strong> because the visitor is travel-compromised.
+        </div>
+        <div class="guide-tile">
+          <div class="mono" style="font-size:10.5px; font-weight:800; color:var(--cyan); margin-bottom:5px;">M11 BIO + 10-ZONE ELEVATION (&Psi;_elev)</div>
+          Tracks the road team's elevation climb (<strong>ASCE</strong>) or drop (<strong>DESC</strong>) across 10 Fibonacci zones. Uses <strong>spread sign convention</strong>—negative point values (e.g. <strong>-1.52 pts</strong>) shift the fair spread in favor of the <strong>Home Team</strong>. Zone 7+ climbs override M13 hype.
+        </div>
+        <div class="guide-tile">
+          <div class="mono" style="font-size:10.5px; font-weight:800; color:var(--emerald); margin-bottom:5px;">M12 TURNOVER EPA &amp; M13 SACRED GEO</div>
+          <strong>M12:</strong> Net 4Q-weighted takeaway value (Home minus Away). <strong>Green (+)</strong> favors Home; <strong>Red (-)</strong> favors Away.<br />
+          <strong>M13:</strong> First number (e.g. <code>1.08x</code>) is the underdog's ambush multiplier; the signed number in parentheses flips it into the <strong>Home Team's</strong> edge.
+        </div>
+        <div class="guide-tile">
+          <div class="mono" style="font-size:10.5px; font-weight:800; color:var(--gold); margin-bottom:5px;">MASTER SCORE (&Omega;_fib) &amp; UNIFIED P_agg</div>
+          Combines Tier 1 (34), Tier 2 (21), Tier 3 (13), Tier 4 (8), and M13 into the <strong>Home Team's</strong> aggregate cover probability. <strong>&gt; 52.4% (Green)</strong> clears -110 break-even for the Home side; <strong>&lt; 52.4% (Red)</strong> leans Away.
+        </div>
+      </div>
+
+      <!-- Optional HorseCoCKs Teaser Stage -->
+      <div id="horsecocks-stage-wrap" style="display:none;">
+        <div class="horsecocks-stage">
+          <div class="caution-tape caution-tape-1"></div>
+          <div class="caution-tape caution-tape-2"></div>
+          <div class="horsecocks-center">
+            <div class="mono" style="font-size:11px; font-weight:800; color:var(--text-2); letter-spacing:0.16em; margin-bottom:8px;">
+              DIXPIX PROUDLY PRESENTS
+            </div>
+            <div class="horsecocks-title">HorseCoCKs</div>
+            <div class="mono" style="font-size:13px; font-weight:700; color:var(--gold); margin-top:8px;">
+              (Horse Calculations of Card Keepers)
+            </div>
+            <div class="red-stamp">COMING SOON</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Compendium Matrix Table -->
+      <div id="modules-compendium-panel">
+        <div class="table-box">
+          <table class="pf-table">
             <thead>
               <tr>
                 <th>Matchup</th>
@@ -823,72 +1430,99 @@
                 <th>M8 Circadian (CSI)</th>
                 <th>M11 Bio + 10-Zone (&Psi;_elev)</th>
                 <th>M12 Turnover EPA</th>
-                <th>M13 Sacred Geometry (M_rise)</th>
-                <th>Master Score (&Omega;_fib,rise)</th>
-                <th>Unified Home Win &amp; Cover Prob (P_agg)</th>
+                <th>M13 Sacred Geo (M_rise)</th>
+                <th>Home Master (&Omega;_fib)</th>
+                <th>Home Win &amp; Cover (P_agg)</th>
               </tr>
             </thead>
             <tbody id="compendium-board-body"></tbody>
           </table>
         </div>
       </div>
-    </section>
 
-    <!-- Tab 3: Module Telemetry -->
-    <section id="panel-telemetry" class="tab-panel">
-      <div class="panel-card">
-        <div class="panel-header">
-          <h2 class="panel-title">13-Module Telemetry Inspector</h2>
-        </div>
-        <div id="telemetry-container" class="empty-placeholder">[ Module Telemetry Container ]</div>
+      <!-- Spread Telemetry Table -->
+      <div id="modules-telemetry-panel" style="display:none;">
+        <div id="telemetry-container" class="table-box"></div>
       </div>
     </section>
 
-    <!-- Tab 4: Biophysical & Weather Lab -->
-    <section id="panel-biolab" class="tab-panel">
-      <div class="panel-card">
-        <div class="panel-header">
-          <h2 class="panel-title">Biophysical Mass, 10-Zone Elevation &amp; Synoptic Weather Lab</h2>
+    <!-- VIEW 6: FAGQUESTIONS (FREQUENTLY ASKED GAMBLING QUESTIONS) -->
+    <section class="view-section" id="view-faq">
+      <div class="faq-hero">
+        <div>
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px;">
+            <h2 style="font-size:20px; font-weight:800; letter-spacing:-0.02em;">FAGquestions</h2>
+            <span class="badge b-gold">FREQUENTLY ASKED GAMBLING QUESTIONS</span>
+          </div>
+          <p style="font-size:12.5px; color:var(--text-2);">
+            Complete plain-English walkthrough of how to use DixPix, read all 13 modules, weaponize the weather edge, and build cleaner tickets.
+          </p>
         </div>
-        <div id="biolab-container" class="empty-placeholder">[ Biophysical &amp; Weather Lab Container ]</div>
+        <button type="button" class="chip" onclick="window.setAppView('picks')">← Back to Picks</button>
       </div>
-    </section>
 
-    <!-- Tab 6: DixPixProudlyPresents: HorseCoCKs Teaser Stage -->
-    <section id="panel-horsecocks" class="tab-panel">
-      <div class="horsecocks-stage">
-        <div class="caution-tape caution-tape-1"></div>
-        <div class="caution-tape caution-tape-2"></div>
+      <div class="faq-list" id="faq-accordion-list"></div>
 
-        <div class="horsecocks-centerpiece">
-          <div style="font-family: var(--font-mono); font-size: 12px; font-weight: 800; color: var(--accent-cyan); letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 10px;">
-            DIXPIX PROUDLY PRESENTS
+      <div class="faq-thanks-card">
+        <div>
+          <div class="mono" style="font-size:10.5px; font-weight:800; color:var(--gold); letter-spacing:0.06em; margin-bottom:4px;">
+            SPECIAL SHOUTOUT
           </div>
-          <div class="horsecocks-title">
-            HorseCoCKs
-            <sup class="horsecocks-sup">(Horse Calculations of Card Keepers)</sup>
-          </div>
-          <div class="red-stamp-coming-soon">
-            COMING SOON
+          <div style="font-size:14px; font-weight:700; color:var(--text-1);">
+            We'd like to thank our Frequent Anonymous Gamblers to help make this platform possible!
           </div>
         </div>
+        <span class="badge b-cyan">COMMUNITY BUILT</span>
       </div>
     </section>
 
-    <!-- Tab 7: Historical Ledger -->
-    <section id="panel-ledger" class="tab-panel">
-      <div class="panel-card">
-        <div class="panel-header">
-          <h2 class="panel-title">Living Historical Archive &amp; Auto-Graded Ledger</h2>
-          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--accent-cyan);">Lines Lock Automatically at Kickoff // SMASH &ge; +10.0% EV</span>
-        </div>
-        <div id="ledger-container" style="padding: 16px;"></div>
+    <!-- SUBTLE GLOBAL FOOTER -->
+    <footer class="app-footer">
+      <span>We'd like to thank our Frequent Anonymous Gamblers to help make this platform possible!</span>
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <button type="button" class="chip" style="padding:3px 10px; font-size:11px;" onclick="window.setAppView('faq')">FAGquestions</button>
+        <span class="mono" style="font-size:10.5px;">For informational &amp; entertainment purposes only · Not a sportsbook · 21+</span>
       </div>
-    </section>
+    </footer>
 
   </main>
-  
+
+  <!-- CROSS-PLATFORM SLIDE-OVER SLIP & ROUND ROBIN DRAWER -->
+  <div class="drawer-backdrop" id="drawer-backdrop" onclick="window.closeAllOverlays()"></div>
+  <aside class="slip-drawer" id="slip-drawer" aria-label="Bet Slip and Round Robin Calculator">
+    <div class="drawer-head">
+      <div>
+        <div style="font-weight:800; font-size:15px;">DixPix Slip &amp; Round Robin</div>
+        <div class="mono" style="font-size:11px; color:var(--text-2);" id="slip-mode-sub">STANDARD PARLAY</div>
+      </div>
+      <button type="button" class="chip" onclick="window.toggleSlipDrawer(false)">✕</button>
+    </div>
+    <div class="drawer-body" id="slip-drawer-body"></div>
+    <div class="drawer-foot" id="slip-drawer-foot"></div>
+  </aside>
+
+  <!-- SLIM LIVE WIRE TICKER DOCK -->
+  <div class="live-wire-bar" id="dixpix-live-wire-bar">
+    <div class="live-wire-tag">
+      <span class="live-pulse-dot"></span>
+      LIVE WIRE
+    </div>
+    <div class="live-wire-viewport">
+      <div class="live-wire-track" id="dixpix-live-wire-track">Syncing live ESPN &amp; DixPix feed...</div>
+    </div>
+  </div>
+
+  <!-- NATIVE MOBILE BOTTOM NAVIGATION BAR -->
+  <nav class="mobile-tabbar" aria-label="Mobile Navigation">
+    <button type="button" class="mob-tab active" data-view="picks" onclick="window.setAppView('picks')"><span class="ico">⚡</span>Picks</button>
+    <button type="button" class="mob-tab" data-view="fivepack" onclick="window.setAppView('fivepack')"><span class="ico">👑</span>5-Pack</button>
+    <button type="button" class="mob-tab" data-view="weather" onclick="window.setAppView('weather')"><span class="ico">🌬️</span>Weather</button>
+    <button type="button" class="mob-tab" data-view="ledger" onclick="window.setAppView('ledger')"><span class="ico">📊</span>Ledger</button>
+    <button type="button" class="mob-tab" onclick="window.toggleSlipDrawer(true)"><span class="ico">🧾</span>Slip (<span id="mob-slip-n">0</span>)</button>
+  </nav>
+
+  <!-- Live Engine & Controller Scripts -->
   <script src="./js/math_engine.js?v=323"></script>
-  <script src="./js/app_controller.js?v=260"></script>
+  <script src="./js/app_controller.js?v=261"></script>
 </body>
 </html>
