@@ -1,35 +1,39 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & COMBINATORICS CONTROLLER (v260 — 2-KEY-RUNG PERPETUITY + ALWAYS-ON WONG TEASER + INSTANT LEDGER RE-GRADE)
- * Pure OG M1–M9 + ΔQB-Only Filter + Full Key-Number Ladder (-12.5/+13.5/-16.5/+17.5) + 1-Dev Safer Wong Teasers + Regime Safe Totals — Synced 1:1 with math_engine.js (v323) & scraper.py (v237)
- *  - Symmetric -110 PASS Cutoff (-19.0% EV exact mirror of +10.0% SMASH)
- *  - True Unclamped Safe Floor (-2φ) Probabilities + 🛡️ SAFE SMASH (>= +10.0% EV) Badge
- *  - Blended Spread + O/U Flagship 5-Pack (Strict 1-Pick-Per-Game for clean x2/x3 Round Robins)
- *  - Zero-Lag DaVinci Slider: 50ms rAF drag fast-path (visible-tab-only repaint) + full sync on release
- *  - Organic Continuous Momentum Arc (calcMomentumArc): flows Spreads, Totals, Safe Floors & Ceilings
- *    smoothly across [-2φ, +2φ] without artificial .5 or 5-yard snapping
- *  - Strict M1–M9 Mode Firewall: Zero M11/M13 alerts or badges in Just the Tip mode
- *  - Single-source-of-truth integration with v313 Guardrails (4.0% Quarter-Kelly Cap, M4/M5 Prop Gatekeepers,
- *    M8 Totals-Weighted FAA Delay, M9 Red-Zone Finishing & 3rd-String QB TOP Redirect, M11>M13 Elevation Override)
- *  - Preserves all 6 Clickable Ledger Vault Cards, Flagship 5-Pack Week Dropdown, Porky's Safe Floor Fades,
- *    ESPN Live Scoreboard Sync, Auto-Sweep of FINAL games, and 300s Live Wire Ticker
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & RESEARCH CONTROLLER (v261 — PICKFINDER-STYLE UI + WEATHER MOAT)
+ * Synced 1:1 with math_engine.js (v323) & scraper.py (v237)
+ *  - Pure OG M1–M9 Firewall in Just the Tip | Full M11–M13 Physics, 2-Key-Rung Alts, Always-On Wong Teasers & Regime Safe Totals in Balls Deep / DaVinci
+ *  - PickFinder-Style Scannable Picks Feed + Split Research Inspector (Weather & Ballistic Physics Moat)
+ *  - Flagship 5-Pack (Ménage à Trois) & Porky's Safe Floor Fades + Weather Lab + 13 Modules (Home-Team Frame) + FAGquestions + 6 Ledger Vaults + Slide-Over Bet Slip
  */
 
 const AppState = {
     rawPayload: null,
     lastDataHash: "",
+    activeView: "picks",              // "picks" | "fivepack" | "weather" | "ledger" | "modules" | "faq"
     activeMode: "tip",                // "tip" | "balls_deep" | "davinci"
-    fivePackView: "main_stage",       // "main_stage" | "porkys"
-    ledgerFivePackView: "flagship",   // "flagship" | "porkys" (swaps Card #1 on Historical Ledger)
-    activeLedgerVault: null,          // null | "flagship_5pack" | "porkys_5pack" | "overall_smash" | "all_tease" | "grenades_dodged" | "floors_ceilings" | "tip_vs_bd"
-    selectedFivePackWeek: "ALL",      // "ALL" | "Week 10" | "Week 11" ...
-    selectedPorkysWeek: "ALL",        // "ALL" | "Week 10" | "Week 11" ...
-    ledgerShowAllCompleted: false,    // false = Top-25 NCAA + NFL | true = All Completed FBS + NFL
     intensitySlider: 0.0,             // -3.236 (-2φ) to +3.236 (+2φ)
     filters: { nfl: true, ncaa: true },
-    comboFilters: { team: "ALL", market: "ALL", tier: "ALL" },
+    leagueFilter: "ALL",              // "ALL" | "NFL" | "NCAA"
+    marketFilter: "ALL",              // "ALL" | "spread" | "total"
+    smashOnly: false,
+    weatherOnly: false,
+    searchQuery: "",
+    sortOrder: "ev",                  // "ev" | "prob" | "weather" | "kickoff"
+    selectedPropKey: null,
+    fivePackView: "main_stage",       // "main_stage" | "porkys"
+    weatherLabView: "cards",          // "cards" | "table"
+    modulesSubView: "compendium",     // "compendium" | "telemetry"
+    showModuleGuide: false,
+    showHorseCocks: false,
+    ledgerFivePackView: "flagship",   // "flagship" | "porkys"
+    activeLedgerVault: "flagship_5pack",
+    selectedFivePackWeek: "ALL",
+    selectedPorkysWeek: "ALL",
+    ledgerShowAllCompleted: false,
     selectedParlayLegs: new Set(),
-    safeFloorParlayLegs: new Set(),   // Tracks legs loaded at 2-Key-Rung Floor odds
-    wongTeaserParlayLegs: new Set(),  // Tracks legs loaded in Always-On Wong Teaser mode
+    safeFloorParlayLegs: new Set(),
+    wongTeaserParlayLegs: new Set(),
+    openFaq: new Set([0, 2, 4]),
     mnfCutoffMs: Infinity,
     processedGames: [],
     processedProps: [],
@@ -37,14 +41,14 @@ const AppState = {
     porkysFivePack: []
 };
 
-const openCardMemory = new Set();
 const MODEL_TOTAL_INTERCEPT = 42.986;
-const SMASH_EV_CUTOFF = 10.0;          // >= +10.0% EV threshold for SMASH
-const PASS_EV_CUTOFF = -19.0;          // <= -19.0% EV threshold for definitive PASS (exact -110 mirror of +10.0% SMASH)
+const SMASH_EV_CUTOFF = 10.0;         // >= +10.0% EV threshold for SMASH
+const PASS_EV_CUTOFF = -19.0;         // <= -19.0% EV threshold for definitive PASS (exact -110 mirror of +10.0% SMASH)
+const BLUE_BALLS_MARGIN = 3.0;        // <= 3.0 pts miss from Vegas line = BLUE BALLS
 const PHI = (typeof GOLDEN_RATIO_PHI !== "undefined") ? GOLDEN_RATIO_PHI : 1.6180339887;
 let sliderDragTimer = null;
 
-// Official AP / CFP Top-25 Ranked NCAA Programs (Full-Name & Code Matchers)
+// Official AP / CFP Top-25 Ranked NCAA Programs (Fallback if slate_info.ranked_ncaa_teams is empty)
 const RANKED_NCAA_FULL_NAMES = [
     "Georgia Bulldogs", "Utah Utes", "Notre Dame Fighting Irish", "UCLA Bruins",
     "Miami Hurricanes", "Indiana Hoosiers", "Alabama Crimson Tide", "Texas Longhorns",
@@ -63,130 +67,29 @@ const RANKED_NCAA_CODES = new Set([
 ]);
 
 const CLEAN_CODE_OVERRIDES = {
-    // Big 12
-    "TCHO": "TCU",
-    "KAJA": "KAN",
-    "KAST": "KSU",
-    "OKST": "OKST",
-    "IOST": "ISU",
-    "WEVI": "WVU",
-    "BABE": "BAY",
-    "TETE": "TTU",
-    "BYCO": "BYU",
-    "UTUT": "UTAH",
-    "ARWI": "ARIZ",
-    "COBU": "COLO",
-    "UCKN": "UCF",
-    "CIBE": "CIN",
-    "HOCO": "HOU",
-
-    // Big Ten
-    "NECO": "NEB",
-    "IOHA": "IOWA",
-    "ILFI": "ILL",
-    "NOWI": "NW",
-    "WIBA": "WIS",
-    "MIGO": "MINN",
-    "PUBO": "PUR",
-    "INHO": "IND",
-    "OHST": "OSU",
-    "MIWO": "MICH",
-    "PEST": "PSU",
-    "RUSC": "RUTG",
-    "MATE": "MD",
-    "ORDU": "ORE",
-    "WAHU": "WASH",
-    "USTR": "USC",
-    "UCBR": "UCLA",
-
-    // SEC
-    "ALCR": "ALA",
-    "GEBU": "UGA",
-    "TELO": "TEX",
-    "OKSO": "OU",
-    "TEVO": "TENN",
-    "OLMI": "MISS",
-    "LSTI": "LSU",
-    "TEA&": "TAMU",
-    "TEAG": "TAMU",
-    "MITI": "MIZZ",
-    "KEWI": "UK",
-    "SOCA": "SCAR",
-    "FLGA": "FLA",
-    "AUTI": "AUB",
-    "ARRA": "ARK",
-    "VACO": "VAN",
-
-    // ACC & Independents
-    "NODA": "NDSU",
-    "MIHU": "MIA",
-    "CLTI": "CLEM",
-    "SMMU": "SMU",
-    "PIPA": "PITT",
-    "LOCA": "LOU",
-    "GETE": "GT",
-    "WAFO": "WAKE",
-    "DUBL": "DUKE",
-    "NOCA": "UNC",
-    "NCST": "NCST",
-    "VATE": "VT",
-    "VICA": "UVA",
-    "BOCO": "BC",
-    "SYOR": "SYR",
-    "FLST": "FSU",
-    "CAGO": "CAL",
-    "STCA": "STAN",
-    "UCHU": "CONN",
-    "UMMI": "MASS",
-
-    // Mountain West, Pac-12, AAC, Sun Belt, MAC & FCS Opponents
-    "WOTE": "WOF",
-    "CHMO": "UTC",
-    "NOIL": "NIU",
-    "WYCO": "WYO",
-    "NEME": "UNM",
-    "BOST": "BSU",
-    "UNRE": "UNLV",
-    "COST": "CSU",
-    "FRST": "FRES",
-    "SADI": "SDSU",
-    "SAJO": "SJSU",
-    "AIFO": "AFA",
-    "UTST": "USU",
-    "NEWO": "NEV",
-    "HARA": "HAW",
-    "ORST": "ORST",
-    "WAST": "WSU",
-    "ARBL": "ARMY",
-    "NAMI": "NAVY",
-    "TUGR": "TULN",
-    "METI": "MEM",
-    "USBU": "USF",
-    "EACA": "ECU",
-    "UTRO": "UTSA",
-    "LIBL": "LIB",
-    "JAMA": "JMU",
-    "APST": "APP",
-    "COCH": "CCU",
-    "GESO": "GASO",
-    "GEST": "GAST",
-    "MAHE": "MRSH",
-    "WEKE": "WKU",
-    "WACA": "WCU",
-    "MEME": "MERC",
-    "THCI": "CIT",
-    "EAMI": "EMU",
-    "KEST": "KENT",
-    "WEMI": "WMU",
-    "AKZI": "AKR",
-    "BAST": "BALL",
-    "CEMI": "CMU",
-    "DEBL": "DEL",
-    "NOTE": "UNT",
-    "TEOW": "TEM",
-    "SOMI": "USM",
-    "ULMO": "ULM",
-    "LORA": "ULL",
+    "TCHO": "TCU", "KAJA": "KAN", "KAST": "KSU", "OKST": "OKST", "IOST": "ISU",
+    "WEVI": "WVU", "BABE": "BAY", "TETE": "TTU", "BYCO": "BYU", "UTUT": "UTAH",
+    "ARWI": "ARIZ", "COBU": "COLO", "UCKN": "UCF", "CIBE": "CIN", "HOCO": "HOU",
+    "NECO": "NEB", "IOHA": "IOWA", "ILFI": "ILL", "NOWI": "NW", "WIBA": "WIS",
+    "MIGO": "MINN", "PUBO": "PUR", "INHO": "IND", "OHST": "OSU", "MIWO": "MICH",
+    "PEST": "PSU", "RUSC": "RUTG", "MATE": "MD", "ORDU": "ORE", "WAHU": "WASH",
+    "USTR": "USC", "UCBR": "UCLA", "ALCR": "ALA", "GEBU": "UGA", "TELO": "TEX",
+    "OKSO": "OU", "TEVO": "TENN", "OLMI": "MISS", "LSTI": "LSU", "TEA&": "TAMU",
+    "TEAG": "TAMU", "MITI": "MIZZ", "KEWI": "UK", "SOCA": "SCAR", "FLGA": "FLA",
+    "AUTI": "AUB", "ARRA": "ARK", "VACO": "VAN", "NODA": "NDSU", "MIHU": "MIA",
+    "CLTI": "CLEM", "SMMU": "SMU", "PIPA": "PITT", "LOCA": "LOU", "GETE": "GT",
+    "WAFO": "WAKE", "DUBL": "DUKE", "NOCA": "UNC", "NCST": "NCST", "VATE": "VT",
+    "VICA": "UVA", "BOCO": "BC", "SYOR": "SYR", "FLST": "FSU", "CAGO": "CAL",
+    "STCA": "STAN", "UCHU": "CONN", "UMMI": "MASS", "WOTE": "WOF", "CHMO": "UTC",
+    "NOIL": "NIU", "WYCO": "WYO", "NEME": "UNM", "BOST": "BSU", "UNRE": "UNLV",
+    "COST": "CSU", "FRST": "FRES", "SADI": "SDSU", "SAJO": "SJSU", "AIFO": "AFA",
+    "UTST": "USU", "NEWO": "NEV", "HARA": "HAW", "ORST": "ORST", "WAST": "WSU",
+    "ARBL": "ARMY", "NAMI": "NAVY", "TUGR": "TULN", "METI": "MEM", "USBU": "USF",
+    "EACA": "ECU", "UTRO": "UTSA", "LIBL": "LIB", "JAMA": "JMU", "APST": "APP",
+    "COCH": "CCU", "GESO": "GASO", "GEST": "GAST", "MAHE": "MRSH", "WEKE": "WKU",
+    "WACA": "WCU", "MEME": "MERC", "THCI": "CIT", "EAMI": "EMU", "KEST": "KENT",
+    "WEMI": "WMU", "AKZI": "AKR", "BAST": "BALL", "CEMI": "CMU", "DEBL": "DEL",
+    "NOTE": "UNT", "TEOW": "TEM", "SOMI": "USM", "ULMO": "ULM", "LORA": "ULL",
     "SAHO": "SHSU"
 };
 
@@ -204,70 +107,64 @@ function cleanLabelCodes(labelStr) {
     return out;
 }
 
+function fmtSigned(val, decimals = 1) {
+    const n = Number(val || 0);
+    const s = n.toFixed(decimals);
+    return n > 0 ? `+${s}` : s;
+}
+
 function getTierFromEv(evPct) {
     const ev = Number(evPct);
     if (ev >= SMASH_EV_CUTOFF) return "SMASH";
     if (ev <= PASS_EV_CUTOFF) return "PASS";
-    return "TOO_CLOSE"; // -18.99% to +9.99% EV
+    return "TOO_CLOSE";
 }
 
-function getTierColor(tierBadge, useHex = false) {
-    if (tierBadge === "SMASH") return useHex ? "#22c55e" : "var(--accent-emerald)";
-    if (tierBadge === "PASS") return useHex ? "#ef4444" : "var(--accent-danger)";
-    return useHex ? "#94a3b8" : "var(--text-secondary)";
+function getTierColor(tierBadge) {
+    if (tierBadge === "SMASH") return "var(--emerald)";
+    if (tierBadge === "PASS") return "var(--red)";
+    return "var(--text-2)";
 }
 
 function renderTierBadgeHTML(tierBadge) {
-    if (tierBadge === "SMASH") {
-        return `<span class="badge-smash">SMASH</span>`;
-    }
-    if (tierBadge === "PASS") {
-        return `<span class="badge-pass" style="background: rgba(239, 68, 68, 0.16); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.45); font-weight: 800;">PASS</span>`;
-    }
-    return "";
+    if (tierBadge === "SMASH") return `<span class="badge b-smash">SMASH</span>`;
+    if (tierBadge === "PASS") return `<span class="badge b-pass">PASS</span>`;
+    return `<span class="badge b-muted">TEASE</span>`;
 }
 
 function renderGatekeeperPillsHTML(flags, action = "ALLOW") {
     if (!Array.isArray(flags) || flags.length === 0) return "";
-    const isHardStop = (action === "PASS" || action === "PIVOT_TEAM_TOTAL_UNDER" || action === "PIVOT_SAFE_FLOOR");
-    const bg = isHardStop ? "rgba(239, 68, 68, 0.13)" : "rgba(245, 158, 11, 0.13)";
-    const border = isHardStop ? "rgba(239, 68, 68, 0.48)" : "rgba(245, 158, 11, 0.48)";
-    const color = isHardStop ? "#fca5a5" : "var(--accent-gold)";
-    const icon = action === "PIVOT_TEAM_TOTAL_UNDER" ? "🔄" : (isHardStop ? "🛑" : "⚠️");
-
+    const isHard = (action === "PASS" || action === "PIVOT_TEAM_TOTAL_UNDER" || action === "PIVOT_SAFE_FLOOR");
+    const icon = action === "PIVOT_TEAM_TOTAL_UNDER" ? "🔄" : (isHard ? "🛑" : "⚠️");
     return flags.map(flagText => `
-        <div style="margin-top: 4px; padding: 3px 7px; border-radius: 4px; background: ${bg}; border: 1px solid ${border}; color: ${color}; font-family: var(--font-mono); font-size: 10px; font-weight: 700; line-height: 1.35;">
-            ${icon} ${flagText}
-        </div>
+        <div class="guardrail-alert ${isHard ? "hard" : "warn"}">${icon} ${flagText}</div>
     `).join("");
 }
 
 function renderGameGuardrailChipsHTML(gameRecord) {
+    if (!gameRecord) return "";
     const chips = [];
     const isUnlocked = (AppState.activeMode !== "tip");
 
-    // Balls Deep / DaVinci Modules ONLY (M11 & M13) — strictly sealed out of Just the Tip (M1–M9)
     if (isUnlocked && gameRecord.elevMatrix && gameRecord.elevMatrix.hypoxicOverrideM13) {
-        chips.push(`<span style="background:rgba(245,158,11,0.16); color:var(--accent-gold); border:1px solid rgba(245,158,11,0.5); padding:2px 6px; border-radius:4px; font-size:10px; font-family:var(--font-mono); font-weight:800;">🏔️ M11&gt;M13 ZONE ${gameRecord.elevMatrix.zoneNumber} HYPOXIA</span>`);
+        chips.push(`<span class="badge b-gold">🏔️ M11&gt;M13 ZONE ${gameRecord.elevMatrix.zoneNumber} HYPOXIA</span>`);
     }
     if (isUnlocked && gameRecord.m13Details && gameRecord.m13Details.coachSyncBlocked) {
-        chips.push(`<span style="background:rgba(239,68,68,0.16); color:#f87171; border:1px solid rgba(239,68,68,0.5); padding:2px 6px; border-radius:4px; font-size:10px; font-family:var(--font-mono); font-weight:800;">🔒 M13 COACH/QB LOCK</span>`);
+        chips.push(`<span class="badge b-pass">🔒 M13 COACH/QB LOCK</span>`);
     }
-
-    // Modules 8 & 9 Core Guardrails (Active in all modes)
     if (gameRecord.thirdStringQbAlert) {
-        chips.push(`<span style="background:rgba(6,182,212,0.16); color:var(--accent-cyan); border:1px solid rgba(6,182,212,0.5); padding:2px 6px; border-radius:4px; font-size:10px; font-family:var(--font-mono); font-weight:800;">🔄 3RD-STRING QB → ${gameRecord.thirdStringTeam} TT UNDER</span>`);
+        chips.push(`<span class="badge b-cyan">🔄 3RD-STRING QB → ${gameRecord.thirdStringTeam} TT UNDER</span>`);
     }
     if (gameRecord.m8 && gameRecord.m8.charterDelayShock > 0) {
-        chips.push(`<span style="background:rgba(168,85,247,0.16); color:#d8b4fe; border:1px solid rgba(168,85,247,0.5); padding:2px 6px; border-radius:4px; font-size:10px; font-family:var(--font-mono); font-weight:800;">✈️ FAA DELAY (${gameRecord.m8.delayTotalDragPts} TOT)</span>`);
+        chips.push(`<span class="badge b-purple">✈️ FAA DELAY (${gameRecord.m8.delayTotalDragPts} TOT)</span>`);
     }
     if (gameRecord.m9Base && Math.abs(gameRecord.m9Base.injurySpreadDiff || 0) >= 0.75) {
         const injPts = gameRecord.m9Base.injurySpreadDiff;
         const favTeam = injPts < 0 ? gameRecord.homeTeam : gameRecord.awayTeam;
-        chips.push(`<span style="background:rgba(244,63,94,0.16); color:#fda4af; border:1px solid rgba(244,63,94,0.5); padding:2px 6px; border-radius:4px; font-size:10px; font-family:var(--font-mono); font-weight:800;">🚑 INJURY WIRE (${favTeam} +${Math.abs(injPts).toFixed(1)} pts)</span>`);
+        chips.push(`<span class="badge b-pass">🚑 INJURY WIRE (${favTeam} +${Math.abs(injPts).toFixed(1)} pts)</span>`);
     }
     if (chips.length === 0) return "";
-    return `<div style="display:flex; flex-wrap:wrap; justify-content:center; gap:5px; margin-bottom:8px;">${chips.join("")}</div>`;
+    return `<div class="chip-group" style="gap:5px;">${chips.join("")}</div>`;
 }
 
 function isRankedNCAAGame(game) {
@@ -301,7 +198,6 @@ function shouldIncludeGame(game, defaultLeague = "NFL") {
     return true;
 }
 
-// Calculates Tuesday 5:00 AM EST (10:00 UTC) cutoff right after Monday Night Football (1:1 with scraper.py)
 function computeUpcomingMnfCutoffMs(gamesList) {
     const validTimes = (gamesList || [])
         .map(g => g.commence_time || g.commenceTime)
@@ -310,10 +206,9 @@ function computeUpcomingMnfCutoffMs(gamesList) {
         .filter(ms => !isNaN(ms));
 
     const anchorMs = validTimes.length > 0 ? Math.min(...validTimes) : Date.now();
-    // Shift to EST (-5h) in UTC frame so West Coast & East Coast browsers compute the exact same cutoff
     const EST_OFFSET_MS = 5 * 60 * 60 * 1000;
     const estAnchor = new Date(anchorMs - EST_OFFSET_MS);
-    const day = estAnchor.getUTCDay(); // 0=Sun, 1=Mon, 2=Tue ...
+    const day = estAnchor.getUTCDay();
     const daysUntilTueAfterMnf = (day === 2) ? 7 : ((9 - day) % 7 || 7);
 
     const cutoffEstMs = Date.UTC(
@@ -332,8 +227,7 @@ function isGameInCurrentWeek(commenceTimeStr, cutoffMs) {
     return ms <= cutoffMs;
 }
 
-// Infers football Week label (e.g., "Week 10", "Week 11") from timestamp or entry metadata
-function inferFootballWeekLabel(entryOrGame, fallbackLabel = "Week 10") {
+function inferFootballWeekLabel(entryOrGame, fallbackLabel = "Week 11") {
     if (!entryOrGame) return fallbackLabel;
     if (entryOrGame.week_label) return entryOrGame.week_label;
     if (entryOrGame.week) return `Week ${entryOrGame.week}`;
@@ -354,13 +248,26 @@ function inferFootballWeekLabel(entryOrGame, fallbackLabel = "Week 10") {
     return fallbackLabel;
 }
 
+function formatKickoffShort(commenceTimeStr) {
+    if (!commenceTimeStr) return "TBD";
+    const dt = new Date(commenceTimeStr);
+    if (isNaN(dt.getTime())) return "TBD";
+    const day = dt.toLocaleDateString("en-US", { weekday: "short" });
+    const tm = dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    return `${day} ${tm}`;
+}
+
+const ESPN_SCORE_CACHE = {
+    lastFetchMs: 0,
+    gamesByMatchup: {}
+};
+
 function getEspnScoreMatch(league, matchupKey) {
     if (!matchupKey) return null;
     const lg = String(league || "NFL").toUpperCase();
     return ESPN_SCORE_CACHE.gamesByMatchup[`${lg}_${matchupKey}`] || ESPN_SCORE_CACHE.gamesByMatchup[matchupKey] || null;
 }
 
-// Checks if a game on Tab 1 has already finished (FINAL) so it can be swept into the Ledger vaults
 function isGameCompletedFinal(game) {
     if (!game) return false;
     if (game.status === "FINAL") return true;
@@ -369,135 +276,298 @@ function isGameCompletedFinal(game) {
     const matchupKey = game.matchup || `${cleanAway} @ ${cleanHome}`;
     const gameLeague = game.league || "NFL";
     const espnMatch = getEspnScoreMatch(gameLeague, matchupKey);
-    if (espnMatch && espnMatch.state === "post") return true;
-    return false;
+    return Boolean(espnMatch && espnMatch.state === "post");
 }
 
+function computeWeatherImpact(envPayload, m7, elevObj) {
+    const isDome = Boolean(envPayload && envPayload.is_dome);
+    const tempF = isDome ? 72 : Number(envPayload.temperature_f !== undefined ? envPayload.temperature_f : 58);
+    const windMph = isDome ? 0 : Number(envPayload.wind_mph !== undefined ? envPayload.wind_mph : 5);
+    const rho = Number((m7 && m7.airDensityRho) || 1.225);
+    const fgShift = Number((m7 && m7.fgRangeShiftYards) || 0);
+    const zone = Number((elevObj && elevObj.zoneNumber) || 1);
+    const elevFt = Math.round(Number((envPayload && envPayload.elevation_m) || 0) * 3.28084);
+
+    if (isDome) {
+        return {
+            score: 3.5,
+            isEdge: false,
+            summary: `Controlled 72°F dome air (ρ ${rho}) removes wind friction and adds +${Math.abs(fgShift).toFixed(1)} yds FG carry.`
+        };
+    }
+
+    let score = 0;
+    score += Math.min(4.8, Math.max(0, (windMph - 6) * 0.38));
+    score += Math.min(2.6, Math.max(0, (46 - tempF) * 0.14));
+    score += Math.min(2.4, Math.abs(rho - 1.225) * 35.0);
+    if (zone >= 7) score = Math.max(score, 8.2 + (zone - 7) * 0.55);
+    score = Number(Math.min(10.0, Math.max(1.0, score)).toFixed(1));
+
+    const isEdge = (zone >= 7 || windMph >= 12 || tempF <= 40 || Math.abs(fgShift) >= 2.2);
+    let summary = "";
+    if (zone >= 7) {
+        summary = `Zone ${zone} ${elevObj.direction} (${elevFt.toLocaleString()} ft, Δ${elevObj.deltaFeet > 0 ? "+" : ""}${elevObj.deltaFeet} ft) triggers mountain air & 4Q hypoxic stamina drag.`;
+    } else if (windMph >= 12 && tempF <= 42) {
+        summary = `Heavy ${windMph} mph wind + cold ${tempF}°F air (ρ ${rho}) drags kicks ${fmtSigned(fgShift)} yds and suppresses downfield passing.`;
+    } else if (windMph >= 12) {
+        summary = `Sustained ${windMph} mph wind shifts FG range ${fmtSigned(fgShift)} yds and tightens deep passing efficiency.`;
+    } else if (tempF <= 40) {
+        summary = `Cold ${tempF}°F dense air (ρ ${rho}) increases ballistic drag (${fmtSigned(fgShift)} yds FG shift).`;
+    } else {
+        summary = `Mild outdoor conditions (${tempF}°F · ${windMph} mph · ρ ${rho}); efficiency & matchup physics lead.`;
+    }
+
+    return { score, isEdge, summary };
+}
+
+function renderWeatherPillHTML(gameRecord) {
+    if (!gameRecord) return "";
+    const env = gameRecord.envPayload || {};
+    const em = gameRecord.elevActive || gameRecord.elevMatrix || { zoneNumber: 1, venueElevFeet: 0 };
+    if (env.is_dome) return `<span class="weather-pill">🏟️ Dome 72°F</span>`;
+    if (em.zoneNumber >= 7) {
+        return `<span class="weather-pill edge">🏔️ ${(em.venueElevFeet || 0).toLocaleString()}ft Z${em.zoneNumber}</span>`;
+    }
+    const tempDisp = env.temperature_f !== undefined ? `${Math.round(env.temperature_f)}°F` : "--°F";
+    const windDisp = `${Math.round(gameRecord.windMph || 0)}mph`;
+    const edgeCls = gameRecord.weatherImpact && gameRecord.weatherImpact.isEdge ? "edge" : "";
+    return `<span class="weather-pill ${edgeCls}">🌬️ ${tempDisp} · ${windDisp}</span>`;
+}
+
+function renderLockSpanHTML(text = "🔒 Balls Deep") {
+    return `<span onclick="window.unlockBallsDeepMode(event)" title="Click to unlock Balls Deep Telemetry" style="cursor:pointer; color:var(--gold); font-weight:700; user-select:none;">${text}</span>`;
+}
+
+// ==========================================
+// LIFECYCLE & LIVE POLLING
+// ==========================================
 document.addEventListener("DOMContentLoaded", () => {
-    ensureTickerStylesInjected();
     bindUIControls();
+    syncModeButtonsUI();
     pollDataFeed();
     setInterval(pollDataFeed, 5000);
     setInterval(syncEspnLiveScores, 60000);
-    window.addEventListener("resize", () => {
-        if (AppState.rawPayload) render_game_cards(AppState.rawPayload);
-    });
 });
+
+function bindUIControls() {
+    const slider = document.getElementById("davinci-intensity-slider");
+    if (slider) {
+        slider.addEventListener("input", (e) => {
+            const val = parseFloat(e.target.value) || 0.0;
+            const readout = document.getElementById("davinci-readout");
+            if (readout) readout.textContent = val > 0 ? `+${val.toFixed(1)}` : val.toFixed(1);
+            AppState.intensitySlider = val;
+
+            if (AppState.activeMode !== "davinci") return;
+            if (sliderDragTimer) return;
+            sliderDragTimer = setTimeout(() => {
+                sliderDragTimer = null;
+                requestAnimationFrame(() => recalculateAndRenderAll({ isSliderDrag: true }));
+            }, 50);
+        });
+
+        slider.addEventListener("change", (e) => {
+            if (sliderDragTimer) {
+                clearTimeout(sliderDragTimer);
+                sliderDragTimer = null;
+            }
+            AppState.intensitySlider = parseFloat(e.target.value) || 0.0;
+            if (AppState.activeMode === "davinci") {
+                recalculateAndRenderAll({ isSliderDrag: false });
+            }
+        });
+    }
+}
+
+function syncModeButtonsUI() {
+    const m = AppState.activeMode;
+    const bTip = document.getElementById("btn-mode-tip");
+    const bBd = document.getElementById("btn-mode-bd");
+    const bDv = document.getElementById("btn-mode-dv");
+    const dvBar = document.getElementById("davinci-bar");
+    if (bTip) bTip.className = `mode-btn ${m === "tip" ? "active-tip" : ""}`;
+    if (bBd) bBd.className = `mode-btn ${m === "balls_deep" ? "active-bd" : ""}`;
+    if (bDv) bDv.className = `mode-btn ${m === "davinci" ? "active-dv" : ""}`;
+    if (dvBar) dvBar.classList.toggle("open", m === "davinci");
+}
+
+// ==========================================
+// GLOBAL WINDOW HANDLERS (MATCHING index.html 1:1)
+// ==========================================
+window.setAppView = function(viewName) {
+    AppState.activeView = viewName;
+    document.querySelectorAll(".view-section").forEach(sec => {
+        sec.classList.toggle("active", sec.id === `view-${viewName}`);
+    });
+    document.querySelectorAll(".nav-btn, .mob-tab, .mob-faq-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.view === viewName);
+    });
+    const filterBar = document.getElementById("picks-filter-bar");
+    if (filterBar) filterBar.style.display = (viewName === "picks") ? "flex" : "none";
+    window.closeMobileInspector();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+};
+
+window.setEngineMode = function(modeName) {
+    AppState.activeMode = modeName;
+    syncModeButtonsUI();
+    recalculateAndRenderAll({ isSliderDrag: false });
+};
 
 window.unlockBallsDeepMode = function(event) {
     if (event) {
         event.preventDefault();
         event.stopPropagation();
     }
-    const bdRadio = document.getElementById("mode-balls-deep") || document.getElementById("mode-unsolicited");
-    if (bdRadio) {
-        bdRadio.checked = true;
-    }
-    AppState.activeMode = "balls_deep";
-    recalculateAndRenderAll();
+    window.setEngineMode("balls_deep");
 };
 
-// Pinned Corner Toggle between Main Stage 5-Pack and "Wednesday Night at Porky's" Top 5 Safe Floor Fades
-window.toggleFivePackView = function(event) {
-    if (event) {
-        event.preventDefault();
-        event.stopPropagation();
+window.resetDavinciSlider = function() {
+    const slider = document.getElementById("davinci-intensity-slider");
+    const readout = document.getElementById("davinci-readout");
+    if (slider) slider.value = 0;
+    if (readout) readout.textContent = "0.0";
+    AppState.intensitySlider = 0.0;
+    recalculateAndRenderAll({ isSliderDrag: false });
+};
+
+window.setLeagueFilter = function(lg) {
+    AppState.leagueFilter = lg;
+    AppState.filters.nfl = (lg === "ALL" || lg === "NFL");
+    AppState.filters.ncaa = (lg === "ALL" || lg === "NCAA");
+    ["ALL", "NFL", "NCAA"].forEach(k => {
+        const el = document.getElementById(`f-lg-${k}`);
+        if (el) el.classList.toggle("active", k === lg);
+    });
+    recalculateAndRenderAll({ isSliderDrag: false });
+};
+
+window.setMarketFilter = function(mk) {
+    AppState.marketFilter = mk;
+    ["ALL", "spread", "total"].forEach(k => {
+        const el = document.getElementById(`f-mk-${k}`);
+        if (el) el.classList.toggle("active", k === mk);
+    });
+    renderPicksFeed();
+};
+
+window.toggleSmashFilter = function() {
+    AppState.smashOnly = !AppState.smashOnly;
+    const el = document.getElementById("f-smash");
+    if (el) el.classList.toggle("active-smash", AppState.smashOnly);
+    renderPicksFeed();
+};
+
+window.toggleWeatherFilter = function() {
+    AppState.weatherOnly = !AppState.weatherOnly;
+    const el = document.getElementById("f-weather");
+    if (el) el.classList.toggle("active-weather", AppState.weatherOnly);
+    renderPicksFeed();
+};
+
+window.setSearchFilter = function(val) {
+    AppState.searchQuery = String(val || "").trim().toLowerCase();
+    renderPicksFeed();
+};
+
+window.setSortOrder = function(val) {
+    AppState.sortOrder = val || "ev";
+    renderPicksFeed();
+};
+
+window.selectPick = function(propKey, openMobileSheet = false) {
+    AppState.selectedPropKey = propKey;
+    renderPicksFeed();
+    renderPickInspector();
+    if (openMobileSheet && window.innerWidth <= 960) {
+        const wrap = document.getElementById("inspector-wrap");
+        const bd = document.getElementById("drawer-backdrop");
+        if (wrap) wrap.classList.add("mobile-open");
+        if (bd) bd.classList.add("open");
     }
-    const savedY = window.scrollY;
-    AppState.fivePackView = (AppState.fivePackView === "main_stage") ? "porkys" : "main_stage";
-    openCardMemory.add("FLAGSHIP_5_PACK_DRAWER");
+};
+
+window.closeMobileInspector = function() {
+    const wrap = document.getElementById("inspector-wrap");
+    const slip = document.getElementById("slip-drawer");
+    const bd = document.getElementById("drawer-backdrop");
+    if (wrap) wrap.classList.remove("mobile-open");
+    if (bd && (!slip || !slip.classList.contains("open"))) {
+        bd.classList.remove("open");
+    }
+};
+
+window.toggleSlipDrawer = function(open) {
+    const drawer = document.getElementById("slip-drawer");
+    const bd = document.getElementById("drawer-backdrop");
+    const wrap = document.getElementById("inspector-wrap");
+    if (wrap && open) wrap.classList.remove("mobile-open");
+    if (drawer) drawer.classList.toggle("open", Boolean(open));
+    if (bd) bd.classList.toggle("open", Boolean(open));
+};
+
+window.closeAllOverlays = function() {
+    window.toggleSlipDrawer(false);
+    window.closeMobileInspector();
+};
+
+window.setFivePackView = function(view) {
+    AppState.fivePackView = view || "main_stage";
+    const mainBtn = document.getElementById("fp-tab-main");
+    const porkyBtn = document.getElementById("fp-tab-porkys");
+    if (mainBtn) mainBtn.classList.toggle("active", AppState.fivePackView === "main_stage");
+    if (porkyBtn) porkyBtn.classList.toggle("active", AppState.fivePackView === "porkys");
     renderFlagshipFivePack();
-    window.scrollTo(window.scrollX, savedY);
 };
 
-// Toggles the 6 Clickable Historical Ledger Vault Cards open/closed
-window.toggleLedgerVault = function(vaultKey, event) {
+window.setWeatherLabView = function(mode) {
+    AppState.weatherLabView = mode || "cards";
+    const cBtn = document.getElementById("wl-view-cards");
+    const tBtn = document.getElementById("wl-view-table");
+    const grid = document.getElementById("weather-lab-grid");
+    const tbl = document.getElementById("biolab-container");
+    if (cBtn) cBtn.classList.toggle("active", AppState.weatherLabView === "cards");
+    if (tBtn) tBtn.classList.toggle("active", AppState.weatherLabView === "table");
+    if (grid) grid.style.display = (AppState.weatherLabView === "cards") ? "grid" : "none";
+    if (tbl) tbl.style.display = (AppState.weatherLabView === "table") ? "block" : "none";
+};
+
+window.setModulesSubView = function(sub) {
+    AppState.modulesSubView = sub || "compendium";
+    const compBtn = document.getElementById("mod-tab-comp");
+    const telBtn = document.getElementById("mod-tab-tel");
+    const compPanel = document.getElementById("modules-compendium-panel");
+    const telPanel = document.getElementById("modules-telemetry-panel");
+    if (compBtn) compBtn.classList.toggle("active", AppState.modulesSubView === "compendium");
+    if (telBtn) telBtn.classList.toggle("active", AppState.modulesSubView === "telemetry");
+    if (compPanel) compPanel.style.display = (AppState.modulesSubView === "compendium") ? "block" : "none";
+    if (telPanel) telPanel.style.display = (AppState.modulesSubView === "telemetry") ? "block" : "none";
+};
+
+window.toggleModuleGuide = function() {
+    AppState.showModuleGuide = !AppState.showModuleGuide;
+    const box = document.getElementById("module-reader-guide");
+    const btn = document.getElementById("mod-tab-guide");
+    if (box) box.style.display = AppState.showModuleGuide ? "grid" : "none";
+    if (btn) {
+        btn.classList.toggle("active", AppState.showModuleGuide);
+        btn.textContent = AppState.showModuleGuide ? "How to Read ▲" : "How to Read ▼";
+    }
+};
+
+window.toggleHorseCocks = function() {
+    AppState.showHorseCocks = !AppState.showHorseCocks;
+    const box = document.getElementById("horsecocks-stage-wrap");
+    const btn = document.getElementById("mod-tab-horse");
+    if (box) box.style.display = AppState.showHorseCocks ? "block" : "none";
+    if (btn) btn.classList.toggle("active-gold", AppState.showHorseCocks);
+};
+
+window.toggleParlayLeg = function(propKey, event) {
     if (event) {
         event.preventDefault();
         event.stopPropagation();
     }
-    const savedY = window.scrollY;
-    AppState.activeLedgerVault = (AppState.activeLedgerVault === vaultKey) ? null : vaultKey;
-    renderHistoricalLedger();
-    window.scrollTo(window.scrollX, savedY);
-};
-
-// Changes the Selected Week inside the Flagship 5-Pack Ledger Card Dropdown and opens the 5-Pack Vault
-window.setFivePackVaultWeek = function(weekVal, event) {
-    if (event) {
-        event.stopPropagation();
-    }
-    const savedY = window.scrollY;
-    AppState.selectedFivePackWeek = weekVal || "ALL";
-    AppState.ledgerFivePackView = "flagship";
-    AppState.activeLedgerVault = "flagship_5pack";
-    renderHistoricalLedger();
-    window.scrollTo(window.scrollX, savedY);
-};
-
-// Swaps Card #1 on the Historical Ledger between Flagship 5-Pack and Porky's 5-Pack Audit (just like Main Card!)
-window.toggleLedgerFivePackView = function(event) {
-    if (event) {
-        event.preventDefault();
-        event.stopPropagation();
-    }
-    const savedY = window.scrollY;
-    AppState.ledgerFivePackView = (AppState.ledgerFivePackView === "flagship") ? "porkys" : "flagship";
-    if (AppState.activeLedgerVault === "flagship_5pack" || AppState.activeLedgerVault === "porkys_5pack") {
-        AppState.activeLedgerVault = (AppState.ledgerFivePackView === "porkys") ? "porkys_5pack" : "flagship_5pack";
-    }
-    renderHistoricalLedger();
-    window.scrollTo(window.scrollX, savedY);
-};
-
-// Changes the Selected Week inside the Porky's 5-Pack Ledger Card Dropdown and opens the Porky's Vault
-window.setPorkysVaultWeek = function(weekVal, event) {
-    if (event) {
-        event.stopPropagation();
-    }
-    const savedY = window.scrollY;
-    AppState.selectedPorkysWeek = weekVal || "ALL";
-    AppState.ledgerFivePackView = "porkys";
-    AppState.activeLedgerVault = "porkys_5pack";
-    renderHistoricalLedger();
-    window.scrollTo(window.scrollX, savedY);
-};
-
-// Toggles Historical Ledger between Top-25 NCAA + NFL and ALL Completed Games (including unranked FBS)
-window.toggleLedgerAllCompleted = function(event) {
-    if (event) {
-        event.preventDefault();
-        event.stopPropagation();
-    }
-    const savedY = window.scrollY;
-    AppState.ledgerShowAllCompleted = !AppState.ledgerShowAllCompleted;
-    renderHistoricalLedger();
-    window.scrollTo(window.scrollX, savedY);
-};
-
-window.toggleLegendDrawer = function(memoryKey, targetRenderFnName, event) {
-    if (event) {
-        event.preventDefault();
-        event.stopPropagation();
-    }
-    const savedY = window.scrollY;
-    if (openCardMemory.has(memoryKey)) {
-        openCardMemory.delete(memoryKey);
-    } else {
-        openCardMemory.add(memoryKey);
-    }
-    if (targetRenderFnName === "fivePack") {
-        renderFlagshipFivePack();
-    } else if (targetRenderFnName === "ledger") {
-        renderHistoricalLedger();
-    }
-    window.scrollTo(window.scrollX, savedY);
-};
-
-window.toggleParlayLeg = function(propKey) {
-    const savedY = window.scrollY;
-    if (!AppState.safeFloorParlayLegs) AppState.safeFloorParlayLegs = new Set();
-    if (!AppState.wongTeaserParlayLegs) AppState.wongTeaserParlayLegs = new Set();
     if (AppState.selectedParlayLegs.has(propKey)) {
         AppState.selectedParlayLegs.delete(propKey);
         AppState.safeFloorParlayLegs.delete(propKey);
@@ -505,29 +575,28 @@ window.toggleParlayLeg = function(propKey) {
     } else {
         AppState.selectedParlayLegs.add(propKey);
     }
-    renderCombinatoricsDeck();
-    window.scrollTo(window.scrollX, savedY);
+    renderPicksFeed();
+    renderPickInspector();
+    renderFlagshipFivePack();
+    if (typeof renderCombinatoricsDeck === "function") renderCombinatoricsDeck();
 };
 
 window.loadFlagshipPreset = function(onlyMenage = false, useKeyAlts = false, useWongTeaser = false) {
-    const savedY = window.scrollY;
-    if (!AppState.safeFloorParlayLegs) AppState.safeFloorParlayLegs = new Set();
-    if (!AppState.wongTeaserParlayLegs) AppState.wongTeaserParlayLegs = new Set();
     AppState.selectedParlayLegs.clear();
     AppState.safeFloorParlayLegs.clear();
     AppState.wongTeaserParlayLegs.clear();
     AppState.flagshipFivePack.forEach(p => {
         if (!onlyMenage || (p.flagshipSlot && p.flagshipSlot.includes("MÉNAGE"))) {
             AppState.selectedParlayLegs.add(p.propKey);
-            if (useWongTeaser) {
-                AppState.wongTeaserParlayLegs.add(p.propKey);
-            } else if (useKeyAlts) {
-                AppState.safeFloorParlayLegs.add(p.propKey);
-            }
+            if (useWongTeaser) AppState.wongTeaserParlayLegs.add(p.propKey);
+            else if (useKeyAlts) AppState.safeFloorParlayLegs.add(p.propKey);
         }
     });
-    renderCombinatoricsDeck();
-    window.scrollTo(window.scrollX, savedY);
+    renderPicksFeed();
+    renderPickInspector();
+    renderFlagshipFivePack();
+    if (typeof renderCombinatoricsDeck === "function") renderCombinatoricsDeck();
+    window.toggleSlipDrawer(true);
 };
 
 window.loadPorkysPreset = function(event) {
@@ -535,9 +604,6 @@ window.loadPorkysPreset = function(event) {
         event.preventDefault();
         event.stopPropagation();
     }
-    const savedY = window.scrollY;
-    if (!AppState.safeFloorParlayLegs) AppState.safeFloorParlayLegs = new Set();
-    if (!AppState.wongTeaserParlayLegs) AppState.wongTeaserParlayLegs = new Set();
     AppState.selectedParlayLegs.clear();
     AppState.safeFloorParlayLegs.clear();
     AppState.wongTeaserParlayLegs.clear();
@@ -547,8 +613,11 @@ window.loadPorkysPreset = function(event) {
             AppState.safeFloorParlayLegs.add(item.fadeProp.propKey);
         }
     });
-    renderCombinatoricsDeck();
-    window.scrollTo(window.scrollX, savedY);
+    renderPicksFeed();
+    renderPickInspector();
+    renderFlagshipFivePack();
+    if (typeof renderCombinatoricsDeck === "function") renderCombinatoricsDeck();
+    window.toggleSlipDrawer(true);
 };
 
 window.clearParlaySlip = function(event) {
@@ -556,93 +625,18 @@ window.clearParlaySlip = function(event) {
         event.preventDefault();
         event.stopPropagation();
     }
-    const savedY = window.scrollY;
-    if (AppState.safeFloorParlayLegs) AppState.safeFloorParlayLegs.clear();
-    if (AppState.wongTeaserParlayLegs) AppState.wongTeaserParlayLegs.clear();
     AppState.selectedParlayLegs.clear();
-    renderCombinatoricsDeck();
-    window.scrollTo(window.scrollX, savedY);
+    AppState.safeFloorParlayLegs.clear();
+    AppState.wongTeaserParlayLegs.clear();
+    renderPicksFeed();
+    renderPickInspector();
+    renderFlagshipFivePack();
+    if (typeof renderCombinatoricsDeck === "function") renderCombinatoricsDeck();
 };
 
-window.setComboFilter = function(filterType, value) {
-    const savedY = window.scrollY;
-    AppState.comboFilters[filterType] = value;
-    renderCombinatoricsDeck();
-    window.scrollTo(window.scrollX, savedY);
-};
-
-function bindUIControls() {
-    const modeRadios = {
-        "mode-tip": "tip",
-        "mode-balls-deep": "balls_deep",
-        "mode-unsolicited": "balls_deep",
-        "mode-davinci": "davinci"
-    };
-
-    Object.keys(modeRadios).forEach(id => {
-        const el = document.getElementById(id);
-        if (el) {
-            if (el.checked) {
-                AppState.activeMode = modeRadios[id];
-            }
-            el.addEventListener("change", (e) => {
-                if (e.target.checked) {
-                    AppState.activeMode = modeRadios[id];
-                    recalculateAndRenderAll({ isSliderDrag: false });
-                }
-            });
-        }
-    });
-
-    // Fast-path while actively dragging the DaVinci slider (zero hidden-tab thrashing)
-    document.addEventListener("input", (e) => {
-        if (e.target && e.target.id === "davinci-intensity-slider") {
-            const readout = document.getElementById("davinci-readout");
-            const val = parseFloat(e.target.value) || 0.0;
-            if (readout) readout.textContent = val > 0 ? "+" + val : val;
-            AppState.intensitySlider = val;
-
-            if (AppState.activeMode !== "davinci") return;
-            if (sliderDragTimer) return;
-            sliderDragTimer = setTimeout(() => {
-                sliderDragTimer = null;
-                requestAnimationFrame(() => recalculateAndRenderAll({ isSliderDrag: true }));
-            }, 50);
-        }
-    });
-
-    // Full sync across all tabs the instant you release the slider
-    document.addEventListener("change", (e) => {
-        if (e.target && e.target.id === "davinci-intensity-slider") {
-            if (sliderDragTimer) {
-                clearTimeout(sliderDragTimer);
-                sliderDragTimer = null;
-            }
-            AppState.intensitySlider = parseFloat(e.target.value) || 0.0;
-            if (AppState.activeMode === "davinci") {
-                recalculateAndRenderAll({ isSliderDrag: false });
-            }
-        }
-    });
-
-    const nflCheck = document.getElementById("filter-nfl");
-    const ncaaCheck = document.getElementById("filter-ncaa");
-    if (nflCheck) {
-        AppState.filters.nfl = nflCheck.checked;
-        nflCheck.addEventListener("change", (e) => {
-            AppState.filters.nfl = e.target.checked;
-            recalculateAndRenderAll();
-        });
-    }
-    if (ncaaCheck) {
-        AppState.filters.ncaa = ncaaCheck.checked;
-        ncaaCheck.addEventListener("change", (e) => {
-            AppState.filters.ncaa = e.target.checked;
-            recalculateAndRenderAll();
-        });
-    }
-}
-
+// ==========================================
+// DATA FEED POLLING & MATH SAFE WRAPPERS
+// ==========================================
 async function pollDataFeed() {
     let textData = "";
     try {
@@ -661,27 +655,20 @@ async function pollDataFeed() {
             console.error("DixPix data.json Parse Error:", parseErr);
             return;
         }
-        recalculateAndRenderAll();
+        recalculateAndRenderAll({ isSliderDrag: false });
     }
 }
 
 function snapToHalfPointHook(lineVal, deltaPts) {
-    const rawTarget = lineVal + deltaPts;
-    return Math.floor(rawTarget) + 0.5;
+    return Math.floor(lineVal + deltaPts) + 0.5;
 }
 
-// Organic Continuous Golden Ratio Momentum Arc (zero robotic snapping while dragging DaVinci slider)
 function calcMomentumArc(sliderVal, scale = 1.0) {
     if (!sliderVal) return 0.0;
-    const norm = Math.max(-1.0, Math.min(1.0, sliderVal / (2.0 * PHI))); // -1.0 to +1.0
-    const exponent = 2.0 / PHI; // ~1.236068 natural swell curve
+    const norm = Math.max(-1.0, Math.min(1.0, sliderVal / (2.0 * PHI)));
+    const exponent = 2.0 / PHI;
     const arc = Math.sign(norm) * Math.pow(Math.abs(norm), exponent) * (PHI * PHI) * scale;
     return Number(arc.toFixed(3));
-}
-
-// Clean bare lock icon (no border or background)
-function renderLockCellHTML() {
-    return `<span onclick="window.unlockBallsDeepMode(event)" title="Click to unlock Balls Deep Telemetry" style="cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-size:15px; user-select:none;">🔒</span>`;
 }
 
 function getVerifiedQbDeltaSafe(teamTel) {
@@ -703,46 +690,38 @@ function calcKeyNumberAltSpreadSafe(baseLine, modelFairLine, baseOdds = -110) {
     const fair = Number(modelFairLine !== undefined ? modelFairLine : line);
     const altLine = snapToHalfPointHook(line, +3.5);
     const altProb = Math.min(0.95, Math.max(0.05, calcPointGapWinProb(altLine - fair)));
-    const evObj = calcExpectedValueAndKelly(altProb, -160);
+    const evObj = calcExpectedValueAndKelly(altProb, -185);
     return {
-        altLine, altOdds: -160, altProb, altProbPct: Number((altProb * 100).toFixed(1)),
+        altLine, altOdds: -185, altProb, altProbPct: Number((altProb * 100).toFixed(1)),
         merRatio: 1.2, isMerApproved: true, altEvPct: Number(evObj.evPercentage.toFixed(2)),
-        keyLabel: "Key Alt Buy", altStr: `Alt ${altLine > 0 ? '+' : ''}${altLine.toFixed(1)} (-160)`,
+        keyLabel: "2-Key Alt Buy", altStr: `Alt ${altLine > 0 ? "+" : ""}${altLine.toFixed(1)} (-185)`,
         tier2Line: null, tier2Mode: null, tier2Approved: false, tier2Label: ""
     };
 }
 
-// Safe wrapper for Regime Safe Totals Engine (fallback if browser caches older onlinemath_engine.js)
 function calcReportCalibratedTotalSafe(vegasTotal, ogTipTotal, envPayload = {}, circPayload = {}, elevMatrix = null, gameLeague = "NFL", hasBackupQb = false) {
     if (typeof calcReportCalibratedTotal === "function") {
         const res = calcReportCalibratedTotal(vegasTotal, ogTipTotal, envPayload, circPayload, elevMatrix, gameLeague, hasBackupQb);
         if (res && res.regime) return res;
     }
     const vTot = Number(vegasTotal || ogTipTotal || 45.0);
-    const isDome = Boolean(envPayload && envPayload.is_dome);
-    const tempF = isDome ? 72.0 : Number(envPayload.temperature_f !== undefined ? envPayload.temperature_f : 58.0);
-    const windMph = isDome ? 0.0 : Number(envPayload.wind_mph !== undefined ? envPayload.wind_mph : 5.0);
-    const shootoutThresh = (gameLeague === "NCAA") ? 58.5 : 49.5;
-    const domeThresh = (gameLeague === "NCAA") ? 54.5 : 46.5;
-    const grindThresh = (gameLeague === "NCAA") ? 44.5 : 41.5;
     const tipTot = Number(ogTipTotal !== undefined && ogTipTotal !== null ? ogTipTotal : vTot);
     const safeDir = tipTot < vTot ? "U" : "O";
     const safeLine = safeDir === "U" ? (Math.floor(vTot + 4.0) + 0.5) : (Math.floor(vTot - 4.0) + 0.5);
-    let regime = "TIP_ALIGNED_SAFE";
-    if (safeDir === "O" && (vTot >= shootoutThresh || (isDome && vTot >= domeThresh && !hasBackupQb))) regime = "SHOOTOUT_SAFE_OVER";
-    else if (safeDir === "U" && (vTot <= grindThresh || (!isDome && (tempF <= 42 || windMph >= 10) && vTot <= 48.5) || hasBackupQb)) regime = "GRIND_SAFE_UNDER";
-    return { regime, ballsDeepTotal: Number(tipTot.toFixed(1)), safeDir, safeLine, safeOdds: -175, safeProb: 0.75, safeProbPct: 75.0, safeEvPct: 17.8, safeLabel: `Alt ${safeDir} ${safeLine.toFixed(1)} (-175)` };
+    return {
+        regime: "TIP_ALIGNED_SAFE",
+        ballsDeepTotal: Number(tipTot.toFixed(1)),
+        safeDir, safeLine, safeOdds: -175, safeProb: 0.75, safeProbPct: 75.0, safeEvPct: 17.8,
+        safeLabel: `Alt ${safeDir} ${safeLine.toFixed(1)} (-175)`
+    };
 }
 
 // ==========================================
-// MASTER CALCULATION PIPELINE — SINGLE SOURCE OF TRUTH (ONLINEMATH_ENGINE v313)
+// MASTER CALCULATION PIPELINE (1:1 WITH math_engine.js v323)
 // ==========================================
 function recalculateAndRenderAll(opts = {}) {
     const isSliderDrag = Boolean(opts && opts.isSliderDrag);
     if (!AppState.rawPayload || !AppState.rawPayload.games) return;
-
-    const savedScrollX = window.scrollX;
-    const savedScrollY = window.scrollY;
 
     const defaultLeague = (AppState.rawPayload.slate_info && AppState.rawPayload.slate_info.league) || "NFL";
     const mode = AppState.activeMode;
@@ -757,506 +736,420 @@ function recalculateAndRenderAll(opts = {}) {
     AppState.processedProps = [];
 
     AppState.rawPayload.games.forEach(game => {
-      try {
-        const gameLeague = game.league || defaultLeague;
-        if (!shouldIncludeGame(game, defaultLeague)) return;
+        try {
+            const gameLeague = game.league || defaultLeague;
+            if (!shouldIncludeGame(game, defaultLeague)) return;
 
-        const isCurrentWeek = isGameInCurrentWeek(game.commence_time, AppState.mnfCutoffMs);
-        const cleanHome = cleanTeamCode(game.home_team);
-        const cleanAway = cleanTeamCode(game.away_team);
+            const isCurrentWeek = isGameInCurrentWeek(game.commence_time, AppState.mnfCutoffMs);
+            const cleanHome = cleanTeamCode(game.home_team);
+            const cleanAway = cleanTeamCode(game.away_team);
 
-        const envPayload = game.environmental_payload || {};
-        const circPayload = game.circadian_payload || {};
-        const homeTel = (game.team_telemetry && game.team_telemetry.home) || {};
-        const awayTel = (game.team_telemetry && game.team_telemetry.away) || {};
+            const envPayload = game.environmental_payload || {};
+            const circPayload = game.circadian_payload || {};
+            const homeTel = (game.team_telemetry && game.team_telemetry.home) || {};
+            const awayTel = (game.team_telemetry && game.team_telemetry.away) || {};
 
-        // Modules 7 & 8 (Barometrics + Circadian/FAA Charter Delay)
-        const m7 = calcBarometricBallistics(envPayload);
-        const m8 = calcCircadianStrain(circPayload, game.kickoff_local_hour);
+            const m7 = calcBarometricBallistics(envPayload);
+            const m8 = calcCircadianStrain(circPayload, game.kickoff_local_hour);
 
-        let vegasHomeSpread = 0;
-        let vegasTotalLine = (gameLeague === "NCAA") ? 51.5 : 43.5;
-        if (Array.isArray(game.props_board)) {
-            const homeSpreadObj = game.props_board.find(
-                p => p.market_type === "spread" && p.player.startsWith(`${game.home_team} `)
-            );
-            const awaySpreadObj = game.props_board.find(
-                p => p.market_type === "spread" && p.player.startsWith(`${game.away_team} `)
-            );
-            if (homeSpreadObj && homeSpreadObj.base_line !== undefined) {
-                vegasHomeSpread = Number(homeSpreadObj.base_line);
-            } else if (awaySpreadObj && awaySpreadObj.base_line !== undefined) {
-                vegasHomeSpread = -Number(awaySpreadObj.base_line);
-            }
-            const totalObj = game.props_board.find(p => p.market_type === "total");
-            if (totalObj && totalObj.base_line !== undefined) {
-                vegasTotalLine = Number(totalObj.base_line);
-            }
-        }
-
-        // Module 11.1 (Biophysical Mass), Module 11.2 (10-Zone Elevation Matrix) & Module 12 (Turnover EPA)
-        const elevTip = calcTenZoneElevationMatrix(envPayload, circPayload, "tip", 0.0);
-        const elevBd = calcTenZoneElevationMatrix(envPayload, circPayload, "balls_deep", 0.0);
-        const elevActive = calcTenZoneElevationMatrix(envPayload, circPayload, mode, sliderVal);
-
-        const m11Bd = calcBiophysicalMassLoad(envPayload, homeTel, 95.0, 0.62, "balls_deep", 0.0);
-        const m12Bd = calcTurnoverEPAMatrix({ home: homeTel, away: awayTel }, gameLeague, "balls_deep", 0.0);
-
-        const m11 = calcBiophysicalMassLoad(envPayload, homeTel, 95.0, 0.62, mode, sliderVal);
-        const m12 = calcTurnoverEPAMatrix({ home: homeTel, away: awayTel }, gameLeague, mode, sliderVal);
-
-        // Coupled M11 & M12 Interaction Vector (negative favors Home Team in spread notation)
-        const rawCoupledBd = -calcCoupledInteractionPsi(m11Bd.phiBioScore, m12Bd.netTurnoverEPA, 0.0);
-        const psiCoupledBd = Number(Math.max(-2.85, Math.min(2.85, rawCoupledBd)).toFixed(3));
-
-        const rawCoupledActive = (mode === "tip")
-            ? 0.0
-            : -calcCoupledInteractionPsi(m11.phiBioScore, m12.netTurnoverEPA, sliderVal);
-        const psiCoupledActive = Number(Math.max(-3.65, Math.min(3.65, rawCoupledActive)).toFixed(3));
-
-        const gameWithLeague = Object.assign({}, game, { league: gameLeague });
-
-        // SINGLE-SOURCE-OF-TRUTH M9 + M11 + M13 FAIR MARGIN SYNTHESIS (v313)
-        // Mode 1 ("tip") strictly enforces M1–M9 firewall (activePsi = 0, activeElev = 0, M13 = 0)
-        const m9Base = calcFullGameFairMargin(
-            gameWithLeague, m8.phiCircadianPenalty, 0, "tip", vegasHomeSpread, 0, elevTip, 0.0
-        );
-        const m9Bd = calcFullGameFairMargin(
-            gameWithLeague, m8.phiCircadianPenalty, psiCoupledBd, "balls_deep", vegasHomeSpread, elevBd.psiElevPts, elevBd, 0.0
-        );
-        const m9 = (mode === "tip")
-            ? m9Base
-            : ((mode === "balls_deep")
-                ? m9Bd
-                : calcFullGameFairMargin(
-                    gameWithLeague, m8.phiCircadianPenalty, psiCoupledActive, "davinci", vegasHomeSpread, elevActive.psiElevPts, elevActive, sliderVal
-                ));
-
-        // Exact spread delta contributed by M11–M13 coupled overlay (guarantees Tip + Psi = Active)
-        const psiBd = Number((m9Bd.fairHomeSpread - m9Base.fairHomeSpread).toFixed(2));
-        const psi11_12 = (mode === "tip") ? 0 : Number((m9.fairHomeSpread - m9Base.fairHomeSpread).toFixed(2));
-
-        // Pure Vegas-Independent Total Projection (Live nflverse Off/Def EPA for NFL; Live ESPN FPI Off/Def Eff for NCAA)
-        const windMph = envPayload.is_dome ? 0 : (envPayload.wind_mph || 0);
-        const windPenalty = Math.max(0, (windMph - 10.0) * 0.25);
-        const totalIntercept = (gameLeague === "NCAA") ? 51.450 : MODEL_TOTAL_INTERCEPT;
-
-        let baseTelemetryTotal;
-        const hasSplitEpa = (
-            homeTel.off_epa_per_play !== undefined && homeTel.def_epa_per_play !== undefined &&
-            awayTel.off_epa_per_play !== undefined && awayTel.def_epa_per_play !== undefined
-        );
-        const hasFpiOffDef = (
-            homeTel.off_eff !== undefined && homeTel.def_eff !== undefined &&
-            awayTel.off_eff !== undefined && awayTel.def_eff !== undefined
-        );
-
-        if (typeof calcIndependentTotalTip === "function") {
-            baseTelemetryTotal = calcIndependentTotalTip(homeTel, awayTel, gameLeague, windMph, m8.delayTotalDragPts);
-        } else if (hasSplitEpa) {
-            const maxTotCap = (gameLeague === "NCAA") ? 78.0 : 65.0;
-            const epaTotDelta = (playScaler * PHI * 0.5) * (
-                Number(homeTel.off_epa_per_play) + Number(homeTel.def_epa_per_play) +
-                Number(awayTel.off_epa_per_play) + Number(awayTel.def_epa_per_play)
-            );
-            baseTelemetryTotal = Number(Math.max(28.0, Math.min(maxTotCap, totalIntercept + epaTotDelta - windPenalty + m8.delayTotalDragPts)).toFixed(1));
-        } else if (hasFpiOffDef) {
-            const effScaler = (gameLeague === "NCAA") ? 0.16 : 0.12;
-            const effDelta = effScaler * (
-                (Number(homeTel.off_eff) - 50.0) + (Number(awayTel.off_eff) - 50.0) -
-                (Number(homeTel.def_eff) - 50.0) - (Number(awayTel.def_eff) - 50.0)
-            );
-            baseTelemetryTotal = Number(Math.max(28.0, Math.min(78.0, totalIntercept + effDelta - windPenalty + m8.delayTotalDragPts)).toFixed(1));
-        } else {
-            const epaSum = Math.max(-0.20, Math.min(0.20, (homeTel.net_epa_per_play || 0) + (awayTel.net_epa_per_play || 0)));
-            const epaTotalPts = epaSum * playScaler;
-            const rzTotalPts = ((homeTel.opp_rz_dvoa || 0) + (awayTel.opp_rz_dvoa || 0)) * 10.0;
-            baseTelemetryTotal = Number(Math.max(28.0, Math.min(78.0, totalIntercept + epaTotalPts + rzTotalPts - windPenalty + m8.delayTotalDragPts)).toFixed(1));
-        }
-
-        const m13Details = (mode === "davinci" ? m9.m13Details : m9Bd.m13Details) || {
-            mRiseMultiplier: 1.0,
-            mRiseDog: 1.0,
-            mRiseFav: 1.0,
-            mRiseSignedHomeDelta: 0.0,
-            deltaContext: 0.0,
-            dogHavocRatio: 1.0,
-            riseHomeSpreadAdj: 0.0,
-            propMeanMultDog: 1.0,
-            propMeanMultFav: 1.0,
-            m11OverrideApplied: false,
-            coachSyncBlocked: false
-        };
-
-        const thirdStringTeamClean = m9Base.thirdStringTeam ? cleanTeamCode(m9Base.thirdStringTeam) : null;
-
-        const gameRecord = {
-            gameId: game.game_id,
-            league: gameLeague,
-            isCurrentWeek,
-            weekLabel: inferFootballWeekLabel(game, "Week 11"),
-            matchup: `${cleanAway} @ ${cleanHome}`,
-            homeTeam: cleanHome,
-            awayTeam: cleanAway,
-            commenceTime: game.commence_time,
-            elevationM: envPayload.elevation_m || 0,
-            tempK: envPayload.temp_kelvin || (envPayload.temperature_f !== undefined ? Number((((envPayload.temperature_f - 32) * 5 / 9) + 273.15).toFixed(2)) : 288.15),
-            windMph,
-            vegasHomeSpread,
-            vegasTotalLine,
-            m7, m8, m9Base, m9Bd, m9, m11, m12,
-            elevMatrix: elevBd,
-            elevActive,
-            psiElev: elevActive.psiElevPts,
-            m11CombinedDisplay: Number((m11.phiBioScore + Math.abs(elevActive.psiElevPts)).toFixed(4)),
-            m13Details,
-            m13Rise: m13Details.mRiseSignedHomeDelta,
-            thirdStringQbAlert: m9Base.thirdStringQbAlert,
-            thirdStringTeam: thirdStringTeamClean,
-            psiBd,
-            psi11_12,
-            baseTelemetryTotal
-        };
-
-        AppState.processedGames.push(gameRecord);
-
-        if (Array.isArray(game.props_board)) {
-            game.props_board.forEach((prop, idx) => {
-                const propKey = `${game.game_id}_${prop.market_type}_${idx}`;
-                const m1 = calcVigFreeProbability(prop.base_odds_over || -110, prop.base_odds_under || -110);
-                const vigFreeOver = m1.trueProbA;
-                const vegasLine = (prop.base_line !== undefined && prop.base_line !== null) ? Number(prop.base_line) : 0;
-                const isHomeSpread = prop.market_type === "spread" && prop.player.startsWith(`${game.home_team} `);
-
-                const isAwayPlayer = Boolean(
-                    prop.is_away_player ||
-                    (prop.team && cleanTeamCode(prop.team) === cleanAway) ||
-                    (prop.player && prop.player.startsWith(`${game.away_team} `))
+            let vegasHomeSpread = 0;
+            let vegasTotalLine = (gameLeague === "NCAA") ? 51.5 : 43.5;
+            if (Array.isArray(game.props_board)) {
+                const homeSpreadObj = game.props_board.find(
+                    p => p.market_type === "spread" && p.player.startsWith(`${game.home_team} `)
                 );
-                const playerTeamSpread = isAwayPlayer ? -vegasHomeSpread : vegasHomeSpread;
-                const isUnderdogPlayer = playerTeamSpread > 0;
+                const awaySpreadObj = game.props_board.find(
+                    p => p.market_type === "spread" && p.player.startsWith(`${game.away_team} `)
+                );
+                if (homeSpreadObj && homeSpreadObj.base_line !== undefined) {
+                    vegasHomeSpread = Number(homeSpreadObj.base_line);
+                } else if (awaySpreadObj && awaySpreadObj.base_line !== undefined) {
+                    vegasHomeSpread = -Number(awaySpreadObj.base_line);
+                }
+                const totalObj = game.props_board.find(p => p.market_type === "total");
+                if (totalObj && totalObj.base_line !== undefined) {
+                    vegasTotalLine = Number(totalObj.base_line);
+                }
+            }
 
-                // Strict M1-M9 firewall: pass null for elevMatrix in Just the Tip so M11 never leaks into Tip mode
-                const gatekeeper = evaluatePropGatekeepers(prop, {
-                    playerTeamSpread,
-                    isRoadPlayer: isAwayPlayer,
-                    elevMatrix: (mode === "tip") ? null : elevActive,
-                    teamTelemetry: isAwayPlayer ? awayTel : homeTel,
-                    oppTelemetry: isAwayPlayer ? homeTel : awayTel,
-                    thirdStringQbAlert: m9Base.thirdStringQbAlert,
-                    thirdStringTeam: thirdStringTeamClean,
-                    isUnderLean: (prop.market_type === "total" && baseTelemetryTotal < vegasLine)
+            const elevTip = calcTenZoneElevationMatrix(envPayload, circPayload, "tip", 0.0);
+            const elevBd = calcTenZoneElevationMatrix(envPayload, circPayload, "balls_deep", 0.0);
+            const elevActive = calcTenZoneElevationMatrix(envPayload, circPayload, mode, sliderVal);
+
+            const m11Bd = calcBiophysicalMassLoad(envPayload, homeTel, 95.0, 0.62, "balls_deep", 0.0);
+            const m12Bd = calcTurnoverEPAMatrix({ home: homeTel, away: awayTel }, gameLeague, "balls_deep", 0.0);
+
+            const m11 = calcBiophysicalMassLoad(envPayload, homeTel, 95.0, 0.62, mode, sliderVal);
+            const m12 = calcTurnoverEPAMatrix({ home: homeTel, away: awayTel }, gameLeague, mode, sliderVal);
+
+            const rawCoupledBd = -calcCoupledInteractionPsi(m11Bd.phiBioScore, m12Bd.netTurnoverEPA, 0.0);
+            const psiCoupledBd = Number(Math.max(-2.85, Math.min(2.85, rawCoupledBd)).toFixed(3));
+
+            const rawCoupledActive = (mode === "tip")
+                ? 0.0
+                : -calcCoupledInteractionPsi(m11.phiBioScore, m12.netTurnoverEPA, sliderVal);
+            const psiCoupledActive = Number(Math.max(-3.65, Math.min(3.65, rawCoupledActive)).toFixed(3));
+
+            const gameWithLeague = Object.assign({}, game, { league: gameLeague });
+
+            const m9Base = calcFullGameFairMargin(
+                gameWithLeague, m8.phiCircadianPenalty, 0, "tip", vegasHomeSpread, 0, elevTip, 0.0
+            );
+            const m9Bd = calcFullGameFairMargin(
+                gameWithLeague, m8.phiCircadianPenalty, psiCoupledBd, "balls_deep", vegasHomeSpread, elevBd.psiElevPts, elevBd, 0.0
+            );
+            const m9 = (mode === "tip")
+                ? m9Base
+                : ((mode === "balls_deep")
+                    ? m9Bd
+                    : calcFullGameFairMargin(
+                        gameWithLeague, m8.phiCircadianPenalty, psiCoupledActive, "davinci", vegasHomeSpread, elevActive.psiElevPts, elevActive, sliderVal
+                    ));
+
+            const psiBd = Number((m9Bd.fairHomeSpread - m9Base.fairHomeSpread).toFixed(2));
+            const psi11_12 = (mode === "tip") ? 0 : Number((m9.fairHomeSpread - m9Base.fairHomeSpread).toFixed(2));
+
+            const windMph = envPayload.is_dome ? 0 : (envPayload.wind_mph || 0);
+            const windPenalty = Math.max(0, (windMph - 10.0) * 0.25);
+            const totalIntercept = (gameLeague === "NCAA") ? 51.450 : MODEL_TOTAL_INTERCEPT;
+
+            let baseTelemetryTotal;
+            if (typeof calcIndependentTotalTip === "function") {
+                baseTelemetryTotal = calcIndependentTotalTip(homeTel, awayTel, gameLeague, windMph, m8.delayTotalDragPts);
+            } else {
+                const epaSum = Math.max(-0.20, Math.min(0.20, (homeTel.net_epa_per_play || 0) + (awayTel.net_epa_per_play || 0)));
+                baseTelemetryTotal = Number(Math.max(28.0, Math.min(78.0, totalIntercept + (epaSum * playScaler) - windPenalty)).toFixed(1));
+            }
+
+            const m13Details = (mode === "davinci" ? m9.m13Details : m9Bd.m13Details) || {
+                mRiseMultiplier: 1.0, mRiseDog: 1.0, mRiseFav: 1.0, mRiseSignedHomeDelta: 0.0,
+                deltaContext: 0.0, dogHavocRatio: 1.0, riseHomeSpreadAdj: 0.0,
+                propMeanMultDog: 1.0, propMeanMultFav: 1.0, m11OverrideApplied: false, coachSyncBlocked: false
+            };
+
+            const thirdStringTeamClean = m9Base.thirdStringTeam ? cleanTeamCode(m9Base.thirdStringTeam) : null;
+            const weatherImpact = computeWeatherImpact(envPayload, m7, elevBd);
+
+            const gameRecord = {
+                gameId: game.game_id,
+                league: gameLeague,
+                isCurrentWeek,
+                weekLabel: inferFootballWeekLabel(game, "Week 11"),
+                matchup: `${cleanAway} @ ${cleanHome}`,
+                homeTeam: cleanHome,
+                awayTeam: cleanAway,
+                homeFullName: game.home_full_name || cleanHome,
+                awayFullName: game.away_full_name || cleanAway,
+                commenceTime: game.commence_time,
+                kickoffShort: formatKickoffShort(game.commence_time),
+                envPayload,
+                circPayload,
+                elevationM: envPayload.elevation_m || 0,
+                windMph,
+                vegasHomeSpread,
+                vegasTotalLine,
+                m7, m8, m9Base, m9Bd, m9, m11, m12,
+                elevMatrix: elevBd,
+                elevActive,
+                psiElev: elevActive.psiElevPts,
+                m11CombinedDisplay: Number((m11.phiBioScore + Math.abs(elevActive.psiElevPts)).toFixed(4)),
+                m13Details,
+                m13Rise: m13Details.mRiseSignedHomeDelta,
+                thirdStringQbAlert: m9Base.thirdStringQbAlert,
+                thirdStringTeam: thirdStringTeamClean,
+                psiBd,
+                psi11_12,
+                baseTelemetryTotal,
+                weatherImpact
+            };
+
+            AppState.processedGames.push(gameRecord);
+
+            if (Array.isArray(game.props_board)) {
+                game.props_board.forEach((prop, idx) => {
+                    const propKey = `${game.game_id}_${prop.market_type}_${idx}`;
+                    const m1 = calcVigFreeProbability(prop.base_odds_over || -110, prop.base_odds_under || -110);
+                    const vigFreeOver = m1.trueProbA;
+                    const vegasLine = (prop.base_line !== undefined && prop.base_line !== null) ? Number(prop.base_line) : 0;
+                    const isHomeSpread = prop.market_type === "spread" && prop.player.startsWith(`${game.home_team} `);
+                    const isAwayPlayer = Boolean(
+                        prop.is_away_player ||
+                        (prop.team && cleanTeamCode(prop.team) === cleanAway) ||
+                        (prop.player && prop.player.startsWith(`${game.away_team} `))
+                    );
+                    const playerTeamSpread = isAwayPlayer ? -vegasHomeSpread : vegasHomeSpread;
+                    const isUnderdogPlayer = playerTeamSpread > 0;
+
+                    const gatekeeper = evaluatePropGatekeepers(prop, {
+                        playerTeamSpread,
+                        isRoadPlayer: isAwayPlayer,
+                        elevMatrix: (mode === "tip") ? null : elevActive,
+                        teamTelemetry: isAwayPlayer ? awayTel : homeTel,
+                        oppTelemetry: isAwayPlayer ? homeTel : awayTel,
+                        thirdStringQbAlert: m9Base.thirdStringQbAlert,
+                        thirdStringTeam: thirdStringTeamClean,
+                        isUnderLean: (prop.market_type === "total" && baseTelemetryTotal < vegasLine)
+                    });
+
+                    let baseProjectedLine = vegasLine, tipModelProb = 0.50;
+                    let bdProjectedLine = vegasLine, bdModelProb = 0.50;
+                    let finalCalculatedLine = vegasLine, activeModelProb = 0.50;
+
+                    let safeFloorHookNum = vegasLine, safeFloorLabel = "", safeFloorOdds = -175;
+                    let safeFloorWinPct = 82.0, safeFloorEvPct = 0.0, keyAltMer = 1.0, keyAltNote = "";
+                    let tier2Line = null, tier2ProbPct = 78.0, tier2Approved = false, tier2Mode = null, tier2Label = "";
+                    let totalRegime = "", ceilingHookNum = vegasLine, bdAltLineLabel = "", bdLongerOdds = 145, bdReachProb = 0.50;
+                    const hasBackupQb = Boolean(getVerifiedQbDeltaSafe(homeTel) < 0 || getVerifiedQbDeltaSafe(awayTel) < 0);
+
+                    if (prop.market_type === "spread") {
+                        baseProjectedLine = isHomeSpread ? m9Base.fairHomeSpread : Number((-m9Base.fairHomeSpread).toFixed(2));
+                        bdProjectedLine = isHomeSpread ? m9Bd.fairHomeSpread : Number((-m9Bd.fairHomeSpread).toFixed(2));
+                        finalCalculatedLine = (mode === "balls_deep")
+                            ? bdProjectedLine
+                            : ((mode === "davinci")
+                                ? (isHomeSpread ? m9.fairHomeSpread : Number((-m9.fairHomeSpread).toFixed(2)))
+                                : baseProjectedLine);
+
+                        const lgEng = (typeof getLeagueEngine === "function") ? getLeagueEngine(gameLeague) : null;
+                        const probFn = (gap) => (lgEng && gameLeague === "NCAA") ? lgEng.winProb(gap) : calcPointGapWinProb(gap);
+                        tipModelProb = probFn(vegasLine - baseProjectedLine);
+                        bdModelProb = probFn(vegasLine - bdProjectedLine);
+                        activeModelProb = (mode === "balls_deep") ? bdModelProb : ((mode === "davinci") ? probFn(vegasLine - finalCalculatedLine) : tipModelProb);
+
+                        const keyAltObj = (lgEng && gameLeague === "NCAA")
+                            ? lgEng.keyAlt(vegasLine, bdProjectedLine, prop.base_odds_over || -110)
+                            : calcKeyNumberAltSpreadSafe(vegasLine, bdProjectedLine, prop.base_odds_over || -110);
+                        const baseAltSpread = snapToHalfPointHook(vegasLine, -3.0);
+                        const spreadArc = isActiveMomentumArc ? calcMomentumArc(sliderVal, 1.0) : 0.0;
+
+                        const safeSpreadVal = isActiveMomentumArc ? Number((keyAltObj.altLine - spreadArc).toFixed(2)) : keyAltObj.altLine;
+                        safeFloorHookNum = safeSpreadVal;
+                        safeFloorOdds = keyAltObj.altOdds;
+                        keyAltMer = keyAltObj.merRatio;
+                        keyAltNote = keyAltObj.keyLabel;
+                        tier2Line = keyAltObj.tier2Line;
+                        tier2ProbPct = keyAltObj.tier2ProbPct || 78.0;
+                        tier2Approved = Boolean(keyAltObj.tier2Approved);
+                        tier2Mode = keyAltObj.tier2Mode || null;
+                        tier2Label = keyAltObj.tier2Label || "";
+
+                        if (isActiveMomentumArc) {
+                            const safeProbRaw = Math.min(0.96, Math.max(0.05, probFn(safeSpreadVal - finalCalculatedLine)));
+                            safeFloorWinPct = Number((safeProbRaw * 100).toFixed(1));
+                            safeFloorEvPct = Number(calcExpectedValueAndKelly(safeProbRaw, safeFloorOdds).evPercentage.toFixed(2));
+                            safeFloorLabel = `Alt ${safeSpreadVal > 0 ? "+" : ""}${safeSpreadVal.toFixed(2)} (${safeFloorOdds})`;
+                        } else {
+                            safeFloorWinPct = keyAltObj.altProbPct;
+                            safeFloorEvPct = keyAltObj.altEvPct;
+                            safeFloorLabel = keyAltObj.altStr;
+                        }
+
+                        const altSpreadVal = isActiveMomentumArc ? Number((baseAltSpread - spreadArc).toFixed(2)) : baseAltSpread;
+                        ceilingHookNum = altSpreadVal;
+                        const altFmt = isActiveMomentumArc ? altSpreadVal.toFixed(2) : altSpreadVal.toFixed(1);
+                        bdAltLineLabel = `Alt ${altSpreadVal > 0 ? "+" : ""}${altFmt} (+145)`;
+                        bdLongerOdds = 145;
+                        bdReachProb = probFn(altSpreadVal - finalCalculatedLine);
+
+                    } else if (prop.market_type === "total") {
+                        baseProjectedLine = baseTelemetryTotal;
+                        const lgTotEng = (typeof getLeagueEngine === "function") ? getLeagueEngine(gameLeague) : null;
+                        const totProbFn = (gap) => lgTotEng ? (lgTotEng.totalWinProb ? lgTotEng.totalWinProb(gap) : lgTotEng.winProb(gap)) : calcPointGapWinProb(gap);
+                        tipModelProb = Math.max(0.50, totProbFn(Math.abs(baseProjectedLine - vegasLine)));
+
+                        const bdTotObj = (lgTotEng && gameLeague === "NCAA")
+                            ? lgTotEng.safeTotal(vegasLine, baseProjectedLine, envPayload, circPayload, elevBd, hasBackupQb)
+                            : calcReportCalibratedTotalSafe(vegasLine, baseProjectedLine, envPayload, circPayload, elevBd, gameLeague, hasBackupQb);
+                        bdProjectedLine = bdTotObj.ballsDeepTotal;
+                        totalRegime = bdTotObj.regime || "TIP_ALIGNED_SAFE";
+                        bdModelProb = Math.max(0.50, totProbFn(Math.abs(bdProjectedLine - vegasLine)));
+
+                        const bdDirSign = (bdTotObj.safeDir === "U") ? -1 : 1;
+                        const totalArc = isActiveMomentumArc ? calcMomentumArc(sliderVal, 1.15) : 0.0;
+                        if (mode === "balls_deep") {
+                            finalCalculatedLine = bdProjectedLine;
+                            activeModelProb = bdModelProb;
+                        } else if (mode === "davinci") {
+                            finalCalculatedLine = Number((bdProjectedLine + (bdDirSign * totalArc)).toFixed(1));
+                            activeModelProb = Math.max(0.50, totProbFn(Math.abs(finalCalculatedLine - vegasLine)));
+                        } else {
+                            finalCalculatedLine = baseProjectedLine;
+                            activeModelProb = tipModelProb;
+                        }
+
+                        const isUnderActive = (mode === "tip") ? (finalCalculatedLine < vegasLine) : (bdTotObj.safeDir === "U");
+                        safeFloorOdds = bdTotObj.safeOdds || -175;
+                        keyAltNote = (totalRegime === "SHOOTOUT_SAFE_OVER")
+                            ? "Shootout Safe Over"
+                            : (totalRegime === "GRIND_SAFE_UNDER" ? "Grind Safe Under" : "Tip-Aligned Safe Alt");
+
+                        const safeTotalVal = isActiveMomentumArc
+                            ? Number((isUnderActive ? (bdTotObj.safeLine - totalArc) : (bdTotObj.safeLine + totalArc)).toFixed(1))
+                            : bdTotObj.safeLine;
+                        safeFloorHookNum = safeTotalVal;
+                        if (isActiveMomentumArc) {
+                            const safeTotalEdge = isUnderActive ? (safeTotalVal - finalCalculatedLine) : (finalCalculatedLine - safeTotalVal);
+                            const safeTotalProb = Math.min(0.96, Math.max(0.05, totProbFn(safeTotalEdge)));
+                            safeFloorWinPct = Number((safeTotalProb * 100).toFixed(1));
+                            safeFloorEvPct = Number(calcExpectedValueAndKelly(safeTotalProb, safeFloorOdds).evPercentage.toFixed(2));
+                            safeFloorLabel = `Alt ${isUnderActive ? "U" : "O"} ${safeTotalVal.toFixed(1)} (${safeFloorOdds})`;
+                        } else {
+                            safeFloorWinPct = bdTotObj.safeProbPct;
+                            safeFloorEvPct = bdTotObj.safeEvPct;
+                            safeFloorLabel = bdTotObj.safeLabel;
+                        }
+
+                        const baseAltTotal = isUnderActive ? (Math.floor(vegasLine - 3.0) + 0.5) : (Math.floor(vegasLine + 3.0) + 0.5);
+                        const altTotalVal = isActiveMomentumArc
+                            ? Number((isUnderActive ? (baseAltTotal - totalArc) : (baseAltTotal + totalArc)).toFixed(1))
+                            : baseAltTotal;
+                        ceilingHookNum = altTotalVal;
+                        bdAltLineLabel = `Alt ${isUnderActive ? "U" : "O"} ${altTotalVal.toFixed(1)} (+155)`;
+                        bdLongerOdds = 155;
+                        const altTotalEdge = isUnderActive ? (altTotalVal - finalCalculatedLine) : (finalCalculatedLine - altTotalVal);
+                        bdReachProb = totProbFn(altTotalEdge);
+
+                    } else {
+                        const gatedMu = gatekeeper.adjustedMu > 0 ? gatekeeper.adjustedMu : (prop.projected_mean_mu || vegasLine || 50);
+                        baseProjectedLine = Number(gatedMu.toFixed(1));
+                        const varianceSigma2 = prop.projected_variance_sigma2 || 225;
+                        tipModelProb = calcGammaSurvivalProb(baseProjectedLine, varianceSigma2, vegasLine || 45.5).trueOverProb;
+
+                        const m13PropMult = isUnderdogPlayer ? (m13Details.propMeanMultDog || 1.0) : (m13Details.propMeanMultFav || 1.0);
+                        bdProjectedLine = Number((baseProjectedLine * m13PropMult).toFixed(1));
+                        bdModelProb = Math.max(0.01, Math.min(0.99, calcGammaSurvivalProb(bdProjectedLine, varianceSigma2, vegasLine || 45.5).trueOverProb));
+
+                        const propArcPct = isActiveMomentumArc ? calcMomentumArc(sliderVal, 0.085) : 0.0;
+                        if (mode === "tip") {
+                            finalCalculatedLine = baseProjectedLine;
+                            activeModelProb = tipModelProb;
+                        } else if (mode === "balls_deep") {
+                            finalCalculatedLine = bdProjectedLine;
+                            activeModelProb = bdModelProb;
+                        } else {
+                            finalCalculatedLine = Math.max(1, Number((bdProjectedLine * (1.0 + propArcPct)).toFixed(1)));
+                            activeModelProb = calcGammaSurvivalProb(finalCalculatedLine, varianceSigma2, vegasLine || 45.5).trueOverProb;
+                        }
+
+                        const baseFloorMilestone = Math.max(5, Math.round((baseProjectedLine * 0.70) / 5) * 5);
+                        const safeFloorMilestone = isActiveMomentumArc ? Math.max(1, Number((finalCalculatedLine * 0.70).toFixed(1))) : baseFloorMilestone;
+                        safeFloorHookNum = safeFloorMilestone;
+                        safeFloorOdds = -190;
+                        safeFloorWinPct = Number((Math.min(0.97, Math.max(0.05, calcGammaSurvivalProb(finalCalculatedLine, varianceSigma2, safeFloorMilestone).trueOverProb)) * 100).toFixed(1));
+                        safeFloorLabel = `${safeFloorMilestone}+ Safe Floor (-190)`;
+
+                        const baseCeilMilestone = Math.max(10, Math.round((baseProjectedLine * 1.25) / 5) * 5);
+                        const ceilingMilestone = isActiveMomentumArc ? Math.max(5, Number((finalCalculatedLine * 1.25).toFixed(1))) : baseCeilMilestone;
+                        ceilingHookNum = ceilingMilestone;
+                        bdAltLineLabel = `${ceilingMilestone}+ Escalator (+160)`;
+                        bdLongerOdds = 160;
+                        bdReachProb = Math.max(0.05, calcGammaSurvivalProb(finalCalculatedLine, varianceSigma2, ceilingMilestone).trueOverProb);
+                    }
+
+                    const pickTeamCode = (prop.market_type === "spread") ? (isHomeSpread ? cleanHome : cleanAway) : `${cleanAway}/${cleanHome}`;
+                    let shortTitle = cleanLabelCodes(prop.player);
+                    let tipDisplayLabel = cleanLabelCodes(prop.player);
+                    let activeDisplayLabel = cleanLabelCodes(prop.player);
+                    let lineDisplay = fmtSigned(vegasLine);
+
+                    if (prop.market_type === "spread") {
+                        shortTitle = `${pickTeamCode} ${fmtSigned(vegasLine)}`;
+                        lineDisplay = fmtSigned(vegasLine);
+                    } else if (prop.market_type === "total") {
+                        const isUnderTip = baseProjectedLine < vegasLine;
+                        const isUnderActive = finalCalculatedLine < vegasLine;
+                        shortTitle = `${cleanAway}/${cleanHome} ${isUnderActive ? "U" : "O"} ${vegasLine}`;
+                        lineDisplay = `${isUnderActive ? "U" : "O"} ${vegasLine}`;
+                        tipDisplayLabel = `${cleanAway}@${cleanHome} Total (${isUnderTip ? "U" : "O"} ${vegasLine})`;
+                        activeDisplayLabel = `${cleanAway}@${cleanHome} Total (${isUnderActive ? "U" : "O"} ${vegasLine})`;
+                    }
+
+                    let bdSideOdds = prop.base_odds_over || -110;
+                    let activeSideOdds = prop.base_odds_over || -110;
+                    if (prop.market_type === "total") {
+                        const tipIsUnder = baseProjectedLine < vegasLine;
+                        if ((bdProjectedLine < vegasLine) !== tipIsUnder && prop.base_odds_under) bdSideOdds = prop.base_odds_under;
+                        if ((finalCalculatedLine < vegasLine) !== tipIsUnder && prop.base_odds_under) activeSideOdds = prop.base_odds_under;
+                    }
+
+                    const m2Tip = calcExpectedValueAndKelly(tipModelProb, prop.base_odds_over || -110);
+                    const m2Bd = calcExpectedValueAndKelly(bdModelProb, bdSideOdds);
+                    const m2BdAlt = calcExpectedValueAndKelly(bdReachProb, bdLongerOdds);
+                    const m2Active = calcExpectedValueAndKelly(activeModelProb, activeSideOdds);
+
+                    const tipEvPct = Number(m2Tip.evPercentage.toFixed(2));
+                    const activeEvPct = Number(m2Active.evPercentage.toFixed(2));
+                    const tipBadge = gatekeeper.blocked ? "PASS" : getTierFromEv(tipEvPct);
+                    const activeBadge = gatekeeper.blocked ? "PASS" : getTierFromEv(activeEvPct);
+
+                    AppState.processedProps.push({
+                        propKey,
+                        gameRecord,
+                        commenceTime: game.commence_time,
+                        commenceMs: game.commence_time ? (new Date(game.commence_time).getTime() || 0) : 0,
+                        isCurrentWeek,
+                        weekLabel: gameRecord.weekLabel,
+                        gameId: game.game_id,
+                        league: gameLeague,
+                        matchup: gameRecord.matchup,
+                        homeTeam: cleanHome,
+                        awayTeam: cleanAway,
+                        pickTeamCode,
+                        shortTitle,
+                        lineDisplay,
+                        player: tipDisplayLabel,
+                        activePlayerLabel: activeDisplayLabel,
+                        marketType: prop.market_type,
+                        baseLine: vegasLine,
+                        baseOdds: activeSideOdds,
+                        isHomeSpread,
+                        tipProjectedMean: baseProjectedLine,
+                        tipModelPct: Number((tipModelProb * 100).toFixed(2)),
+                        tipEvPct,
+                        tipBadge,
+                        projectedMean: finalCalculatedLine,
+                        bdProjectedMean: bdProjectedLine,
+                        vigFreePct: Number((vigFreeOver * 100).toFixed(2)),
+                        bdModelPct: Number((bdModelProb * 100).toFixed(2)),
+                        bdEvPct: Number(m2Bd.evPercentage.toFixed(2)),
+                        safeFloorHookNum,
+                        safeFloorLabel,
+                        safeFloorOdds,
+                        safeFloorWinPct,
+                        safeFloorEvPct,
+                        keyAltMer,
+                        keyAltNote,
+                        tier2Line,
+                        tier2ProbPct,
+                        tier2Approved,
+                        tier2Mode,
+                        tier2Label,
+                        totalRegime,
+                        ceilingHookNum,
+                        bdAltLabel: bdAltLineLabel,
+                        bdAltEvPct: Number(m2BdAlt.evPercentage.toFixed(2)),
+                        activeModelPct: Number((activeModelProb * 100).toFixed(2)),
+                        activeModelProbRaw: activeModelProb,
+                        evPct: activeEvPct,
+                        quarterKellyPct: gatekeeper.blocked ? 0.0 : Number(m2Active.quarterKellyStakePct.toFixed(2)),
+                        isKellyCapped: Boolean(m2Active.isKellyCapped && !gatekeeper.blocked),
+                        tierBadge: activeBadge,
+                        gatekeeperBlocked: gatekeeper.blocked,
+                        gatekeeperAction: gatekeeper.action,
+                        gatekeeperFlags: gatekeeper.flags,
+                        flagshipSlot: "",
+                        porkysSlot: "",
+                        psiBd,
+                        psiActive: psi11_12
+                    });
                 });
-
-                let baseProjectedLine = vegasLine;
-                let tipModelProb = 0.50;
-                let bdProjectedLine = vegasLine;
-                let bdModelProb = 0.50;
-                let finalCalculatedLine = vegasLine;
-                let activeModelProb = 0.50;
-
-                let safeFloorHookNum = vegasLine;
-                let safeFloorLabel = "";
-                let safeFloorOdds = -175;
-                let safeFloorWinPct = 82.0;
-                let safeFloorEvPct = 0.0;
-                let keyAltMer = 1.0;
-                let keyAltNote = "";
-                let tier2Line = null;
-                let tier2ProbPct = 78.0;
-                let tier2Approved = false;
-                let tier2Mode = null;
-                let tier2Label = "";
-                let totalRegime = "";
-                let ceilingHookNum = vegasLine;
-                let bdAltLineLabel = "";
-                let bdLongerOdds = 145;
-                let bdReachProb = 0.50;
-                const hasBackupQb = Boolean(getVerifiedQbDeltaSafe(homeTel) < 0 || getVerifiedQbDeltaSafe(awayTel) < 0);
-
-                if (prop.market_type === "spread") {
-                    baseProjectedLine = isHomeSpread ? m9Base.fairHomeSpread : Number((-m9Base.fairHomeSpread).toFixed(2));
-                    const tipGap = vegasLine - baseProjectedLine;
-                    tipModelProb = calcPointGapWinProb(tipGap);
-
-                    bdProjectedLine = isHomeSpread ? m9Bd.fairHomeSpread : Number((-m9Bd.fairHomeSpread).toFixed(2));
-                    const bdGap = vegasLine - bdProjectedLine;
-                    bdModelProb = calcPointGapWinProb(bdGap);
-
-                    if (mode === "balls_deep") {
-                        finalCalculatedLine = bdProjectedLine;
-                        activeModelProb = bdModelProb;
-                    } else if (mode === "davinci") {
-                        finalCalculatedLine = isHomeSpread ? m9.fairHomeSpread : Number((-m9.fairHomeSpread).toFixed(2));
-                        activeModelProb = calcPointGapWinProb(vegasLine - finalCalculatedLine);
-                    } else {
-                        finalCalculatedLine = baseProjectedLine;
-                        activeModelProb = tipModelProb;
-                    }
-
-                    // BACK-TO-OUR-ROOTS MODULE 3 KEY-NUMBER ALT BUY (-2.5, +3.5, -6.5, +7.5, -13.5, -14.5, -17.5)
-                    const lgEng = (typeof getLeagueEngine === "function") ? getLeagueEngine(gameLeague) : null;
-                    if (lgEng && gameLeague === "NCAA") {
-                        const ncaaTipGap = vegasLine - baseProjectedLine;
-                        const ncaaBdGap = vegasLine - bdProjectedLine;
-                        tipModelProb = lgEng.winProb(ncaaTipGap);
-                        bdModelProb = lgEng.winProb(ncaaBdGap);
-                        activeModelProb = (mode === "balls_deep") ? bdModelProb : ((mode === "davinci") ? lgEng.winProb(vegasLine - finalCalculatedLine) : tipModelProb);
-                    }
-                    const keyAltObj = (lgEng && gameLeague === "NCAA")
-                        ? lgEng.keyAlt(vegasLine, bdProjectedLine, prop.base_odds_over || -110)
-                        : calcKeyNumberAltSpreadSafe(vegasLine, bdProjectedLine, prop.base_odds_over || -110);
-                    const baseAltSpread = snapToHalfPointHook(vegasLine, -3.0);
-                    const spreadArc = isActiveMomentumArc ? calcMomentumArc(sliderVal, 1.0) : 0.0;
-
-                    const safeSpreadVal = isActiveMomentumArc
-                        ? Number((keyAltObj.altLine - spreadArc).toFixed(2))
-                        : keyAltObj.altLine;
-                    safeFloorHookNum = safeSpreadVal;
-                    safeFloorOdds = keyAltObj.altOdds;
-                    keyAltMer = keyAltObj.merRatio;
-                    keyAltNote = keyAltObj.keyLabel;
-                    tier2Line = keyAltObj.tier2Line;
-                    tier2ProbPct = keyAltObj.tier2ProbPct || 78.0;
-                    tier2Approved = Boolean(keyAltObj.tier2Approved);
-                    tier2Mode = keyAltObj.tier2Mode || null;
-                    tier2Label = keyAltObj.tier2Label || "";
-                    if (isActiveMomentumArc) {
-                        const safeProbRaw = Math.min(0.96, Math.max(0.05, (lgEng ? lgEng.winProb(safeSpreadVal - finalCalculatedLine) : calcPointGapWinProb(safeSpreadVal - finalCalculatedLine))));
-                        safeFloorWinPct = Number((safeProbRaw * 100).toFixed(1));
-                        safeFloorEvPct = Number(calcExpectedValueAndKelly(safeProbRaw, safeFloorOdds).evPercentage.toFixed(2));
-                        const safeFmt = safeSpreadVal.toFixed(2);
-                        safeFloorLabel = `Alt ${safeSpreadVal > 0 ? '+' + safeFmt : safeFmt} (${safeFloorOdds})`;
-                    } else {
-                        safeFloorWinPct = keyAltObj.altProbPct;
-                        safeFloorEvPct = keyAltObj.altEvPct;
-                        safeFloorLabel = keyAltObj.altStr;
-                    }
-
-                    const altSpreadVal = isActiveMomentumArc
-                        ? Number((baseAltSpread - spreadArc).toFixed(2))
-                        : baseAltSpread;
-                    ceilingHookNum = altSpreadVal;
-                    const altFmt = isActiveMomentumArc ? altSpreadVal.toFixed(2) : altSpreadVal.toFixed(1);
-                    bdAltLineLabel = `Alt ${altSpreadVal > 0 ? '+' + altFmt : altFmt} (+145)`;
-                    bdLongerOdds = 145;
-                    const altCoverGap = altSpreadVal - finalCalculatedLine;
-                    bdReachProb = lgEng ? lgEng.winProb(altCoverGap) : calcPointGapWinProb(altCoverGap);
-
-                } else if (prop.market_type === "total") {
-                    baseProjectedLine = baseTelemetryTotal;
-                    const tipTotalDiff = baseProjectedLine - vegasLine;
-                    const lgTotEng = (typeof getLeagueEngine === "function") ? getLeagueEngine(gameLeague) : null;
-                    const totProbFn = (gap) => lgTotEng ? (lgTotEng.totalWinProb ? lgTotEng.totalWinProb(gap) : lgTotEng.winProb(gap)) : calcPointGapWinProb(gap);
-                    tipModelProb = Math.max(0.50, totProbFn(Math.abs(tipTotalDiff)));
-
-                    const bdTotObj = (lgTotEng && gameLeague === "NCAA")
-                        ? lgTotEng.safeTotal(vegasLine, baseProjectedLine, envPayload, circPayload, elevBd, hasBackupQb)
-                        : calcReportCalibratedTotalSafe(vegasLine, baseProjectedLine, envPayload, circPayload, elevBd, gameLeague, hasBackupQb);
-                    bdProjectedLine = bdTotObj.ballsDeepTotal;
-                    totalRegime = bdTotObj.regime || "NEUTRAL_PASS";
-                    const bdTotalDiff = bdProjectedLine - vegasLine;
-                    bdModelProb = Math.max(0.50, totProbFn(Math.abs(bdTotalDiff)));
-
-                    const bdDirSign = (bdTotObj.safeDir === "U") ? -1 : 1;
-                    const totalArc = isActiveMomentumArc ? calcMomentumArc(sliderVal, 1.15) : 0.0;
-
-                    if (mode === "balls_deep") {
-                        finalCalculatedLine = bdProjectedLine;
-                        activeModelProb = bdModelProb;
-                    } else if (mode === "davinci") {
-                        const dvTotal = bdProjectedLine + (bdDirSign * totalArc);
-                        finalCalculatedLine = Number(dvTotal.toFixed(1));
-                        activeModelProb = Math.max(0.50, totProbFn(Math.abs(finalCalculatedLine - vegasLine)));
-                    } else {
-                        finalCalculatedLine = baseProjectedLine;
-                        activeModelProb = tipModelProb;
-                    }
-
-                    const isUnderActive = (mode === "tip") ? (finalCalculatedLine < vegasLine) : (bdTotObj.safeDir === "U");
-                    safeFloorOdds = bdTotObj.safeOdds || -175;
-                    keyAltNote = (totalRegime === "SHOOTOUT_SAFE_OVER")
-                        ? "🔥 Confirmed Shootout Over"
-                        : (totalRegime === "GRIND_SAFE_UNDER" ? "🧊 Confirmed Grind Under" : "⚡ Tip-Aligned Safe Alt");
-
-                    const safeTotalVal = isActiveMomentumArc
-                        ? Number((isUnderActive ? (bdTotObj.safeLine - totalArc) : (bdTotObj.safeLine + totalArc)).toFixed(1))
-                        : bdTotObj.safeLine;
-                    safeFloorHookNum = safeTotalVal;
-                    if (isActiveMomentumArc) {
-                        const safeTotalEdge = isUnderActive ? (safeTotalVal - finalCalculatedLine) : (finalCalculatedLine - safeTotalVal);
-                        const safeTotalProb = Math.min(0.96, Math.max(0.05, totProbFn(safeTotalEdge)));
-                        safeFloorWinPct = Number((safeTotalProb * 100).toFixed(1));
-                        safeFloorEvPct = Number(calcExpectedValueAndKelly(safeTotalProb, safeFloorOdds).evPercentage.toFixed(2));
-                        safeFloorLabel = `Alt ${isUnderActive ? 'U' : 'O'} ${safeTotalVal.toFixed(1)} (${safeFloorOdds})`;
-                    } else {
-                        safeFloorWinPct = bdTotObj.safeProbPct;
-                        safeFloorEvPct = bdTotObj.safeEvPct;
-                        safeFloorLabel = bdTotObj.safeLabel;
-                    }
-
-                    const baseAltTotal = isUnderActive
-                        ? (Math.floor(vegasLine - 3.0) + 0.5)
-                        : (Math.floor(vegasLine + 3.0) + 0.5);
-                    const altTotalVal = isActiveMomentumArc
-                        ? Number((isUnderActive ? (baseAltTotal - totalArc) : (baseAltTotal + totalArc)).toFixed(1))
-                        : baseAltTotal;
-                    ceilingHookNum = altTotalVal;
-                    bdAltLineLabel = `Alt ${isUnderActive ? 'U' : 'O'} ${altTotalVal.toFixed(1)} (+155)`;
-                    bdLongerOdds = 155;
-                    const altTotalEdge = isUnderActive
-                        ? (altTotalVal - finalCalculatedLine)
-                        : (finalCalculatedLine - altTotalVal);
-                    bdReachProb = totProbFn(altTotalEdge);
-
-                } else {
-                    const gatedMu = gatekeeper.adjustedMu > 0 ? gatekeeper.adjustedMu : (prop.projected_mean_mu || vegasLine || 50);
-                    baseProjectedLine = Number(gatedMu.toFixed(1));
-                    const varianceSigma2 = prop.projected_variance_sigma2 || 225;
-                    const gammaRes = calcGammaSurvivalProb(baseProjectedLine, varianceSigma2, vegasLine || 45.5);
-                    tipModelProb = gammaRes.trueOverProb;
-
-                    const m13PropMult = isUnderdogPlayer ? (m13Details.propMeanMultDog || 1.0) : (m13Details.propMeanMultFav || 1.0);
-                    bdProjectedLine = Number((baseProjectedLine * m13PropMult).toFixed(1));
-                    const gammaBdRes = calcGammaSurvivalProb(bdProjectedLine, varianceSigma2, vegasLine || 45.5);
-                    bdModelProb = Math.max(0.01, Math.min(0.99, gammaBdRes.trueOverProb));
-
-                    const propArcPct = isActiveMomentumArc ? (calcMomentumArc(sliderVal, 0.085)) : 0.0;
-
-                    if (mode === "tip") {
-                        finalCalculatedLine = baseProjectedLine;
-                        activeModelProb = tipModelProb;
-                    } else if (mode === "balls_deep") {
-                        finalCalculatedLine = bdProjectedLine;
-                        activeModelProb = bdModelProb;
-                    } else {
-                        const dvMu = Math.max(1, Number((bdProjectedLine * (1.0 + propArcPct)).toFixed(1)));
-                        finalCalculatedLine = dvMu;
-                        activeModelProb = calcGammaSurvivalProb(dvMu, varianceSigma2, vegasLine || 45.5).trueOverProb;
-                    }
-
-                    // Organic continuous prop floor & ceiling flow in DaVinci (no 5-yard snapping during drag)
-                    const baseFloorMilestone = Math.max(5, Math.round((baseProjectedLine * 0.70) / 5) * 5);
-                    const safeFloorMilestone = isActiveMomentumArc
-                        ? Math.max(1, Number((finalCalculatedLine * 0.70).toFixed(1)))
-                        : baseFloorMilestone;
-                    safeFloorHookNum = safeFloorMilestone;
-                    const gammaFloorRes = calcGammaSurvivalProb(finalCalculatedLine, varianceSigma2, safeFloorMilestone);
-                    safeFloorWinPct = Number((Math.min(0.97, Math.max(0.05, gammaFloorRes.trueOverProb)) * 100).toFixed(1));
-                    safeFloorLabel = `${safeFloorMilestone}+ Safe Floor (-190)`;
-
-                    const baseCeilMilestone = Math.max(10, Math.round((baseProjectedLine * 1.25) / 5) * 5);
-                    const ceilingMilestone = isActiveMomentumArc
-                        ? Math.max(5, Number((finalCalculatedLine * 1.25).toFixed(1)))
-                        : baseCeilMilestone;
-                    ceilingHookNum = ceilingMilestone;
-                    bdAltLineLabel = `${ceilingMilestone}+ Escalator (+160)`;
-                    bdLongerOdds = 160;
-                    const gammaCeilRes = calcGammaSurvivalProb(finalCalculatedLine, varianceSigma2, ceilingMilestone);
-                    bdReachProb = Math.max(0.05, gammaCeilRes.trueOverProb);
-                }
-
-                let tipDisplayLabel = cleanLabelCodes(prop.player);
-                let activeDisplayLabel = cleanLabelCodes(prop.player);
-                if (prop.market_type === "total") {
-                    const isUnderTip = baseProjectedLine < vegasLine;
-                    const isUnderActive = finalCalculatedLine < vegasLine;
-                    tipDisplayLabel = `${cleanAway}@${cleanHome} Total (${isUnderTip ? "U" : "O"} ${vegasLine})`;
-                    activeDisplayLabel = `${cleanAway}@${cleanHome} Total (${isUnderActive ? "U" : "O"} ${vegasLine})`;
-                }
-
-                let bdSideOdds = prop.base_odds_over || -110;
-                let activeSideOdds = prop.base_odds_over || -110;
-                if (prop.market_type === "total") {
-                    const tipIsUnder = baseProjectedLine < vegasLine;
-                    const bdIsUnder = bdProjectedLine < vegasLine;
-                    const activeIsUnder = finalCalculatedLine < vegasLine;
-                    if (bdIsUnder !== tipIsUnder && prop.base_odds_under) bdSideOdds = prop.base_odds_under;
-                    if (activeIsUnder !== tipIsUnder && prop.base_odds_under) activeSideOdds = prop.base_odds_under;
-                }
-                const m2Tip = calcExpectedValueAndKelly(tipModelProb, prop.base_odds_over || -110);
-                const m2Bd = calcExpectedValueAndKelly(bdModelProb, bdSideOdds);
-                const m2BdAlt = calcExpectedValueAndKelly(bdReachProb, bdLongerOdds);
-                const m2Active = calcExpectedValueAndKelly(activeModelProb, activeSideOdds);
-
-                const tipWinPct = Number((tipModelProb * 100).toFixed(2));
-                const tipEvPct = Number(m2Tip.evPercentage.toFixed(2));
-                const activeWinPct = Number((activeModelProb * 100).toFixed(2));
-                const activeEvPct = Number(m2Active.evPercentage.toFixed(2));
-
-                const tipBadge = gatekeeper.blocked ? "PASS" : getTierFromEv(tipEvPct);
-                const activeBadge = gatekeeper.blocked ? "PASS" : getTierFromEv(activeEvPct);
-
-                AppState.processedProps.push({
-                    propKey,
-                    commenceTime: game.commence_time,
-                    isCurrentWeek,
-                    weekLabel: gameRecord.weekLabel,
-                    gameId: game.game_id,
-                    league: gameLeague,
-                    matchup: gameRecord.matchup,
-                    homeTeam: cleanHome,
-                    awayTeam: cleanAway,
-                    player: tipDisplayLabel,
-                    activePlayerLabel: activeDisplayLabel,
-                    marketType: prop.market_type,
-                    baseLine: vegasLine,
-                    baseOdds: prop.base_odds_over || -110,
-                    isHomeSpread,
-                    tipProjectedMean: baseProjectedLine,
-                    tipModelPct: tipWinPct,
-                    tipEvPct: tipEvPct,
-                    tipBadge: tipBadge,
-                    projectedMean: finalCalculatedLine,
-                    bdProjectedMean: bdProjectedLine,
-                    vigFreePct: Number((vigFreeOver * 100).toFixed(2)),
-                    bdModelPct: Number((bdModelProb * 100).toFixed(2)),
-                    bdEvPct: Number(m2Bd.evPercentage.toFixed(2)),
-                    safeFloorHookNum,
-                    safeFloorLabel,
-                    safeFloorOdds,
-                    safeFloorWinPct,
-                    safeFloorEvPct,
-                    keyAltMer,
-                    keyAltNote,
-                    tier2Line,
-                    tier2ProbPct,
-                    tier2Approved,
-                    tier2Mode,
-                    tier2Label,
-                    totalRegime,
-                    ceilingHookNum,
-                    bdAltLabel: bdAltLineLabel,
-                    bdAltEvPct: Number(m2BdAlt.evPercentage.toFixed(2)),
-                    activeModelPct: activeWinPct,
-                    activeModelProbRaw: activeModelProb,
-                    evPct: activeEvPct,
-                    quarterKellyPct: gatekeeper.blocked ? 0.0 : Number(m2Active.quarterKellyStakePct.toFixed(2)),
-                    isKellyCapped: Boolean(m2Active.isKellyCapped && !gatekeeper.blocked),
-                    tierBadge: activeBadge,
-                    gatekeeperBlocked: gatekeeper.blocked,
-                    gatekeeperAction: gatekeeper.action,
-                    gatekeeperFlags: gatekeeper.flags,
-                    flagshipSlot: "",
-                    porkysSlot: "",
-                    psiBd,
-                    psiActive: psi11_12
-                });
-            });
+            }
+        } catch (gameErr) {
+            console.error("DixPix Game Render Skip:", game && game.game_id, gameErr);
         }
-      } catch (gameErr) {
-        console.error("DixPix Game Render Skip:", game && game.game_id, gameErr);
-      }
     });
 
-    // 1. Lock Main Stage Flagship 5-Pack Selection STRICTLY to THIS WEEK'S active/upcoming & non-gated plays (thru MNF)
-    AppState.processedProps.forEach(p => {
-        p.flagshipSlot = "";
-        p.porkysSlot = "";
-    });
-    const bestPlayPerGame = [];
-    const trapPairsPool = [];
-
+    // Lock Main Stage Flagship 5-Pack & Porky's 5-Pack to pre-kickoff current-week games
     const nowMs = Date.now();
     const isPreKickoffGame = (g) => {
         if (!g.commenceTime) return true;
@@ -1265,6 +1158,9 @@ function recalculateAndRenderAll(opts = {}) {
     };
     const currentWeekGames = AppState.processedGames.filter(g => g.isCurrentWeek && isPreKickoffGame(g));
     const activeWeekPool = currentWeekGames.length > 0 ? currentWeekGames : AppState.processedGames.filter(isPreKickoffGame);
+
+    const bestPlayPerGame = [];
+    const trapPairsPool = [];
 
     activeWeekPool.forEach(g => {
         const gameSpreads = AppState.processedProps.filter(
@@ -1279,23 +1175,15 @@ function recalculateAndRenderAll(opts = {}) {
             gameSpreads.sort((a, b) => b.tipEvPct - a.tipEvPct);
             const bestSide = gameSpreads[0];
             const worstSide = gameSpreads[gameSpreads.length - 1];
-            if (!bestSide.gatekeeperBlocked) {
-                gameCandidates.push(bestSide);
-            }
-
+            if (!bestSide.gatekeeperBlocked) gameCandidates.push(bestSide);
             if (gameSpreads.length > 1 && worstSide.tipEvPct <= PASS_EV_CUTOFF) {
-                trapPairsPool.push({
-                    trapProp: worstSide,
-                    fadeProp: bestSide
-                });
+                trapPairsPool.push({ trapProp: worstSide, fadeProp: bestSide });
             }
         }
         if (gameTotals.length > 0) {
             gameTotals.sort((a, b) => b.tipEvPct - a.tipEvPct);
             gameCandidates.push(gameTotals[0]);
         }
-
-        // Strict 1-pick-per-game rule: highest-EV Spread OR O/U Total per stadium for clean x2/x3 Round Robins
         if (gameCandidates.length > 0) {
             gameCandidates.sort((a, b) => b.tipEvPct - a.tipEvPct);
             bestPlayPerGame.push(gameCandidates[0]);
@@ -1303,11 +1191,10 @@ function recalculateAndRenderAll(opts = {}) {
     });
 
     bestPlayPerGame.sort((a, b) => b.tipEvPct - a.tipEvPct);
-    // Balanced Blended 5-Pack: strict 1-pick-per-game + max 3 of any single market (guarantees Spread + O/U blend)
     const selectedFive = [];
     const usedGameIds = new Set();
-    let spreadCount = 0;
-    let totalCount = 0;
+    let spreadCount = 0, totalCount = 0;
+
     for (const p of bestPlayPerGame) {
         if (selectedFive.length >= 5) break;
         if (usedGameIds.has(p.gameId)) continue;
@@ -1318,7 +1205,6 @@ function recalculateAndRenderAll(opts = {}) {
         if (p.marketType === "spread") spreadCount++;
         else if (p.marketType === "total") totalCount++;
     }
-    // Fallback fill if slate has <5 games with balanced markets
     if (selectedFive.length < 5) {
         for (const p of bestPlayPerGame) {
             if (selectedFive.length >= 5) break;
@@ -1328,854 +1214,717 @@ function recalculateAndRenderAll(opts = {}) {
         }
     }
     selectedFive.sort((a, b) => b.tipEvPct - a.tipEvPct);
-    const menageTop3 = selectedFive.slice(0, 3);
-    menageTop3.forEach((p, idx) => { p.flagshipSlot = `MÉNAGE À TROIS #${idx + 1}`; });
+    selectedFive.slice(0, 3).forEach((p, i) => { p.flagshipSlot = `MÉNAGE À TROIS #${i + 1}`; });
+    selectedFive.slice(3, 5).forEach((p, i) => { p.flagshipSlot = `5-PACK FLEX #${i + 4}`; });
+    AppState.flagshipFivePack = selectedFive;
 
-    const flexTop2 = selectedFive.slice(3, 5);
-    flexTop2.forEach((p, idx) => { p.flagshipSlot = `5-PACK FLEX #${idx + 4}`; });
-
-    AppState.flagshipFivePack = [...menageTop3, ...flexTop2];
-
-    // 2. Build "Wednesday Night at Porky's" Top 5 Public Traps & Safe Floor Fades
     trapPairsPool.sort((a, b) => a.trapProp.tipEvPct - b.trapProp.tipEvPct);
     AppState.porkysFivePack = trapPairsPool.slice(0, 5).map((pair, idx) => {
-        const slotLabel = idx < 3
-            ? `DAY-SHIFT TRAP #${idx + 1}`
-            : `KEEP IT IN YOUR PANTS #${idx + 1}`;
+        const slotLabel = idx < 3 ? `DAY-SHIFT TRAP #${idx + 1}` : `KEEP IT IN YOUR PANTS #${idx + 1}`;
         pair.trapProp.porkysSlot = slotLabel;
-        return {
-            slotLabel,
-            isTopThreeTrap: idx < 3,
-            trapProp: pair.trapProp,
-            fadeProp: pair.fadeProp
-        };
+        return { slotLabel, isTopThreeTrap: idx < 3, trapProp: pair.trapProp, fadeProp: pair.fadeProp };
     });
 
-    const isVisible = (id) => {
-        const el = document.getElementById(id);
-        return Boolean(el && el.offsetParent !== null);
-    };
+    // Ensure a valid active pick is selected for the Research Inspector
+    const activeNonFinalProps = AppState.processedProps.filter(p => !isGameCompletedFinal(p.gameRecord));
+    if (!AppState.selectedPropKey || !activeNonFinalProps.some(p => p.propKey === AppState.selectedPropKey)) {
+        AppState.selectedPropKey = (AppState.flagshipFivePack[0] && AppState.flagshipFivePack[0].propKey)
+            || (activeNonFinalProps[0] && activeNonFinalProps[0].propKey)
+            || null;
+    }
 
     if (isSliderDrag) {
-        // Fast-path during active DaVinci slider drag: repaint ONLY visible panels; skip closed cards, Ledger & Live Ticker
-        if (isVisible("flagship-five-pack-container")) renderFlagshipFivePack();
-
-        const hasOpenGameCards = Array.from(openCardMemory).some(
-            k => k !== "FLAGSHIP_5_PACK_DRAWER" && k !== "MASTER_BOARD_LEGEND_DRAWER" && k !== "LEDGER_LEGEND_DRAWER"
-        );
-        if (hasOpenGameCards && isVisible("master-board-body")) render_game_cards(AppState.rawPayload);
-
-        if (isVisible("combinatorics-container")) renderCombinatoricsDeck();
-        if (isVisible("compendium-board-body")) renderCompendiumBoard();
-        if (isVisible("telemetry-container")) renderTelemetryInspector();
-        if (isVisible("biolab-container")) renderBioWeatherLab();
-
-        if (window.scrollY !== savedScrollY) {
-            window.scrollTo(savedScrollX, savedScrollY);
+        if (AppState.activeView === "picks") {
+            renderPicksFeed();
+            renderPickInspector();
+        } else if (AppState.activeView === "fivepack") {
+            renderFlagshipFivePack();
+        } else if (AppState.activeView === "weather") {
+            renderWeatherLab();
+        } else if (AppState.activeView === "modules") {
+            if (typeof renderCompendiumBoard === "function") renderCompendiumBoard();
+            if (typeof renderTelemetryInspector === "function") renderTelemetryInspector();
         }
+        if (typeof renderCombinatoricsDeck === "function") renderCombinatoricsDeck();
     } else {
+        renderPicksFeed();
+        renderPickInspector();
         renderFlagshipFivePack();
-        render_game_cards(AppState.rawPayload);
-        renderCombinatoricsDeck();
-        renderCompendiumBoard();
-        renderTelemetryInspector();
-        renderBioWeatherLab();
-        renderHistoricalLedger();
-        renderLiveBottomTicker();
-
-        window.scrollTo(savedScrollX, savedScrollY);
-        requestAnimationFrame(() => {
-            window.scrollTo(savedScrollX, savedScrollY);
-        });
+        renderWeatherLab();
+        if (typeof renderCompendiumBoard === "function") renderCompendiumBoard();
+        if (typeof renderTelemetryInspector === "function") renderTelemetryInspector();
+        if (typeof renderCombinatoricsDeck === "function") renderCombinatoricsDeck();
+        if (typeof renderHistoricalLedger === "function") renderHistoricalLedger();
+        if (typeof renderFaqAccordion === "function") renderFaqAccordion();
+        if (typeof renderLiveBottomTicker === "function") renderLiveBottomTicker();
     }
 }
 
-// Single Lightning Bolt Rule + Compendium Safe Floor (-2φ) & Ceiling Escalator (+φ) Bracket + Quarter-Kelly Cap
-function buildBallsDeepBoxHTML(engineProp, isSpread) {
-    if (AppState.activeMode === "tip") {
-        return "";
+// ==========================================
+// VIEW 1A: PICKFINDER-STYLE SCANNABLE PICKS FEED
+// ==========================================
+function getVisibleFeedProps() {
+    const activeGames = AppState.processedGames.filter(g => !isGameCompletedFinal(g));
+    const activeGameIds = new Set(activeGames.map(g => g.gameId));
+    const pool = [];
+
+    // Keep feed scannable & clean: 1 highest-EV spread side per game (fav or dog) + 1 total per game
+    activeGames.forEach(g => {
+        const gSpreads = AppState.processedProps
+            .filter(p => p.gameId === g.gameId && p.marketType === "spread")
+            .sort((a, b) => b.tipEvPct - a.tipEvPct);
+        const gTotals = AppState.processedProps
+            .filter(p => p.gameId === g.gameId && p.marketType === "total");
+
+        if (gSpreads[0]) pool.push(gSpreads[0]);
+        if (gTotals[0]) pool.push(gTotals[0]);
+        // Also surface any non-spread/non-total player props if present in data.json
+        AppState.processedProps
+            .filter(p => p.gameId === g.gameId && p.marketType !== "spread" && p.marketType !== "total")
+            .forEach(p => pool.push(p));
+    });
+
+    return pool.filter(p => {
+        if (!activeGameIds.has(p.gameId)) return false;
+        if (AppState.marketFilter !== "ALL" && p.marketType !== AppState.marketFilter) return false;
+        if (AppState.smashOnly && p.tierBadge !== "SMASH") return false;
+        if (AppState.weatherOnly && !(p.gameRecord && p.gameRecord.weatherImpact && p.gameRecord.weatherImpact.isEdge)) return false;
+        if (AppState.searchQuery) {
+            const hay = `${p.matchup} ${p.shortTitle} ${p.player} ${p.gameRecord.homeFullName} ${p.gameRecord.awayFullName}`.toLowerCase();
+            if (!hay.includes(AppState.searchQuery)) return false;
+        }
+        return true;
+    });
+}
+
+function sortFeedProps(list) {
+    const arr = [...list];
+    if (AppState.sortOrder === "prob") {
+        arr.sort((a, b) => b.activeModelPct - a.activeModelPct);
+    } else if (AppState.sortOrder === "weather") {
+        arr.sort((a, b) => ((b.gameRecord && b.gameRecord.weatherImpact.score) || 0) - ((a.gameRecord && a.gameRecord.weatherImpact.score) || 0));
+    } else if (AppState.sortOrder === "kickoff") {
+        arr.sort((a, b) => (a.commenceMs || 0) - (b.commenceMs || 0));
+    } else {
+        arr.sort((a, b) => b.evPct - a.evPct);
     }
+    return arr;
+}
 
-    const activeTier = engineProp.gatekeeperBlocked ? "PASS" : getTierFromEv(engineProp.evPct);
-    let boxBg = "rgba(148, 163, 184, 0.08)";
-    let boxBorder = "rgba(148, 163, 184, 0.35)";
-    let activeColor = "var(--text-secondary)";
-
-    if (activeTier === "SMASH") {
-        boxBg = "rgba(16, 185, 129, 0.09)";
-        boxBorder = "rgba(16, 185, 129, 0.42)";
-        activeColor = "var(--accent-emerald)";
-    } else if (activeTier === "PASS") {
-        boxBg = "rgba(239, 68, 68, 0.09)";
-        boxBorder = "rgba(239, 68, 68, 0.42)";
-        activeColor = "var(--accent-danger)";
-    }
-
-    const activeLabel = AppState.activeMode === "davinci" ? "DAVINCI PROJ" : "BALLS DEEP PROJ";
-    const activeProj = (isSpread && Number(engineProp.projectedMean) > 0) ? `+${engineProp.projectedMean}` : `${engineProp.projectedMean}`;
-    const activeEvStr = `${engineProp.evPct > 0 ? '+' : ''}${engineProp.evPct}% EV`;
-    const altEvStr = `${engineProp.bdAltEvPct > 0 ? '+' : ''}${engineProp.bdAltEvPct}% EV`;
-    const kellyStr = engineProp.quarterKellyPct > 0
-        ? ` | f*: ${engineProp.quarterKellyPct}%${engineProp.isKellyCapped ? ' (CAP)' : ''}`
-        : "";
-
-    const showLightningBolt = !isSpread || (engineProp.tipModelPct >= 50.0);
-
-    const boltRowHTML = showLightningBolt
-        ? `
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 4px;">
-                <span style="color: ${activeColor}; font-weight: 800;">⚡ ${activeLabel}: ${activeProj} | Win: ${engineProp.activeModelPct}% (${activeEvStr}${kellyStr})</span>
-                <span style="color: var(--text-secondary); font-size: 10.5px;">Ψ_11,12: <strong>${engineProp.psiActive > 0 ? '+' : ''}${engineProp.psiActive} pts</strong></span>
-            </div>
-        `
-        : "";
-
-    const floorOdds = engineProp.safeFloorOdds || ((engineProp.marketType === "spread" || engineProp.marketType === "total") ? -175 : -190);
-    const floorEv = (engineProp.safeFloorEvPct !== undefined && engineProp.safeFloorEvPct !== 0)
-        ? Number(engineProp.safeFloorEvPct)
-        : calcExpectedValueAndKelly((engineProp.safeFloorWinPct || 0) / 100.0, floorOdds).evPercentage;
-    const isSpreadKeyBuy = (engineProp.marketType === "spread");
-    const isTotalRegime = (engineProp.marketType === "total");
-    const merBit = (isSpreadKeyBuy && engineProp.keyAltMer) ? ` • MER ${engineProp.keyAltMer}` : "";
-    const floorPrefix = isSpreadKeyBuy
-        ? `🔑 KEY BUY (${engineProp.keyAltNote || 'Alt'}):`
-        : (isTotalRegime ? `${engineProp.keyAltNote || '🛡️ Regime Safe'}:` : `🛡️ Safe Floor (-2&phi;):`);
-    const safeSmashBadge = (!engineProp.gatekeeperBlocked && floorEv >= SMASH_EV_CUTOFF && engineProp.totalRegime !== "NEUTRAL_PASS")
-        ? ` <span style="background:rgba(6,182,212,0.18); color:var(--accent-cyan); border:1px solid rgba(6,182,212,0.55); padding:1px 5px; border-radius:4px; font-size:9.5px; font-weight:800;">🔑 KEY SMASH (+${floorEv.toFixed(1)}% EV)</span>`
-        : (engineProp.totalRegime === "NEUTRAL_PASS" ? ` <span style="color:#94a3b8; font-size:9.5px;">(NEUTRAL / PASS)</span>` : "");
-
-    const tier2RowHTML = (isSpreadKeyBuy && engineProp.tier2Approved && engineProp.tier2Label)
-        ? `
-            <div style="margin-top: 2px; padding-top: 4px; border-top: 1px dashed rgba(245,158,11,0.32); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 10px;">
-                <span style="color: ${engineProp.tier2Mode === 'WONG_6PT' ? '#34d399' : '#38bdf8'}; font-weight: 800;">${engineProp.tier2Label}</span>
-                <span style="color: var(--text-muted); font-size: 9.5px;">Always-On Wong Teaser (2-Key Variance • Pair in 2-Leg Teaser)</span>
-            </div>
-        `
+function buildPickRowHTML(p) {
+    const g = p.gameRecord;
+    const isSelected = (p.propKey === AppState.selectedPropKey);
+    const inSlip = AppState.selectedParlayLegs.has(p.propKey);
+    const espnMatch = getEspnScoreMatch(p.league, p.matchup);
+    const isLive = Boolean(espnMatch && espnMatch.state === "in");
+    const col = getTierColor(p.tierBadge);
+    const projDisp = (p.marketType === "spread") ? fmtSigned(p.projectedMean, 1) : Number(p.projectedMean).toFixed(1);
+    const slotBadge = p.flagshipSlot
+        ? `<span class="badge ${p.flagshipSlot.includes("MÉNAGE") ? "b-gold" : "b-cyan"}">${p.flagshipSlot.replace("MÉNAGE À TROIS", "MÉNAGE").replace("5-PACK ", "")}</span>`
         : "";
 
     return `
-        <div class="bd-preview-unlocked" style="background: ${boxBg}; border: 1px solid ${boxBorder}; flex-direction: column; align-items: stretch; gap: 4px;">
-            ${boltRowHTML}
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 10.5px;">
-                <span style="color: var(--accent-cyan); font-weight: 700;">${floorPrefix} ${engineProp.safeFloorLabel} (${engineProp.safeFloorWinPct}% Win${merBit})${safeSmashBadge}</span>
-                <span style="color: var(--accent-gold); font-weight: 700;">🎯 Ceiling (+&phi;): ${engineProp.bdAltLabel} (${altEvStr})</span>
+        <div class="pick-row ${isSelected ? "selected" : ""} ${isLive ? "is-live" : ""}" onclick="window.selectPick('${p.propKey}', true)">
+            <div class="pick-id-col">
+                <div class="pick-top-meta">
+                    <span class="mono" style="font-weight:700; color:var(--text-2);">${p.league}</span>
+                    <span>•</span>
+                    <span>${isLive ? `<strong style="color:var(--gold);">🔴 ${espnMatch.shortDetail || "LIVE"} · ${espnMatch.scoreStr}</strong>` : g.kickoffShort}</span>
+                    ${slotBadge}
+                </div>
+                <div class="pick-title">
+                    <span>${p.shortTitle}</span>
+                    ${renderWeatherPillHTML(g)}
+                </div>
             </div>
-            ${tier2RowHTML}
+
+            <div class="pick-line-col">
+                <div class="line-main">Proj ${projDisp}</div>
+                <div class="line-sub">Vegas ${p.lineDisplay}</div>
+            </div>
+
+            <div class="prob-col">
+                <div class="prob-nums">
+                    <span style="color:${col};">${p.activeModelPct.toFixed(1)}%</span>
+                    <span style="font-size:10.5px; color:${col};">${p.evPct > 0 ? "+" : ""}${p.evPct.toFixed(1)}%</span>
+                </div>
+                <div class="meter-track">
+                    <div class="meter-fill" style="width:${Math.min(100, Math.max(5, p.activeModelPct))}%; background:${col};"></div>
+                </div>
+            </div>
+
+            <div style="display:flex; align-items:center; gap:8px;">
+                ${renderTierBadgeHTML(p.tierBadge)}
+                <button type="button" class="add-btn ${inSlip ? "in-slip" : ""}" title="${inSlip ? "Remove from Slip" : "Add to Slip"}" onclick="window.toggleParlayLeg('${p.propKey}', event)">
+                    ${inSlip ? "✓" : "+"}
+                </button>
+            </div>
         </div>
     `;
 }
 
-// Collapsible Master Pick Board Decoder Ring & Betting Guide (VIP Club & Wingman Edition)
-function buildMasterBoardLegendHTML() {
-    const legendKey = "MASTER_BOARD_LEGEND_DRAWER";
-    const isLegendOpen = openCardMemory.has(legendKey);
+function renderPicksFeed() {
+    const container = document.getElementById("picks-feed-list");
+    if (!container) return;
 
-    return `
-        <div style="margin-bottom: 14px; border: 1px solid rgba(6, 182, 212, 0.45); border-radius: 8px; background: #0f172a; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); overflow: hidden;">
-            <div onclick="window.toggleLegendDrawer('${legendKey}', 'fivePack', event)" style="cursor: pointer; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(90deg, rgba(6, 182, 212, 0.14), rgba(15, 23, 42, 0.9)); user-select: none;">
-                <span style="font-family: var(--font-mono); font-size: 12px; font-weight: 800; color: var(--accent-cyan); letter-spacing: 0.03em;">
-                    👙 NEW TO THE CLUB? THE DIXPIX HOUSE RULES &amp; 15-SECOND BETTING GUIDE (v313 GUARDRAILS ACTIVE)
-                </span>
-                <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); text-decoration: underline;">
-                    ${isLegendOpen ? 'Hide House Rules ▲' : 'Click to Expand ▼'}
-                </span>
+    const visible = getVisibleFeedProps();
+    if (visible.length === 0) {
+        const rawGames = (AppState.rawPayload && Array.isArray(AppState.rawPayload.games)) ? AppState.rawPayload.games : [];
+        const updatedAt = (AppState.rawPayload && AppState.rawPayload.slate_info && AppState.rawPayload.slate_info.last_updated) || "Waiting for feed";
+        container.innerHTML = `
+            <div class="empty-state">
+                <div style="font-weight:800; color:var(--gold); margin-bottom:6px;">No active picks match the current filters</div>
+                <div>Loaded ${rawGames.length} raw slate games · Last sync: ${updatedAt}</div>
+            </div>
+        `;
+        return;
+    }
+
+    const currentWeekPicks = sortFeedProps(visible.filter(p => p.isCurrentWeek));
+    const lookaheadPicks = sortFeedProps(visible.filter(p => !p.isCurrentWeek));
+
+    let html = currentWeekPicks.map(buildPickRowHTML).join("");
+    if (lookaheadPicks.length > 0) {
+        const cutoffDt = new Date(AppState.mnfCutoffMs);
+        const cutoffLabel = isNaN(cutoffDt.getTime()) ? "Post-MNF" : cutoffDt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+        html += `
+            <div class="lookahead-divider">
+                <span style="color:var(--gold); font-weight:800;">🔭 POST-MNF LOOKAHEAD SLATE (${cutoffLabel})</span>
+                <span style="color:var(--text-2);">${lookaheadPicks.length} Early Lines · Excluded from this week's 5-Pack</span>
+            </div>
+            ${lookaheadPicks.map(buildPickRowHTML).join("")}
+        `;
+    }
+    container.innerHTML = html;
+}
+
+// ==========================================
+// VIEW 1B: SPLIT RESEARCH INSPECTOR (WEATHER & BALLISTIC MOAT + TIP PAYWALL)
+// ==========================================
+function renderPickInspector() {
+    const container = document.getElementById("pick-inspector");
+    if (!container) return;
+
+    const p = AppState.processedProps.find(x => x.propKey === AppState.selectedPropKey)
+        || AppState.flagshipFivePack[0]
+        || AppState.processedProps[0];
+    if (!p) {
+        container.innerHTML = `<div class="empty-state" style="border:none;">Select any pick to inspect Weather &amp; Model telemetry.</div>`;
+        return;
+    }
+
+    const g = p.gameRecord;
+    const locked = (AppState.activeMode === "tip");
+    const inSlip = AppState.selectedParlayLegs.has(p.propKey);
+    const col = getTierColor(p.tierBadge);
+    const projDisp = (p.marketType === "spread") ? fmtSigned(p.projectedMean, 1) : Number(p.projectedMean).toFixed(1);
+    const em = g.elevActive || g.elevMatrix || { zoneNumber: 1, venueElevFeet: 0, direction: "ASCENT", psiElevPts: 0 };
+    const env = g.envPayload || {};
+    const csiVal = Number((g.m8 && g.m8.circadianStrainIndex) || 0);
+    const wScore = Number((g.weatherImpact && g.weatherImpact.score) || 2.0);
+    const fgShift = Number((g.m7 && g.m7.fgRangeShiftYards) || 0);
+    const passMod = Number((g.m7 && g.m7.passGameModifierYards) || 0);
+
+    const signalBars = [
+        { label: "M9 EPA Edge", val: Math.min(96, Math.max(15, p.tipModelPct)), txt: `${p.tipModelPct.toFixed(1)}%`, color: getTierColor(p.tipBadge) },
+        { label: "M7 Weather", val: Math.min(96, Math.max(12, wScore * 10)), txt: `${wScore.toFixed(1)}/10`, color: g.weatherImpact.isEdge ? "var(--cyan)" : "var(--text-2)" },
+        { label: "M8 Travel CSI", val: Math.min(96, Math.max(10, Math.abs(csiVal) * 65)), txt: `CSI ${csiVal.toFixed(2)}`, color: csiVal > 0.8 ? "var(--red)" : "var(--text-2)" },
+        { label: "M11 Altitude", val: Math.min(96, Math.max(10, em.zoneNumber * 10)), txt: `Zone ${em.zoneNumber}`, color: em.zoneNumber >= 7 ? "var(--gold)" : "var(--text-2)" }
+    ];
+
+    const floorBadgeHTML = (!p.gatekeeperBlocked && p.safeFloorEvPct >= SMASH_EV_CUTOFF && p.totalRegime !== "NEUTRAL_PASS")
+        ? `<span class="badge b-cyan">KEY SMASH +${p.safeFloorEvPct.toFixed(1)}%</span>`
+        : "";
+
+    const modeHeading = AppState.activeMode === "davinci" ? "🔓 DaVinci Flow Execution" : "🔓 Balls Deep Execution";
+    const kellyStr = p.quarterKellyPct > 0
+        ? `f*: ${p.quarterKellyPct}%${p.isKellyCapped ? " (4% CAP)" : ""}`
+        : "0% Kelly";
+
+    container.innerHTML = `
+        <div class="insp-head">
+            <div>
+                <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:4px;">
+                    <span class="mono" style="font-size:11px; color:var(--text-2);">${p.league} • ${p.matchup} • ${g.kickoffShort}</span>
+                    ${p.flagshipSlot ? `<span class="badge ${p.flagshipSlot.includes("MÉNAGE") ? "b-gold" : "b-cyan"}">${p.flagshipSlot}</span>` : ""}
+                </div>
+                <div style="font-size:18px; font-weight:800; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <span>${p.shortTitle}</span>
+                    ${renderTierBadgeHTML(p.tierBadge)}
+                </div>
+            </div>
+            <button type="button" class="chip mobile-close-btn" onclick="window.closeMobileInspector()">✕</button>
+        </div>
+
+        <div class="insp-body">
+            ${renderGameGuardrailChipsHTML(g)}
+            ${renderGatekeeperPillsHTML(p.gatekeeperFlags, p.gatekeeperAction)}
+
+            <div class="stat-trio">
+                <div class="stat-box">
+                    <div class="stat-k">Vegas Line</div>
+                    <div class="stat-v">${p.lineDisplay}</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-k">DixPix Proj</div>
+                    <div class="stat-v" style="color:${col};">${projDisp}</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-k">Model EV</div>
+                    <div class="stat-v" style="color:${col};">${p.evPct > 0 ? "+" : ""}${p.evPct.toFixed(1)}%</div>
+                </div>
             </div>
 
-            <div style="display: ${isLegendOpen ? 'block' : 'none'}; padding: 14px 18px; border-top: 1px solid var(--border-subtle); font-size: 12px; line-height: 1.55; color: var(--text-secondary);">
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px;">
-                    <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
-                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">1. COVER CHARGE vs. REAL MEASUREMENTS</div>
-                        <div>• <strong>Bold Top Line</strong> (e.g. <em>OSU Spread -3.5</em> or <em>Total U 54.5</em>) is the <strong>Vegas Sportsbook Line</strong>—the cover charge on your betting slip.</div>
-                        <div style="margin-top: 4px;">• <strong>Proj:</strong> is what our 13-Module Engine says is <em>actually</em> under the hood once the stage lights come on. Single-bet Quarter-Kelly sizing is hard-capped at <strong>4.0%</strong>.</div>
+            <!-- DIXPIX WEATHER & BALLISTIC PHYSICS MOAT -->
+            <div class="weather-edge-box">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                    <span style="font-weight:800; font-size:12.5px; color:var(--cyan);">🌬️ Weather &amp; Ballistic Edge</span>
+                    <span class="mono" style="font-size:11px; color:var(--text-2);">
+                        ${env.is_dome ? "Dome 72°F" : `${env.temperature_f !== undefined ? Math.round(env.temperature_f) : "--"}°F · ${Math.round(g.windMph || 0)} mph`}
+                    </span>
+                </div>
+                <p style="font-size:12px; color:var(--text-2); margin-top:6px;">${g.weatherImpact.summary}</p>
+                <div class="weather-grid">
+                    <div class="w-metric">
+                        <div class="w-metric-k">AIR DENSITY (&rho;)</div>
+                        <div class="w-metric-v">${g.m7.airDensityRho} kg/m³</div>
                     </div>
-
-                    <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
-                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">2. THE VIP FLOOR CODE (SYMMETRIC 3-TIER EV)</div>
-                        <div>• <span class="badge-smash" style="font-size:10px;">SMASH</span> <strong style="color:var(--accent-emerald);">(&ge;+10.0% EV):</strong> <em>Green-Light Money Shot.</em> Full-contact value (57.6%+ win rate). Pull your stack out and make it rain.</div>
-                        <div style="margin-top: 4px;">• <strong style="color:#94a3b8;">Neutral Slate / No Badge (-18.9% to +9.9% EV):</strong> <em>All Tease, No Squeeze.</em> Priced too tight to drop cash on. Keep your wallet holstered.</div>
-                        <div style="margin-top: 4px;">• <span class="badge-pass" style="background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);font-size:10px;font-weight:800;">PASS</span> <strong style="color:var(--accent-danger);">(&le;-19.0% EV or Gated):</strong> <em>Grenades Dodged.</em> Public trap or v313 guardrail stop (M4 TOP, M5 Sack-Trauma, M9 3rd-String QB).</div>
+                    <div class="w-metric">
+                        <div class="w-metric-k">FG RANGE SHIFT</div>
+                        <div class="w-metric-v" style="color:${locked ? "var(--gold)" : (fgShift < 0 ? "var(--red)" : "var(--emerald)")};">
+                            ${locked ? renderLockSpanHTML("🔒 Balls Deep") : `${fmtSigned(fgShift, 1)} yds`}
+                        </div>
                     </div>
-
-                    <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
-                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-gold); margin-bottom: 4px;">3. FLOOR-TO-CEILING VIP PASS &amp; OVERRIDES</div>
-                        <div>• <strong style="color:var(--accent-cyan);">Just the Tip:</strong> Pure M1–M9 baseline efficiency, weather ballistics, and circadian travel drag.</div>
-                        <div style="margin-top: 4px;">• <strong style="color:var(--accent-emerald);">Balls Deep &amp; DaVinci:</strong> Unleashes M11–M13 (&Psi;_11,12 + 10-Zone Elevation <strong>M11&gt;M13</strong> + Fixed Objective <strong>M_rise</strong>), our full <strong>🔑 Key-Number Ladder (-2.5/+3.5, -6.5/+7.5, -9.5/+10.5, -12.5/+13.5, -16.5/+17.5)</strong>, <strong>🎯 6-Pt Wong Teaser / 1-Dev Safer</strong> routing, and <strong>🛡️ Regime Safe Totals</strong>.</div>
+                    <div class="w-metric">
+                        <div class="w-metric-k">PASS GAME MOD</div>
+                        <div class="w-metric-v">${locked ? renderLockSpanHTML("🔒 Balls Deep") : `${fmtSigned(passMod, 1)} yds`}</div>
+                    </div>
+                    <div class="w-metric">
+                        <div class="w-metric-k">10-ZONE ALTITUDE</div>
+                        <div class="w-metric-v" style="color:${em.zoneNumber >= 7 ? "var(--gold)" : "var(--text-1)"};">
+                            ${locked ? `${g.elevationM}m` : `Z${em.zoneNumber} ${em.direction} (${(em.venueElevFeet || 0).toLocaleString()} ft)`}
+                        </div>
                     </div>
                 </div>
             </div>
+
+            <!-- SIGNAL DRIVERS CHART -->
+            <div class="chart-box">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span style="font-weight:700; font-size:12.5px;">Signal Drivers</span>
+                    <span class="mono" style="font-size:11px; color:var(--text-3);">Win ${p.activeModelPct.toFixed(1)}% · ${kellyStr}</span>
+                </div>
+                <div class="bar-chart">
+                    ${signalBars.map(b => `
+                        <div class="bar-row">
+                            <span style="color:var(--text-2);">${b.label}</span>
+                            <div class="bar-track"><div class="bar-fill" style="width:${b.val}%; background:${b.color};"></div></div>
+                            <span style="text-align:right; font-weight:700; color:${b.color};">${b.txt}</span>
+                        </div>
+                    `).join("")}
+                </div>
+            </div>
+
+            <!-- BALLS DEEP EXECUTION PANEL (STRICT PAYWALL IN JUST THE TIP MODE) -->
+            ${locked ? `
+                <div class="bd-panel locked">
+                    <div class="mono" style="font-size:11px; font-weight:800; color:var(--gold); margin-bottom:5px;">🔒 BALLS DEEP EXECUTION LOCKED</div>
+                    <div style="font-size:12px; color:var(--text-2); margin-bottom:12px;">
+                        Unlock 2-Key-Rung Perpetuity Alts, Always-On Wong Teasers, Regime Safe Totals, Ceiling (+&phi;) &amp; M11–M13 Telemetry.
+                    </div>
+                    <button type="button" class="primary-btn gold" onclick="window.unlockBallsDeepMode(event)">Unlock Balls Deep Mode</button>
+                </div>
+            ` : `
+                <div class="bd-panel">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:6px;">
+                        <span style="font-weight:800; font-size:12.5px; color:var(--emerald);">${modeHeading}</span>
+                        <span class="mono" style="font-size:10.5px; color:var(--text-2);">&Psi;_11,12: <strong>${fmtSigned(p.psiActive, 2)} pts</strong></span>
+                    </div>
+                    <div class="exec-row">
+                        <span style="color:var(--cyan);">🔑 ${p.keyAltNote || "2-Key / Safe Floor"}</span>
+                        <span style="text-align:right;"><strong>${p.safeFloorLabel}</strong> · ${p.safeFloorWinPct}% ${floorBadgeHTML}</span>
+                    </div>
+                    ${(p.marketType === "spread" && p.tier2Approved && p.tier2Label) ? `
+                        <div class="exec-row">
+                            <span style="color:var(--emerald);">🎯 Always-On Wong</span>
+                            <strong style="color:var(--emerald); text-align:right;">${p.tier2Line > 0 ? "+" : ""}${Number(p.tier2Line).toFixed(1)} (${p.tier2Mode === "WONG_7PT" ? "7-pt" : "6-pt"} · ${p.tier2ProbPct}%)</strong>
+                        </div>
+                    ` : ""}
+                    <div class="exec-row">
+                        <span style="color:var(--gold);">🎯 Ceiling (+&phi;)</span>
+                        <strong>${p.bdAltLabel} (${p.bdAltEvPct > 0 ? "+" : ""}${p.bdAltEvPct.toFixed(1)}% EV)</strong>
+                    </div>
+                </div>
+            `}
+
+            <button type="button" class="primary-btn ${inSlip ? "cyan" : ""}" onclick="window.toggleParlayLeg('${p.propKey}', event)">
+                ${inSlip ? "✓ In Slip (Click to Remove)" : "+ Add to Bet Slip"}
+            </button>
         </div>
     `;
 }
 
-// Flagship 5-Pack Banner with Responsive Mobile/Desktop Corner Toggle for "Wednesday Night at Porky's"
+// ==========================================
+// VIEW 2: FLAGSHIP 5-PACK & PORKY'S SAFE FLOOR FADES
+// ==========================================
 function renderFlagshipFivePack() {
-    ensureTickerStylesInjected();
-
     const container = document.getElementById("flagship-five-pack-container");
     if (!container) return;
 
-    if (AppState.flagshipFivePack.length === 0) {
-        container.innerHTML = "";
-        return;
-    }
-
-    container.style.maxWidth = "920px";
-    container.style.margin = "0 auto 24px auto";
-    container.style.border = "none";
-    container.style.backgroundColor = "transparent";
-    container.style.boxShadow = "none";
-
-    const bannerKey = "FLAGSHIP_5_PACK_DRAWER";
-    const isExpanded = openCardMemory.has(bannerKey);
+    const locked = (AppState.activeMode === "tip");
     const isPorkys = (AppState.fivePackView === "porkys");
 
-    const modeTitle = AppState.activeMode === "tip"
-        ? "Just the Tip Baseline (M1–M9)"
-        : (AppState.activeMode === "balls_deep" ? "Balls Deep v313 Guardrails & Floor/Ceiling (M1–M13)" : "DaVinci Organic Momentum Flow Mode");
-
-    const singleLockedStatusHTML = AppState.activeMode === "tip"
-        ? `
-            <div onclick="window.unlockBallsDeepMode(event)" style="margin: 10px auto 4px auto; max-width: 480px; padding: 7px 14px; border-radius: 6px; background: rgba(9, 13, 22, 0.78); border: 1px solid rgba(245, 158, 11, 0.45); opacity: 0.85; font-family: var(--font-mono); font-size: 11px; color: var(--accent-gold); font-weight: 700; text-align: center; cursor: pointer; user-select: none;">
-                🔒 BALLS DEEP — "You gotta pay to go balls deep..." (Click to Unlock)
-            </div>
-        `
-        : `
-            <div style="margin: 10px auto 4px auto; max-width: 540px; padding: 6px 14px; border-radius: 6px; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.4); font-family: var(--font-mono); font-size: 11px; color: var(--accent-emerald); font-weight: 700; text-align: center;">
-                🔓 BALLS DEEP FLOOR (-2&phi;) &amp; CEILING (+&phi;) BRACKET UNLOCKED (v313 Ψ_11,12 + M13 ACTIVE)
-            </div>
-        `;
-
-    const outerBorderColor = isPorkys ? "rgba(239, 68, 68, 0.65)" : "rgba(245, 158, 11, 0.55)";
-    const headerGradient = isPorkys
-        ? "linear-gradient(90deg, rgba(239, 68, 68, 0.22), rgba(236, 72, 153, 0.14), rgba(239, 68, 68, 0.22))"
-        : "linear-gradient(90deg, rgba(245, 158, 11, 0.16), rgba(6, 182, 212, 0.10), rgba(245, 158, 11, 0.16))";
-
-    const cornerToggleHTML = isPorkys
-        ? `
-            <button class="five-pack-corner-btn" onclick="window.toggleFivePackView(event)" title="Back to Flagship 5-Pack" style="cursor:pointer; font-family:var(--font-mono); font-size:10.5px; font-weight:800; padding:4px 10px; border-radius:6px; background:rgba(15,23,42,0.88); color:var(--accent-gold); border:1px solid rgba(245,158,11,0.65); box-shadow:0 2px 8px rgba(0,0,0,0.4); transition:all 0.15s ease;">
-                👑 Main Stage ➔
-            </button>
-        `
-        : `
-            <button class="five-pack-corner-btn" onclick="window.toggleFivePackView(event)" title="Flip to Wednesday Night at Porky's (Top 5 Fades)" style="cursor:pointer; font-family:var(--font-mono); font-size:10.5px; font-weight:800; padding:4px 10px; border-radius:6px; background:rgba(15,23,42,0.88); color:#f87171; border:1px solid rgba(239,68,68,0.65); box-shadow:0 2px 8px rgba(0,0,0,0.4); transition:all 0.15s ease;">
-                🐷 Porky's Fades ➔
-            </button>
-        `;
-
-    const mainStageRowsHTML = AppState.flagshipFivePack.map((p, idx) => {
-        const isMenage = p.flagshipSlot.includes("MÉNAGE");
-        const isSpread = p.marketType === "spread";
-        const fmtTipProj = (isSpread && Number(p.tipProjectedMean) > 0) ? `+${p.tipProjectedMean}` : `${p.tipProjectedMean}`;
-        const tipEvStr = `${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV`;
-        const kellyTag = p.quarterKellyPct > 0 ? ` • f*: <strong>${p.quarterKellyPct}%</strong>` : "";
-
-        return `
-            <div style="padding: 10px 0; ${idx < AppState.flagshipFivePack.length - 1 ? 'border-bottom: 1px solid #1e293b;' : ''}">
-                <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
-                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                        <span class="${isMenage ? 'badge-menage' : 'badge-flex'}">${p.flagshipSlot}</span>
-                        <strong style="font-size: 13px; color: var(--text-primary);">${p.player}</strong>
-                        ${renderTierBadgeHTML(p.tipBadge)}
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 12px;">
-                        <span style="color: ${getTierColor(p.tipBadge)};">
-                            Proj: <strong>${fmtTipProj}</strong> | Win: <strong>${p.tipModelPct}%</strong> (${tipEvStr})${kellyTag}
-                        </span>
-                    </div>
-                </div>
-                ${renderGatekeeperPillsHTML(p.gatekeeperFlags, p.gatekeeperAction)}
-                ${buildBallsDeepBoxHTML(p, isSpread)}
-            </div>
-        `;
-    }).join("");
-
-    const porkysRowsHTML = AppState.porkysFivePack.length === 0
-        ? `<div style="padding: 16px; text-align: center; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary);">No true &le;-19.0% EV public grenades flagged on this week's board yet.</div>`
-        : AppState.porkysFivePack.map((item, idx) => {
-        const trap = item.trapProp;
-        const fade = item.fadeProp;
-        const fmtTrapProj = Number(trap.tipProjectedMean) > 0 ? `+${trap.tipProjectedMean}` : `${trap.tipProjectedMean}`;
-        const fmtFadeProj = Number(fade.tipProjectedMean) > 0 ? `+${fade.tipProjectedMean}` : `${fade.tipProjectedMean}`;
-        const trapEvStr = `${trap.tipEvPct > 0 ? '+' : ''}${trap.tipEvPct}% EV`;
-
-        // Safe Floor (-2φ) Counter-Strike Fade metrics
-        const fadeTeamCode = fade.isHomeSpread ? fade.homeTeam : fade.awayTeam;
-        const safeFloorProbRaw = (fade.safeFloorWinPct || 82.0) / 100.0;
-        const porkyFloorOdds = fade.safeFloorOdds || -175;
-        const m2SafeFloor = calcExpectedValueAndKelly(safeFloorProbRaw, porkyFloorOdds);
-        const safeFloorEvPct = Number(m2SafeFloor.evPercentage.toFixed(2));
-        const safeFloorEvStr = `${safeFloorEvPct > 0 ? '+' : ''}${safeFloorEvPct}% EV`;
-        const safeFloorTier = getTierFromEv(safeFloorEvPct);
-        const fmtBaseSpread = fade.baseLine > 0 ? `+${fade.baseLine}` : `${fade.baseLine}`;
-
-        const slotBadgeStyle = item.isTopThreeTrap
-            ? "background:rgba(239,68,68,0.18); color:#f87171; border:1px solid rgba(239,68,68,0.55);"
-            : "background:rgba(236,72,153,0.16); color:#f472b6; border:1px solid rgba(236,72,153,0.5);";
-
-        return `
-            <div style="padding: 12px 0; ${idx < AppState.porkysFivePack.length - 1 ? 'border-bottom: 1px solid #1e293b;' : ''}">
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; align-items: center;">
-                    <div style="background: rgba(239, 68, 68, 0.07); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 6px; padding: 8px 10px;">
-                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; margin-bottom: 3px;">
-                            <span style="font-family:var(--font-mono); font-size:10px; font-weight:800; padding:2px 6px; border-radius:4px; ${slotBadgeStyle}">
-                                🐷 ${item.slotLabel}
-                            </span>
-                            ${renderTierBadgeHTML("PASS")}
-                        </div>
-                        <div style="font-size: 12.5px; font-weight: 800; color: var(--text-primary); margin-bottom: 2px;">
-                            🚫 TRAP: ${trap.player}
-                        </div>
-                        <div style="font-family: var(--font-mono); font-size: 11.5px; color: var(--accent-danger);">
-                            Proj: <strong>${fmtTrapProj}</strong> | Win: <strong>${trap.tipModelPct}%</strong> (${trapEvStr})
-                        </div>
-                    </div>
-
-                    <div style="background: rgba(6, 182, 212, 0.09); border: 1px solid rgba(16, 185, 129, 0.45); border-radius: 6px; padding: 8px 10px;">
-                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; margin-bottom: 3px;">
-                            <span style="font-family:var(--font-mono); font-size:10px; font-weight:800; color:var(--accent-cyan);">
-                                🛡️ RECOMMENDED SAFE FLOOR FADE (-2&phi;)
-                            </span>
-                            ${renderTierBadgeHTML(safeFloorTier)}
-                        </div>
-                        <div style="font-size: 12.5px; font-weight: 800; color: var(--text-primary); margin-bottom: 2px;">
-                            ✅ FADE TO FLOOR: ${fadeTeamCode} ${fade.safeFloorLabel} <span style="font-weight:600; font-size:11px; color:var(--text-secondary);">[Base: ${fmtBaseSpread}]</span>
-                        </div>
-                        <div style="font-family: var(--font-mono); font-size: 11.5px; color: ${getTierColor(safeFloorTier)};">
-                            Proj: <strong>${fmtFadeProj}</strong> | Floor Win: <strong>${fade.safeFloorWinPct}%</strong> (${safeFloorEvStr})
-                        </div>
-                    </div>
-                </div>
-                ${buildBallsDeepBoxHTML(fade, true)}
-            </div>
-        `;
-    }).join("");
-
-    container.innerHTML = `
-        ${buildMasterBoardLegendHTML()}
-
-        <div style="border: 1px solid ${outerBorderColor}; border-radius: 8px; background-color: #111827; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); overflow: hidden;">
-            <div id="flagship-banner-toggle" style="background: ${headerGradient};">
-                ${cornerToggleHTML}
-
-                <div style="font-size: 15px; font-weight: 800; color: ${isPorkys ? '#f87171' : 'var(--accent-gold)'}; letter-spacing: 0.03em; line-height: 1.35;">
-                    ${isPorkys
-                        ? '🐷 WEDNESDAY NIGHT AT PORKY\'S // TOP 5 B-SQUAD TRAPS &amp; SAFE FLOOR FADES'
-                        : '👑 THE DIXPIX FLAGSHIP 5-PACK // FEATURING "THE MÉNAGE À TROIS"'}
-                </div>
-
-                <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 4px; line-height: 1.4;">
-                    ${isPorkys
-                        ? '💣 Wingman Grenade Alert: <strong style="color:#f87171;">1:45 AM Public Grenade on Left</strong> ➔ <strong style="color:var(--accent-cyan);">🛡️ Safe Floor Counter-Strike (-2&phi;) on Right</strong>'
-                        : `Active Engine: <strong style="color: var(--accent-cyan);">${modeTitle}</strong> • <span style="color: var(--accent-emerald);">Current Week Slate (Thru MNF)</span>`}
-                </div>
-
-                ${singleLockedStatusHTML}
-
-                <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); text-decoration: underline; margin-top: 6px;">
-                    ${isExpanded
-                        ? (isPorkys ? 'Click to collapse Porky\'s Safe Floor Fades ▲' : 'Click to collapse 5-Pack ▲')
-                        : (isPorkys ? 'Click to expand all 5 Porky\'s Traps &amp; Safe Floor Fades ▼' : 'Click to unlock &amp; expand all 5 Flagship Plays ▼')}
-                </div>
-            </div>
-
-            <div id="flagship-banner-drawer" style="display: ${isExpanded ? 'block' : 'none'}; padding: 14px 18px; border-top: 1px solid var(--border-subtle); background: var(--bg-surface);">
-                ${isPorkys ? porkysRowsHTML : mainStageRowsHTML}
-            </div>
-        </div>
-    `;
-
-    const toggleHeader = document.getElementById("flagship-banner-toggle");
-    const drawer = document.getElementById("flagship-banner-drawer");
-    if (toggleHeader && drawer) {
-        toggleHeader.addEventListener("click", () => {
-            const savedY = window.scrollY;
-            const closing = drawer.style.display === "block";
-            drawer.style.display = closing ? "none" : "block";
-            if (closing) openCardMemory.delete(bannerKey);
-            else openCardMemory.add(bannerKey);
-            renderFlagshipFivePack();
-            window.scrollTo(window.scrollX, savedY);
-        });
-    }
-}
-
-// ==========================================
-// INDEPENDENT MASONRY FLEX COLUMNS WITH AUTO-SWEEP & v313 GUARDRAIL CHIPS
-// ==========================================
-function buildMasonryGridForGames(gamesSlice, numCols, cardSubtitle) {
-    const rowWrapper = document.createElement("div");
-    rowWrapper.style.display = "flex";
-    rowWrapper.style.alignItems = "flex-start";
-    rowWrapper.style.gap = "15px";
-    rowWrapper.style.width = "100%";
-
-    const colElements = [];
-    for (let c = 0; c < numCols; c++) {
-        const colDiv = document.createElement("div");
-        colDiv.style.flex = "1";
-        colDiv.style.minWidth = "0";
-        colDiv.style.display = "flex";
-        colDiv.style.flexDirection = "column";
-        colDiv.style.gap = "15px";
-        rowWrapper.appendChild(colDiv);
-        colElements.push(colDiv);
-    }
-
-    const processedMap = new Map(AppState.processedGames.map(g => [g.gameId, g]));
-
-    gamesSlice.forEach((game, gameIndex) => {
-        const cardKey = game.game_id || `${game.away_team}@${game.home_team}`;
-        const cleanHome = cleanTeamCode(game.home_team);
-        const cleanAway = cleanTeamCode(game.away_team);
-        const matchupKey = `${cleanAway} @ ${cleanHome}`;
-        const espnMatch = getEspnScoreMatch(game.league || (gameRecord && gameRecord.league) || "NFL", matchupKey);
-        const isLiveInPlay = Boolean(espnMatch && espnMatch.state === "in");
-        const gameRecord = processedMap.get(game.game_id);
-
-        let gameDate = "TBD", gameTime = "TBD";
-        if (game.commence_time) {
-            const dt = new Date(game.commence_time);
-            gameDate = dt.toLocaleDateString("en-US", { weekday: 'short', month: 'short', day: 'numeric' });
-            gameTime = dt.toLocaleTimeString("en-US", { hour: 'numeric', minute: '2-digit' });
+    if (!isPorkys) {
+        if (AppState.flagshipFivePack.length === 0) {
+            container.innerHTML = `<div class="empty-state">No pre-kickoff Flagship 5-Pack plays available for the current filter.</div>`;
+            return;
         }
+        container.innerHTML = AppState.flagshipFivePack.map(p => {
+            const inSlip = AppState.selectedParlayLegs.has(p.propKey);
+            const isMenage = p.flagshipSlot.includes("MÉNAGE");
+            const col = getTierColor(p.tierBadge);
+            const projDisp = (p.marketType === "spread") ? fmtSigned(p.projectedMean, 1) : Number(p.projectedMean).toFixed(1);
 
-        const env = game.environmental_payload || {};
-        const weatherString = env.is_dome
-            ? "Dome (72°F)"
-            : `${env.temperature_f || "--"}°F | Wind: ${env.wind_mph || "--"} mph`;
-
-        const card = document.createElement("div");
-        card.className = "game-card";
-        card.style.border = isLiveInPlay ? "1px solid rgba(245, 158, 11, 0.75)" : "1px solid #334155";
-        card.style.borderRadius = "8px";
-        card.style.backgroundColor = "#1e293b";
-        card.style.padding = "15px";
-        card.style.cursor = "pointer";
-        card.style.color = "#e2e8f0";
-        card.style.width = "100%";
-
-        const liveScoreBanner = isLiveInPlay
-            ? `<div style="font-family:var(--font-mono); font-size:0.8em; color:var(--accent-gold); font-weight:800; text-align:center; margin-bottom:6px;">🔴 LIVE (${espnMatch.shortDetail || 'IN-PLAY'}): ${espnMatch.scoreStr}</div>`
-            : "";
-
-        const guardrailChipsHTML = gameRecord ? renderGameGuardrailChipsHTML(gameRecord) : "";
-
-        card.innerHTML = `
-            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #334155; padding-bottom: 10px; margin-bottom: 10px;">
-                <span style="font-size: 0.85em; color: #94a3b8;">${gameDate} @ ${gameTime}</span>
-                <span style="font-size: 0.85em; color: #94a3b8;">${weatherString}</span>
-            </div>
-            ${liveScoreBanner}
-            <div style="font-size: 1.25em; font-weight: bold; text-align: center; margin-bottom: 8px;">
-                ${cleanAway} @ ${cleanHome}
-            </div>
-            ${guardrailChipsHTML}
-            <div style="font-size: 0.85em; text-align: center; color: #cbd5e1;">
-                ${cardSubtitle}
-            </div>
-        `;
-
-        const drawer = document.createElement("div");
-        drawer.style.display = openCardMemory.has(cardKey) ? "block" : "none";
-        drawer.style.marginTop = "15px";
-        drawer.style.borderTop = "1px solid #334155";
-        drawer.style.paddingTop = "10px";
-
-        const allGameProps = AppState.processedProps.filter(ep => ep.gameId === game.game_id);
-
-        let visibleGameProps = allGameProps;
-        if (AppState.activeMode === "tip") {
-            const gameSpreads = allGameProps.filter(ep => ep.marketType === "spread").sort((a, b) => b.tipEvPct - a.tipEvPct);
-            const bestTipSpreadKey = gameSpreads.length > 0 ? gameSpreads[0].propKey : null;
-            visibleGameProps = allGameProps.filter(ep => ep.marketType !== "spread" || ep.propKey === bestTipSpreadKey);
-        }
-
-        if (visibleGameProps.length === 0) {
-            drawer.innerHTML = `<div style="font-size: 0.85em; color: #94a3b8;">No active lines available yet.</div>`;
-        } else {
-            visibleGameProps.forEach((engineData) => {
-                const isSpread = engineData.marketType === "spread";
-                const lineColorHex = getTierColor(engineData.tipBadge, true);
-                const displayTipProj = (isSpread && Number(engineData.tipProjectedMean) > 0)
-                    ? `+${engineData.tipProjectedMean}`
-                    : `${engineData.tipProjectedMean}`;
-                const tipEvStr = `${engineData.tipEvPct > 0 ? '+' : ''}${engineData.tipEvPct}% EV`;
-                const slotBadge = engineData.flagshipSlot
-                    ? `<span class="${engineData.flagshipSlot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}" style="margin-right:6px;">${engineData.flagshipSlot}</span>`
-                    : "";
-
-                const propBlock = document.createElement("div");
-                propBlock.style.padding = "8px 0";
-                propBlock.style.borderBottom = "1px solid #0f172a";
-
-                propBlock.innerHTML = `
-                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.85em; margin-bottom: 4px;">
-                        <span>${slotBadge}<strong>${engineData.player}</strong></span>
-                        ${renderTierBadgeHTML(engineData.tipBadge)}
+            return `
+                <div class="clean-card" style="display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap; cursor:pointer;" onclick="window.setAppView('picks'); window.selectPick('${p.propKey}', true);">
+                    <div style="flex:1; min-width:240px;">
+                        <div style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-bottom:6px;">
+                            <span class="badge ${isMenage ? "b-gold" : "b-cyan"}">${p.flagshipSlot}</span>
+                            <span class="mono" style="font-size:11px; color:var(--text-3);">${p.league} • ${p.matchup} • ${p.gameRecord.kickoffShort}</span>
+                            ${renderWeatherPillHTML(p.gameRecord)}
+                        </div>
+                        <div style="font-size:15.5px; font-weight:800; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <span>${p.shortTitle}</span>
+                            ${renderTierBadgeHTML(p.tierBadge)}
+                        </div>
+                        <div class="mono" style="font-size:11.5px; color:var(--text-2); margin-top:5px;">
+                            Proj <strong style="color:${col};">${projDisp}</strong> · Win <strong style="color:${col};">${p.activeModelPct.toFixed(1)}%</strong> (${p.evPct > 0 ? "+" : ""}${p.evPct.toFixed(1)}% EV)
+                            ${p.quarterKellyPct > 0 ? ` · f* ${p.quarterKellyPct}%` : ""}
+                        </div>
+                        <div class="mono" style="font-size:11px; margin-top:6px;">
+                            ${locked
+                                ? renderLockSpanHTML("🔒 Unlock Balls Deep for 2-Key Alt, Wong Teaser & Ceiling (+φ)")
+                                : `<span style="color:var(--cyan);">🔑 ${p.safeFloorLabel} (${p.safeFloorWinPct}%)</span>${p.tier2Approved && p.tier2Line !== null ? ` · <span style="color:var(--emerald);">🎯 Wong ${fmtSigned(p.tier2Line, 1)}</span>` : ""} · <span style="color:var(--gold);">🎯 ${p.bdAltLabel}</span>`
+                            }
+                        </div>
                     </div>
-                    <div style="font-family: var(--font-mono); font-size: 0.82em; color: ${lineColorHex};">
-                        Proj: ${displayTipProj} | Win: ${engineData.tipModelPct}% (${tipEvStr})
-                    </div>
-                    ${renderGatekeeperPillsHTML(engineData.gatekeeperFlags, engineData.gatekeeperAction)}
-                    ${buildBallsDeepBoxHTML(engineData, isSpread)}
-                `;
-                drawer.appendChild(propBlock);
-            });
-        }
-
-        card.appendChild(drawer);
-        card.addEventListener("click", () => {
-            const isClosing = drawer.style.display === "block";
-            drawer.style.display = isClosing ? "none" : "block";
-            if (isClosing) openCardMemory.delete(cardKey);
-            else openCardMemory.add(cardKey);
-        });
-
-        colElements[gameIndex % numCols].appendChild(card);
-    });
-
-    return rowWrapper;
-}
-
-function render_game_cards(data) {
-    const container = document.getElementById("master-board-body");
-    if (!container) return;
-
-    const defaultLeague = (data.slate_info && data.slate_info.league) || "NFL";
-    // Auto-sweep any game that has already ended (FINAL) off Tab 1 into the Historical Ledger Card Vaults
-    const games = (data.games || []).filter(g => shouldIncludeGame(g, defaultLeague) && !isGameCompletedFinal(g));
-
-    if (games.length === 0) {
-        const rawGames = Array.isArray(data.games) ? data.games : [];
-        const rawNfl = rawGames.filter(g => (g.league || defaultLeague) === "NFL").length;
-        const rawNcaa = rawGames.filter(g => (g.league || defaultLeague) === "NCAA").length;
-        const updatedAt = (data.slate_info && data.slate_info.last_updated) || "Unknown";
-        const reasonMsg = rawGames.length === 0
-            ? "data.json currently contains 0 games (The Odds API may be out of credits or returned an empty slate on the last scraper run)."
-            : `data.json has ${rawGames.length} games (${rawNfl} NFL, ${rawNcaa} NCAA), all of which are currently filtered out or marked FINAL (check NFL/NCAA toggles or Historical Ledger).`;
-        container.innerHTML = `
-            <div style="padding: 20px; border-radius: 8px; background: #0f172a; border: 1px solid rgba(245, 158, 11, 0.55); font-family: var(--font-mono); font-size: 12px; color: var(--accent-gold); text-align: center;">
-                <div style="font-weight: 800; margin-bottom: 6px;">⚠️ NO ACTIVE MATCHUPS DISPLAYED ON MASTER BOARD</div>
-                <div style="color: var(--text-secondary); line-height: 1.5;">${reasonMsg}</div>
-                <div style="color: var(--text-muted); font-size: 11px; margin-top: 6px;">Last Feed Timestamp: ${updatedAt}</div>
-            </div>
-        `;
+                    <button type="button" class="add-btn ${inSlip ? "in-slip" : ""}" onclick="window.toggleParlayLeg('${p.propKey}', event)">
+                        ${inSlip ? "✓" : "+"}
+                    </button>
+                </div>
+            `;
+        }).join("");
         return;
     }
 
-    const containerWidth = container.clientWidth || window.innerWidth || 1200;
-    const numCols = Math.max(1, Math.min(4, Math.floor(containerWidth / 340)));
-
-    container.style.display = "flex";
-    container.style.flexDirection = "column";
-    container.style.gap = "20px";
-
-    const cardSubtitle = AppState.activeMode === "tip"
-        ? "Click to expand lines &amp; EV%"
-        : "Click to expand lines, Safe Floor (-2&phi;) &amp; Ceiling Escalator (+&phi;)";
-
-    const currentWeekGames = games.filter(g => isGameInCurrentWeek(g.commence_time, AppState.mnfCutoffMs));
-    const lookaheadGames = games.filter(g => !isGameInCurrentWeek(g.commence_time, AppState.mnfCutoffMs));
-
-    const fragment = document.createDocumentFragment();
-
-    if (currentWeekGames.length > 0) {
-        fragment.appendChild(buildMasonryGridForGames(currentWeekGames, numCols, cardSubtitle));
+    // Wednesday Night at Porky's Safe Floor Fades
+    if (AppState.porkysFivePack.length === 0) {
+        container.innerHTML = `<div class="empty-state">No &le;-19.0% EV public traps flagged on this week's board yet.</div>`;
+        return;
     }
 
-    if (lookaheadGames.length > 0) {
-        const cutoffDt = new Date(AppState.mnfCutoffMs);
-        const cutoffLabel = cutoffDt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    container.innerHTML = AppState.porkysFivePack.map(item => {
+        const trap = item.trapProp;
+        const fade = item.fadeProp;
+        const inSlip = AppState.selectedParlayLegs.has(fade.propKey);
+        const porkyFloorOdds = fade.safeFloorOdds || -175;
+        const floorEv = calcExpectedValueAndKelly((fade.safeFloorWinPct || 82.0) / 100.0, porkyFloorOdds).evPercentage;
 
-        const dividerBanner = document.createElement("div");
-        dividerBanner.style.width = "100%";
-        dividerBanner.style.margin = "12px 0 4px 0";
-        dividerBanner.style.padding = "12px 18px";
-        dividerBanner.style.borderRadius = "8px";
-        dividerBanner.style.border = "1px solid rgba(245, 158, 11, 0.55)";
-        dividerBanner.style.background = "linear-gradient(90deg, rgba(245, 158, 11, 0.14), rgba(15, 23, 42, 0.95), rgba(245, 158, 11, 0.14))";
-        dividerBanner.style.boxShadow = "0 4px 14px rgba(0, 0, 0, 0.35)";
-        dividerBanner.style.textAlign = "center";
-        dividerBanner.innerHTML = `
-            <div style="font-family: var(--font-mono); font-size: 13px; font-weight: 800; color: var(--accent-gold); letter-spacing: 0.04em;">
-                🔭 AFTER MONDAY NIGHT FOOTBALL CUTOFF (${cutoffLabel}) // NEXT WEEK'S EARLY LOOKAHEAD SLATE (${lookaheadGames.length} GAMES)
-            </div>
-            <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 3px;">
-                Available for early browsing &amp; parlay building • Excluded from this week's Flagship 5-Pack until Tuesday morning
+        return `
+            <div class="clean-card">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <span class="badge b-pass">🐷 ${item.slotLabel}</span>
+                        <span class="mono" style="font-size:11px; color:var(--text-3);">${fade.league} • ${fade.matchup}</span>
+                        ${renderWeatherPillHTML(fade.gameRecord)}
+                    </div>
+                    <button type="button" class="add-btn ${inSlip ? "in-slip" : ""}" title="Add Fade to Slip" onclick="window.toggleParlayLeg('${fade.propKey}', event)">
+                        ${inSlip ? "✓" : "+"}
+                    </button>
+                </div>
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:10px;">
+                    <div style="padding:10px 12px; border-radius:8px; background:var(--red-bg); border:1px solid var(--red-bd);">
+                        <div class="mono" style="font-size:10px; font-weight:800; color:var(--red);">🚫 1:45 AM PUBLIC TRAP (PASS)</div>
+                        <div style="font-weight:800; font-size:14px; margin-top:3px;">${trap.shortTitle}</div>
+                        <div class="mono" style="font-size:11.5px; color:var(--red); margin-top:2px;">
+                            Proj ${fmtSigned(trap.tipProjectedMean, 1)} · Win ${trap.tipModelPct.toFixed(1)}% (${trap.tipEvPct.toFixed(1)}% EV)
+                        </div>
+                    </div>
+                    <div style="padding:10px 12px; border-radius:8px; background:var(--cyan-bg); border:1px solid var(--cyan-bd);">
+                        <div class="mono" style="font-size:10px; font-weight:800; color:var(--cyan);">🛡️ COUNTER-STRIKE SAFE FLOOR FADE</div>
+                        <div style="font-weight:800; font-size:14px; margin-top:3px;">
+                            ${locked ? `${fade.shortTitle} · ${renderLockSpanHTML("🔒 Floor Locked")}` : `${fade.pickTeamCode} ${fade.safeFloorLabel}`}
+                        </div>
+                        <div class="mono" style="font-size:11.5px; color:var(--cyan); margin-top:2px;">
+                            ${locked
+                                ? `Straight Fade Win: ${fade.tipModelPct.toFixed(1)}% (+${fade.tipEvPct.toFixed(1)}% EV)`
+                                : `Floor Win ${fade.safeFloorWinPct}% (${floorEv > 0 ? "+" : ""}${floorEv.toFixed(1)}% EV) · Base ${fade.lineDisplay}`
+                            }
+                        </div>
+                    </div>
+                </div>
             </div>
         `;
-        fragment.appendChild(dividerBanner);
-        fragment.appendChild(buildMasonryGridForGames(lookaheadGames, numCols, cardSubtitle));
-    }
-
-    container.replaceChildren(fragment);
+    }).join("");
 }
 
 // ==========================================
-// COMBINATORICS & ROUND ROBIN DECK (WITH SAFE FLOOR PORKY'S FADE LOADER)
+// VIEW 3: SYNOPTIC WEATHER & BIOPHYSICAL LAB (CARDS + FULL TABLE)
+// ==========================================
+function renderWeatherLab() {
+    const grid = document.getElementById("weather-lab-grid");
+    const tblContainer = document.getElementById("biolab-container");
+    const games = AppState.processedGames.filter(g => !isGameCompletedFinal(g));
+    const locked = (AppState.activeMode === "tip");
+    const modeScale = AppState.activeMode === "davinci" ? (1.0 + AppState.intensitySlider * 0.382) : 1.0;
+
+    if (grid) {
+        if (games.length === 0) {
+            grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;">No active slate stadiums loaded.</div>`;
+        } else {
+            const sortedByWeather = [...games].sort((a, b) => (b.weatherImpact.score || 0) - (a.weatherImpact.score || 0));
+            grid.innerHTML = sortedByWeather.map(g => {
+                const em = g.elevActive || g.elevMatrix || { zoneNumber: 1, direction: "ASCENT", psiElevPts: 0, venueElevFeet: 0, qCurve: [0.382, 0.618, 1.618, 1.618] };
+                const fgShift = Number((g.m7.fgRangeShiftYards * modeScale).toFixed(2));
+                const passMod = Number((g.m7.passGameModifierYards * modeScale).toFixed(2));
+
+                return `
+                    <div class="clean-card">
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
+                            <div>
+                                <span class="mono" style="font-size:10.5px; color:var(--text-3);">${g.league} · ${g.kickoffShort}</span>
+                                <div style="font-size:16px; font-weight:800;">${g.matchup}</div>
+                            </div>
+                            ${renderWeatherPillHTML(g)}
+                        </div>
+                        <p style="font-size:12px; color:var(--text-2); margin-bottom:10px;">${g.weatherImpact.summary}</p>
+                        <div class="weather-grid">
+                            <div class="w-metric">
+                                <div class="w-metric-k">AIR DENSITY &rho;</div>
+                                <div class="w-metric-v">${g.m7.airDensityRho} kg/m³</div>
+                            </div>
+                            <div class="w-metric">
+                                <div class="w-metric-k">FG SHIFT (&Delta;D_FG)</div>
+                                <div class="w-metric-v" style="color:${locked ? "var(--gold)" : (fgShift < 0 ? "var(--red)" : "var(--emerald)")};">
+                                    ${locked ? renderLockSpanHTML() : `${fmtSigned(fgShift, 2)} yds`}
+                                </div>
+                            </div>
+                            <div class="w-metric">
+                                <div class="w-metric-k">PASS MOD (&Delta;Y)</div>
+                                <div class="w-metric-v">${locked ? renderLockSpanHTML() : `${fmtSigned(passMod, 2)} yds`}</div>
+                            </div>
+                            <div class="w-metric">
+                                <div class="w-metric-k">10-ZONE ALTITUDE</div>
+                                <div class="w-metric-v" style="color:${em.zoneNumber >= 7 ? "var(--gold)" : "var(--cyan)"};">
+                                    ${locked ? `${g.elevationM}m` : `Z${em.zoneNumber} ${em.direction} (${em.psiElevPts} pts)`}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join("");
+        }
+    }
+
+    if (tblContainer) {
+        const fmtShiftCell = (val) => {
+            if (locked) return renderLockSpanHTML("🔒");
+            const scaled = Number((val * modeScale).toFixed(2));
+            const col = scaled > 0 ? "var(--emerald)" : (scaled < 0 ? "var(--red)" : "var(--text-2)");
+            return `<span style="color:${col}; font-weight:700;">${fmtSigned(scaled, 2)} yds</span>`;
+        };
+        tblContainer.innerHTML = `
+            <table class="pf-table">
+                <thead>
+                    <tr>
+                        <th>Matchup</th>
+                        <th>10-Zone Elevation (&Delta;h / Q1–Q4)</th>
+                        <th>Gravity g(h)</th>
+                        <th>Air Density &rho;</th>
+                        <th>FG Shift</th>
+                        <th>Pass Carry</th>
+                        <th>Pass Mod</th>
+                        <th>Somatic &rho;</th>
+                        <th>Bio + 10-Zone</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${games.map(g => {
+                        const em = g.elevActive || g.elevMatrix || { zoneNumber: 1, wzWeight: 0.1, deltaFeet: 0, direction: "ASCENT", qCurve: [0.382, 0.618, 1.618, 1.618], psiElevPts: 0, hypoxicOverrideM13: false };
+                        const bioColor = em.hypoxicOverrideM13 ? "var(--gold)" : "var(--cyan)";
+                        return `
+                            <tr>
+                                <td><strong>${g.matchup}</strong></td>
+                                <td>${locked ? `${g.elevationM}m` : `Z${em.zoneNumber} (0.1×F=${em.wzWeight}) ${em.direction}<br><small style="color:var(--text-2);">${em.deltaFeet > 0 ? "+" : ""}${em.deltaFeet} ft · ${em.qCurve.join("→")}</small>`}</td>
+                                <td>${g.m11.localGravityG} m/s²</td>
+                                <td>${g.m7.airDensityRho}</td>
+                                <td>${fmtShiftCell(g.m7.fgRangeShiftYards)}</td>
+                                <td>${fmtShiftCell(g.m7.deepPassShiftYards)}</td>
+                                <td>${fmtShiftCell(g.m7.passGameModifierYards)}</td>
+                                <td>${locked ? renderLockSpanHTML("🔒") : `${g.m11.rhoPlayerDensity} kg/m³`}</td>
+                                <td>${locked ? renderLockSpanHTML("🔒") : `<span style="color:${bioColor}; font-weight:700;">&Psi;: ${em.psiElevPts} · &Phi;: ${g.m11.phiBioScore}</span>`}</td>
+                            </tr>
+                        `;
+                    }).join("")}
+                </tbody>
+            </table>
+        `;
+    }
+}
+// ==========================================
+// SLIDE-OVER BET SLIP & ROUND ROBIN DRAWER (M10 COMBINATORICS)
 // ==========================================
 function renderCombinatoricsDeck() {
-    const container = document.getElementById("combinatorics-container");
-    if (!container) return;
-
-    if (!AppState.safeFloorParlayLegs) AppState.safeFloorParlayLegs = new Set();
-    if (!AppState.wongTeaserParlayLegs) AppState.wongTeaserParlayLegs = new Set();
-
-    const isUnlockedMode = (AppState.activeMode === "balls_deep" || AppState.activeMode === "davinci");
-    const hasWongLegs = AppState.wongTeaserParlayLegs.size > 0;
-    const hasFloorLegs = AppState.safeFloorParlayLegs.size > 0;
-    const modeTag = hasWongLegs
-        ? "🎯 ALWAYS-ON WONG TEASER SLIP ACTIVE (6/7-PT TEASER MATH)"
-        : (hasFloorLegs
-            ? "🔑 2-KEY-RUNG LADDER / SAFE FLOOR ALT SLIP ACTIVE"
-            : (AppState.activeMode === "tip"
-                ? "JUST THE TIP BASELINE (M1–M9)"
-                : (AppState.activeMode === "balls_deep" ? "BALLS DEEP 2-KEY-RUNG ENGINE ACTIVE" : "DAVINCI MOMENTUM ARC ACTIVE")));
+    const countBadge = document.getElementById("slip-count-badge");
+    const mobCount = document.getElementById("mob-slip-n");
+    const triggerBtn = document.getElementById("slip-trigger-btn");
+    const modeSub = document.getElementById("slip-mode-sub");
+    const body = document.getElementById("slip-drawer-body");
+    const foot = document.getElementById("slip-drawer-foot");
 
     const selectedProps = AppState.processedProps.filter(p => AppState.selectedParlayLegs.has(p.propKey));
+    const hasWong = AppState.wongTeaserParlayLegs.size > 0;
+    const hasFloor = AppState.safeFloorParlayLegs.size > 0;
+
+    if (countBadge) countBadge.textContent = String(selectedProps.length);
+    if (mobCount) mobCount.textContent = String(selectedProps.length);
+    if (triggerBtn) triggerBtn.classList.toggle("has-legs", selectedProps.length > 0);
+    if (modeSub) {
+        modeSub.textContent = hasWong
+            ? "🎯 ALWAYS-ON WONG TEASER SLIP (6/7-PT)"
+            : (hasFloor
+                ? "🔑 2-KEY-RUNG / SAFE FLOOR ALT SLIP"
+                : `STANDARD PARLAY & ROUND ROBIN (${AppState.activeMode.toUpperCase()})`);
+    }
+
+    if (!body || !foot) return;
+
     const legsPayload = selectedProps.map(p => {
         const useWong = AppState.wongTeaserParlayLegs.has(p.propKey);
         const useSafeFloor = AppState.safeFloorParlayLegs.has(p.propKey);
         if (useWong) {
-            // Effective per-leg equivalent for standard 2-leg 6-pt (-120 -> sqrt(1.8333) ~ -282) or 7-pt (-135 -> sqrt(1.7407) ~ -313) teaser
             const is7Pt = (p.tier2Mode === "WONG_7PT");
             const perLegAm = is7Pt ? -313 : -282;
             const wProb = (p.marketType === "spread" && p.tier2ProbPct) ? (p.tier2ProbPct / 100.0) : ((p.safeFloorWinPct || 76.0) / 100.0);
             return { americanOdds: perLegAm, trueProb: wProb };
         }
         return {
-            americanOdds: useSafeFloor ? (p.safeFloorOdds || -210) : p.baseOdds,
+            americanOdds: useSafeFloor ? (p.safeFloorOdds || -185) : (p.baseOdds || -110),
             trueProb: useSafeFloor ? ((p.safeFloorWinPct || 75.0) / 100.0) : p.activeModelProbRaw
         };
     });
 
     const m10 = calcProfitBoostParlayEV(legsPayload, 1.30);
     const rrTiers = (typeof calcRoundRobinMatrix === "function") ? calcRoundRobinMatrix(legsPayload) : [];
-    const baseStake = 10.00;
+    const baseStake = 10.0;
     const rawPayout = (baseStake * m10.dRaw).toFixed(2);
     const boostedPayout = (baseStake * m10.dBoost).toFixed(2);
+    const locked = (AppState.activeMode === "tip");
 
-    const uniqueMatchups = Array.from(new Set(AppState.processedGames.map(g => g.matchup)));
+    const presetsHTML = `
+        <div class="chip-group">
+            <button type="button" class="chip" onclick="window.loadFlagshipPreset(true, false, false)">👑 Ménage (3)</button>
+            <button type="button" class="chip" onclick="window.loadFlagshipPreset(false, false, false)">🔥 5-Pack</button>
+            <button type="button" class="chip" onclick="${locked ? "window.unlockBallsDeepMode(event)" : "window.loadFlagshipPreset(false, true, false)"}">${locked ? "🔒" : "🔑"} 2-Key Alts</button>
+            <button type="button" class="chip" onclick="${locked ? "window.unlockBallsDeepMode(event)" : "window.loadFlagshipPreset(false, false, true)"}">${locked ? "🔒" : "🎯"} Wong Teasers</button>
+            <button type="button" class="chip" onclick="window.loadPorkysPreset(event)">🐷 Porky's Fades</button>
+        </div>
+    `;
 
-    const filteredPool = AppState.processedProps.filter(p => {
-        if (AppState.comboFilters.team !== "ALL" && p.matchup !== AppState.comboFilters.team) return false;
-        if (AppState.comboFilters.market !== "ALL" && p.marketType !== AppState.comboFilters.market) return false;
-        if (AppState.comboFilters.tier === "SMASH" && p.tierBadge !== "SMASH") return false;
-        return true;
-    });
+    const legsHTML = selectedProps.length === 0
+        ? `<div class="empty-state" style="padding:28px 14px;">Tap <strong>+</strong> on any pick row or choose a 1-tap preset above to calculate Parlay, 30% Profit Boost, and Round Robin EV.</div>`
+        : selectedProps.map(p => {
+            const isWong = AppState.wongTeaserParlayLegs.has(p.propKey);
+            const isFloor = AppState.safeFloorParlayLegs.has(p.propKey);
+            const fmtWongLine = (p.tier2Line !== null && p.tier2Line !== undefined) ? fmtSigned(p.tier2Line, 1) : "";
+            const legTitle = isWong
+                ? (p.marketType === "spread" && fmtWongLine
+                    ? `🎯 ${p.pickTeamCode} ${fmtWongLine} (${p.tier2Mode === "WONG_7PT" ? "7-pt" : "6-pt"} Wong)`
+                    : `🎯 ${p.matchup} ${p.safeFloorLabel}`)
+                : (isFloor
+                    ? `🔑 ${p.marketType === "spread" ? p.pickTeamCode : p.matchup} ${p.safeFloorLabel}`
+                    : p.shortTitle);
+            const effOdds = isWong
+                ? (p.tier2Mode === "WONG_7PT" ? "7pt -135" : "6pt -120")
+                : (isFloor ? `${p.safeFloorOdds > 0 ? "+" : ""}${p.safeFloorOdds}` : `${p.baseOdds > 0 ? "+" : ""}${p.baseOdds}`);
+            const effWin = isWong
+                ? (p.marketType === "spread" && p.tier2ProbPct ? p.tier2ProbPct : p.safeFloorWinPct)
+                : (isFloor ? p.safeFloorWinPct : p.activeModelPct.toFixed(1));
 
-    const activeSlipStripHTML = selectedProps.length > 0 ? `
-        <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-subtle); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 11px;">
-            <span style="color: var(--accent-cyan); font-weight: 800; margin-right: 4px;">ACTIVE SLIP (${selectedProps.length}):</span>
-            ${selectedProps.map(p => {
-                const isWong = AppState.wongTeaserParlayLegs.has(p.propKey);
-                const isFloor = AppState.safeFloorParlayLegs.has(p.propKey);
-                const fmtWongLine = (p.tier2Line !== null && p.tier2Line !== undefined) ? `${p.tier2Line > 0 ? '+' : ''}${Number(p.tier2Line).toFixed(1)}` : "";
-                const pillLabel = isWong
-                    ? (p.marketType === "spread" && fmtWongLine
-                        ? `🎯 ${p.isHomeSpread ? p.homeTeam : p.awayTeam} ${fmtWongLine} (${p.tier2Mode === "WONG_7PT" ? "7-pt" : "6-pt"} Wong)`
-                        : `🎯 ${p.matchup} ${p.safeFloorLabel}`)
-                    : (isFloor
-                        ? `🔑 ${p.marketType === "spread" ? (p.isHomeSpread ? p.homeTeam : p.awayTeam) : p.matchup} ${p.safeFloorLabel}`
-                        : (p.activePlayerLabel || p.player));
-                const effFloorOdds = p.safeFloorOdds || -210;
-                const pillOdds = isWong
-                    ? (p.tier2Mode === "WONG_7PT" ? "7pt -135" : "6pt -120")
-                    : (isFloor ? (effFloorOdds > 0 ? `+${effFloorOdds}` : `${effFloorOdds}`) : (p.baseOdds > 0 ? `+${p.baseOdds}` : `${p.baseOdds}`));
-                const pillWin = isWong ? (p.marketType === "spread" && p.tier2ProbPct ? p.tier2ProbPct : p.safeFloorWinPct) : (isFloor ? p.safeFloorWinPct : p.activeModelPct);
-                const pillBorder = isWong ? "rgba(52, 211, 153, 0.65)" : (isFloor ? "rgba(6, 182, 212, 0.55)" : getTierColor(p.tierBadge, true));
+            return `
+                <div class="slip-leg-item">
+                    <div style="min-width:0;">
+                        <div class="mono" style="font-size:10.5px; color:var(--text-3);">${p.league} · ${p.matchup}</div>
+                        <div style="font-weight:700; font-size:13px; margin-top:2px;">${legTitle}</div>
+                        <div class="mono" style="font-size:11px; color:var(--cyan); margin-top:2px;">Win ${effWin}% · ${effOdds}</div>
+                    </div>
+                    <button type="button" class="chip" style="padding:3px 8px;" onclick="window.toggleParlayLeg('${p.propKey}', event)">✕</button>
+                </div>
+            `;
+        }).join("");
 
-                return `
-                    <span onclick="window.toggleParlayLeg('${p.propKey}')" title="Click to remove from slip" style="cursor: pointer; display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 5px; background: var(--bg-base); border: 1px solid ${pillBorder}; color: var(--text-primary); transition: all 0.15s ease;">
-                        <strong>${pillLabel}</strong>
-                        <span style="color: var(--text-secondary);">(${pillOdds} • ${pillWin}%)</span>
-                        <span style="color: #f87171; font-weight: 800; margin-left: 2px;">✕</span>
-                    </span>
-                `;
-            }).join("")}
+    const rrHTML = rrTiers.length > 0 ? `
+        <div class="rr-matrix-box">
+            <div style="color:var(--gold); font-weight:800; font-size:10.5px; letter-spacing:0.04em;">ROUND ROBIN MATRIX</div>
+            ${rrTiers.map(t => `
+                <div style="display:flex; justify-content:space-between; gap:8px;">
+                    <span><strong>${t.legSize}</strong> · ${t.avgMultiplier}x (${t.avgWinProbPct}%)</span>
+                    <span style="color:${getTierColor(getTierFromEv(t.expectedRoiPct))}; font-weight:800;">${t.expectedRoiPct > 0 ? "+" : ""}${t.expectedRoiPct}% EV</span>
+                </div>
+            `).join("")}
         </div>
     ` : "";
 
-    container.innerHTML = `
-        <div class="combinatorics-embedded-calc">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 10px;">
-                <div>
-                    <span style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-cyan); font-size: 14px;">
-                        🧮 PARLAY &amp; ROUND ROBIN CALCULATOR // <span style="color: ${hasFloorLegs ? '#f87171' : 'var(--accent-gold)'};">${modeTag}</span>
-                    </span>
-                    <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-left: 10px;">
-                        Tap any pick below to stack legs (M10 Rule: 2–3 leg cap on 30% Boost SGPs)
-                    </span>
-                </div>
-                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                    <button class="calc-action-btn" onclick="window.loadFlagshipPreset(true)" style="border-color: var(--accent-gold); color: var(--accent-gold);">
-                        👑 Load Ménage à Trois (3)
-                    </button>
-                    <button class="calc-action-btn" onclick="window.loadFlagshipPreset(false, false)" style="border-color: var(--accent-emerald); color: var(--accent-emerald);">
-                        🔥 Load Flagship 5-Pack (5)
-                    </button>
-                    <button class="calc-action-btn" onclick="window.loadFlagshipPreset(false, true, false)" style="border-color: var(--accent-cyan); color: var(--accent-cyan);">
-                        🔑 Load 2-Key Rung Alts (5)
-                    </button>
-                    <button class="calc-action-btn" onclick="window.loadFlagshipPreset(false, false, true)" style="border-color: #34d399; color: #34d399;">
-                        🎯 Load Wong Teasers (5)
-                    </button>
-                    <button class="calc-action-btn" onclick="window.loadPorkysPreset(event)" style="border-color: #f87171; color: #f87171;">
-                        🐷 Load Porky's Safe Floor Fades (5)
-                    </button>
-                    <button class="calc-action-btn" onclick="window.clearParlaySlip(event)">
-                        ✕ Clear Slip (${selectedProps.length})
-                    </button>
-                </div>
+    body.innerHTML = `${presetsHTML}${legsHTML}${rrHTML}`;
+
+    const evCol = getTierColor(getTierFromEv(m10.evBoostPct));
+    foot.innerHTML = `
+        <div class="stat-trio" style="margin-bottom:10px;">
+            <div class="stat-box">
+                <div class="stat-k">Win %</div>
+                <div class="stat-v" style="font-size:14px; color:var(--cyan);">${selectedProps.length ? m10.trueParlayProb + "%" : "0.0%"}</div>
             </div>
-
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; font-family: var(--font-mono); font-size: 12px;">
-                <div style="background: var(--bg-base); padding: 10px; border-radius: 6px; border: 1px solid var(--border-subtle);">
-                    <div style="color: var(--text-secondary); font-size: 10px;">SELECTED LEGS</div>
-                    <div style="font-size: 16px; font-weight: 800; color: var(--text-primary);">${selectedProps.length} Legs ${hasFloorLegs ? '<span style="font-size:11px;color:var(--accent-cyan);">(-2&phi; Floor)</span>' : ''}</div>
-                </div>
-                <div style="background: var(--bg-base); padding: 10px; border-radius: 6px; border: 1px solid var(--border-subtle);">
-                    <div style="color: var(--text-secondary); font-size: 10px;">JOINT WIN PROBABILITY</div>
-                    <div style="font-size: 16px; font-weight: 800; color: var(--accent-cyan);">${selectedProps.length ? m10.trueParlayProb : '0.00'}%</div>
-                </div>
-                <div style="background: var(--bg-base); padding: 10px; border-radius: 6px; border: 1px solid var(--border-subtle);">
-                    <div style="color: var(--text-secondary); font-size: 10px;">RAW PARLAY ($10 STAKE)</div>
-                    <div style="font-size: 16px; font-weight: 800; color: var(--text-primary);">${selectedProps.length ? m10.dRaw + 'x ($' + rawPayout + ')' : '--'}</div>
-                </div>
-                <div style="background: var(--bg-base); padding: 10px; border-radius: 6px; border: 1px solid var(--border-subtle);">
-                    <div style="color: var(--text-secondary); font-size: 10px;">30% BOOSTED PAYOUT</div>
-                    <div style="font-size: 16px; font-weight: 800; color: var(--accent-gold);">${selectedProps.length ? m10.dBoost + 'x ($' + boostedPayout + ')' : '--'}</div>
-                </div>
-                <div style="background: var(--bg-base); padding: 10px; border-radius: 6px; border: 1px solid var(--border-subtle);">
-                    <div style="color: var(--text-secondary); font-size: 10px;">COMPOUND PARLAY EV%</div>
-                    <div style="font-size: 16px; font-weight: 800; color: ${getTierColor(getTierFromEv(m10.evBoostPct))};">
-                        ${selectedProps.length ? (m10.evBoostPct > 0 ? '+' : '') + m10.evBoostPct + '%' : '0.00%'}
-                    </div>
-                </div>
+            <div class="stat-box">
+                <div class="stat-k">$10 +30%</div>
+                <div class="stat-v" style="font-size:14px; color:var(--gold);">${selectedProps.length ? "$" + boostedPayout : "--"}</div>
+                <div class="mono" style="font-size:9.5px; color:var(--text-3);">${selectedProps.length ? "Raw $" + rawPayout : "M10 Boost"}</div>
             </div>
-
-            ${activeSlipStripHTML}
-
-            ${rrTiers.length > 0 ? `
-                <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-subtle); display: flex; gap: 16px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 11px;">
-                    <span style="color: var(--accent-gold); font-weight: 700;">ROUND ROBIN MATRIX:</span>
-                    ${rrTiers.map(t => `
-                        <span>
-                            <strong>${t.legSize}:</strong> Avg ${t.avgMultiplier}x | Win ${t.avgWinProbPct}% |
-                            <span style="color: ${getTierColor(getTierFromEv(t.expectedRoiPct))};">
-                                EV ${t.expectedRoiPct > 0 ? '+' : ''}${t.expectedRoiPct}%
-                            </span>
-                        </span>
-                    `).join(" • ")}
-                </div>
-            ` : ""}
+            <div class="stat-box">
+                <div class="stat-k">Boost EV</div>
+                <div class="stat-v" style="font-size:14px; color:${evCol};">${selectedProps.length ? (m10.evBoostPct > 0 ? "+" : "") + m10.evBoostPct + "%" : "0.0%"}</div>
+            </div>
         </div>
-
-        <div class="panel-card">
-            <div class="panel-header">
-                <h2 class="panel-title">Interactive Parlay &amp; Round Robin Pick Builder</h2>
-                <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-                    <select onchange="window.setComboFilter('team', this.value)" style="background: var(--bg-base); color: var(--text-primary); border: 1px solid var(--border-subtle); padding: 6px 10px; border-radius: 5px; font-family: var(--font-mono); font-size: 11px;">
-                        <option value="ALL" ${AppState.comboFilters.team === 'ALL' ? 'selected' : ''}>All Matchups (${AppState.processedGames.length})</option>
-                        ${uniqueMatchups.map(m => `<option value="${m}" ${AppState.comboFilters.team === m ? 'selected' : ''}>${m}</option>`).join("")}
-                    </select>
-
-                    <button class="calc-action-btn" onclick="window.setComboFilter('market', 'ALL')" style="${AppState.comboFilters.market === 'ALL' ? 'border-color:var(--accent-cyan);color:var(--accent-cyan);' : ''}">All Markets</button>
-                    <button class="calc-action-btn" onclick="window.setComboFilter('market', 'spread')" style="${AppState.comboFilters.market === 'spread' ? 'border-color:var(--accent-cyan);color:var(--accent-cyan);' : ''}">Spreads</button>
-                    <button class="calc-action-btn" onclick="window.setComboFilter('market', 'total')" style="${AppState.comboFilters.market === 'total' ? 'border-color:var(--accent-cyan);color:var(--accent-cyan);' : ''}">Totals (O/U)</button>
-                    <button class="calc-action-btn" onclick="window.setComboFilter('tier', AppState.comboFilters.tier === 'SMASH' ? 'ALL' : 'SMASH')" style="${AppState.comboFilters.tier === 'SMASH' ? 'border-color:var(--accent-emerald);color:var(--accent-emerald);' : ''}">
-                        SMASH Only (&ge;+10% EV)
-                    </button>
-                </div>
-            </div>
-
-            <div style="padding: 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px;">
-                ${filteredPool.map(p => {
-                    const isSelected = AppState.selectedParlayLegs.has(p.propKey);
-                    const isFloorSelected = AppState.safeFloorParlayLegs.has(p.propKey);
-                    const isSpread = p.marketType === "spread";
-                    const tierColor = getTierColor(p.tierBadge);
-                    const fmtProj = (isSpread && Number(p.projectedMean) > 0) ? `+${p.projectedMean}` : `${p.projectedMean}`;
-                    const evStr = `${p.evPct > 0 ? '+' : ''}${p.evPct}% EV`;
-                    const altEvStr = `${p.bdAltEvPct > 0 ? '+' : ''}${p.bdAltEvPct}% EV`;
-                    const kellyBit = p.quarterKellyPct > 0 ? ` • f* ${p.quarterKellyPct}%` : "";
-
-                    return `
-                        <div onclick="window.toggleParlayLeg('${p.propKey}')" style="cursor: pointer; padding: 12px 14px; border-radius: 8px; background: ${isSelected ? 'rgba(6, 182, 212, 0.14)' : 'var(--bg-elevated)'}; border: 1px solid ${isSelected ? 'var(--accent-cyan)' : 'var(--border-subtle)'}; transition: all 0.15s ease;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                                <span style="font-family: var(--font-mono); font-size: 11px; color: ${isFloorSelected ? 'var(--accent-cyan)' : 'var(--text-secondary)'}; font-weight: ${isFloorSelected ? '800' : '400'};">
-                                    ${isFloorSelected ? '🛡️ SAFE FLOOR IN SLIP // ' : (isSelected ? '✅ IN SLIP // ' : '')}${p.matchup} ${!p.isCurrentWeek ? '🔭' : ''}
-                                </span>
-                                <div style="display: flex; gap: 6px;">
-                                    ${p.flagshipSlot ? `<span class="${p.flagshipSlot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}">${p.flagshipSlot}</span>` : ''}
-                                    ${renderTierBadgeHTML(p.tierBadge)}
-                                </div>
-                            </div>
-                            <div style="font-weight: 700; font-size: 13px; color: var(--text-primary); margin-bottom: 4px;">
-                                ${isFloorSelected ? `${p.marketType === "spread" ? (p.isHomeSpread ? p.homeTeam : p.awayTeam) : p.matchup} ${p.safeFloorLabel}` : (p.activePlayerLabel || p.player)}
-                                <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);">(${isFloorSelected ? ((p.safeFloorOdds || -175) > 0 ? '+' + (p.safeFloorOdds || -175) : (p.safeFloorOdds || -175)) : (p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds)})</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 12px; color: ${isFloorSelected ? 'var(--accent-cyan)' : tierColor};">
-                                <span>Proj: <strong>${fmtProj}</strong>${kellyBit}</span>
-                                <span>Win: <strong>${isFloorSelected ? p.safeFloorWinPct : p.activeModelPct}%</strong> (${isFloorSelected ? 'Safe Floor -2φ' : evStr})</span>
-                            </div>
-                            ${renderGatekeeperPillsHTML(p.gatekeeperFlags, p.gatekeeperAction)}
-                            ${(isUnlockedMode || isFloorSelected) ? `
-                                <div style="margin-top: 6px; padding-top: 5px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px; font-family: var(--font-mono); font-size: 10.5px;">
-                                    <span style="color: var(--accent-cyan);">🛡️ ${p.safeFloorLabel} (${p.safeFloorWinPct}%)</span>
-                                    <span style="color: var(--accent-gold);">🎯 ${p.bdAltLabel} (${altEvStr})</span>
-                                </div>
-                            ` : ""}
-                        </div>
-                    `;
-                }).join("")}
-            </div>
+        <div style="display:flex; gap:8px;">
+            <button type="button" class="chip" style="flex:1; justify-content:center;" onclick="window.clearParlaySlip(event)">Clear (${selectedProps.length})</button>
+            <button type="button" class="primary-btn cyan" style="flex:2;" onclick="window.toggleSlipDrawer(false)">Done</button>
         </div>
     `;
 }
 
 // ==========================================
-// 13-MODULE COMPENDIUM BOARD (WIRED TO calcMasterFibonacciAggregate v313)
+// VIEW 5A: 13-MODULE COMPENDIUM BOARD (HOME-TEAM PERSPECTIVE)
 // ==========================================
 function renderCompendiumBoard() {
     const tbody = document.getElementById("compendium-board-body");
-    if (!tbody || AppState.processedGames.length === 0) return;
+    if (!tbody) return;
 
-    const tableEl = tbody.closest("table");
-    if (tableEl) {
-        const thead = tableEl.querySelector("thead");
-        if (thead) {
-            thead.innerHTML = `
-                <tr>
-                    <th>Matchup</th>
-                    <th>M7 Air Density (&rho;)</th>
-                    <th>M8 Circadian (CSI / Delay)</th>
-                    <th>M11 Bio + 10-Zone (&Psi;_elev)</th>
-                    <th>M12 Turnover EPA</th>
-                    <th>M13 Fixed Sacred Geometry (M_rise)</th>
-                    <th>Master Score (&Omega;_fib,rise)</th>
-                    <th>Unified Home Win &amp; Cover Prob (P_agg)</th>
-                </tr>
-            `;
-        }
+    const games = AppState.processedGames;
+    if (games.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-2); padding:20px;">No active slate matchups loaded.</td></tr>`;
+        return;
     }
 
     const isLocked = (AppState.activeMode === "tip");
     const sliderForAgg = (AppState.activeMode === "davinci") ? AppState.intensitySlider : 0.618;
 
-    tbody.innerHTML = AppState.processedGames.map(g => {
+    tbody.innerHTML = games.map(g => {
         if (isLocked) {
-            const lockHTML = renderLockCellHTML();
             return `
                 <tr>
-                    <td><strong>${g.matchup}</strong></td>
-                    <td>${lockHTML}</td>
-                    <td>${lockHTML}</td>
-                    <td>${lockHTML}</td>
-                    <td>${lockHTML}</td>
-                    <td>${lockHTML}</td>
-                    <td>${lockHTML}</td>
-                    <td>${lockHTML}</td>
+                    <td><strong>${g.matchup}</strong><br><small style="color:var(--text-3);">${g.league}</small></td>
+                    <td colspan="7" style="cursor:pointer;" onclick="window.unlockBallsDeepMode(event)">
+                        ${renderLockSpanHTML("🔒 Unlock Balls Deep to view M7–M13 Home-Team Compendium & Unified P_agg →")}
+                    </td>
                 </tr>
             `;
         }
@@ -2198,30 +1947,28 @@ function renderCompendiumBoard() {
             m8: g.m8.circadianStrainIndex * 0.12
         }, 13, sliderForAgg, m13.mRiseMultiplier);
 
-        const m12Color = tovVal >= 0 ? "var(--accent-emerald)" : "var(--accent-danger)";
-        const m13Color = m13.m11OverrideApplied || m13.coachSyncBlocked
-            ? "var(--accent-gold)"
-            : (m13.mRiseSignedHomeDelta >= 0 ? "var(--accent-emerald)" : "var(--accent-danger)");
-        const omegaColor = fibRes.omegaFibScore >= 0 ? "var(--accent-emerald)" : "var(--accent-danger)";
-        const probColor = fibRes.liveAdjustedProb >= 52.4 ? "var(--accent-emerald)" : "var(--accent-danger)";
+        const m12Color = tovVal >= 0 ? "var(--emerald)" : "var(--red)";
+        const m13Color = (m13.m11OverrideApplied || m13.coachSyncBlocked)
+            ? "var(--gold)"
+            : (m13.mRiseSignedHomeDelta >= 0 ? "var(--emerald)" : "var(--red)");
+        const omegaColor = fibRes.omegaFibScore >= 0 ? "var(--emerald)" : "var(--red)";
+        const probColor = fibRes.liveAdjustedProb >= 52.4 ? "var(--emerald)" : "var(--red)";
 
         const overrideTag = m13.m11OverrideApplied
-            ? `<br><small style="color:var(--accent-gold);">🏔️ M11&gt;M13 ZEROED</small>`
-            : (m13.coachSyncBlocked ? `<br><small style="color:#f87171;">🔒 COACH LOCK</small>` : "");
-
+            ? `<br><small style="color:var(--gold);">🏔️ M11&gt;M13 ZEROED</small>`
+            : (m13.coachSyncBlocked ? `<br><small style="color:var(--red);">🔒 COACH LOCK</small>` : "");
         const delayTag = g.m8.charterDelayShock > 0
-            ? `<br><small style="color:#d8b4fe;">✈️ Delay: ${g.m8.delayTotalDragPts} tot</small>`
-            : "";
+            ? `<br><small style="color:var(--purple);">✈️ Delay: ${g.m8.delayTotalDragPts} tot</small>` : "";
 
         return `
             <tr>
-                <td><strong>${g.matchup}</strong></td>
+                <td><strong>${g.matchup}</strong><br><small style="color:var(--text-3);">${g.league} · Home: ${g.homeTeam}</small></td>
                 <td>${g.m7.airDensityRho} kg/m³</td>
-                <td style="color:${g.m8.circadianStrainIndex > 0.8 ? 'var(--accent-danger)' : 'var(--text-primary)'};">${g.m8.circadianStrainIndex}${delayTag}</td>
-                <td style="color:var(--accent-cyan); font-weight:700;">Z${em.zoneNumber} ${em.direction.slice(0, 4)} (${em.psiElevPts} pts)<br><small style="color:var(--text-secondary);">&Phi;_bio: ${g.m11.phiBioScore}</small></td>
-                <td style="color:${m12Color}; font-weight:700;">${tovVal > 0 ? '+' : ''}${tovVal}</td>
-                <td style="color:${m13Color}; font-weight:700;">${m13.mRiseMultiplier.toFixed(4)}x (${m13.mRiseSignedHomeDelta > 0 ? '+' : ''}${m13.mRiseSignedHomeDelta})${overrideTag}</td>
-                <td style="font-family:var(--font-mono); font-weight:700; color:${omegaColor};">${fibRes.omegaFibScore > 0 ? '+' : ''}${fibRes.omegaFibScore.toFixed(4)}</td>
+                <td style="color:${g.m8.circadianStrainIndex > 0.8 ? "var(--red)" : "var(--text-1)"};">${g.m8.circadianStrainIndex}${delayTag}</td>
+                <td style="color:var(--cyan); font-weight:700;">Z${em.zoneNumber} ${em.direction.slice(0, 4)} (${em.psiElevPts} pts)<br><small style="color:var(--text-2);">&Phi;_bio: ${g.m11.phiBioScore}</small></td>
+                <td style="color:${m12Color}; font-weight:700;">${tovVal > 0 ? "+" : ""}${tovVal}</td>
+                <td style="color:${m13Color}; font-weight:700;">${m13.mRiseMultiplier.toFixed(4)}x (${m13.mRiseSignedHomeDelta > 0 ? "+" : ""}${m13.mRiseSignedHomeDelta})${overrideTag}</td>
+                <td style="font-weight:700; color:${omegaColor};">${fibRes.omegaFibScore > 0 ? "+" : ""}${fibRes.omegaFibScore.toFixed(4)}</td>
                 <td style="font-weight:800; color:${probColor};">${fibRes.liveAdjustedProb.toFixed(1)}%</td>
             </tr>
         `;
@@ -2229,51 +1976,56 @@ function renderCompendiumBoard() {
 }
 
 // ==========================================
-// TELEMETRY INSPECTOR (SHOWS M9 ΔRZ_FIN, M8 DELAY, M12 TOV, Ψ_11,12 & FAIR MARGIN)
+// VIEW 5B: SPREAD TELEMETRY INSPECTOR
 // ==========================================
 function renderTelemetryInspector() {
     const container = document.getElementById("telemetry-container");
-    if (!container || AppState.processedGames.length === 0) return;
+    if (!container) return;
 
-    const showCoupledPsi = (AppState.activeMode === "balls_deep" || AppState.activeMode === "davinci");
+    const games = AppState.processedGames;
+    if (games.length === 0) {
+        container.innerHTML = `<div class="empty-state" style="border:none;">No active telemetry games loaded.</div>`;
+        return;
+    }
+
+    const showCoupledPsi = (AppState.activeMode !== "tip");
     const modeDisplay = AppState.activeMode === "tip"
         ? "JUST THE TIP (M1–M9)"
-        : (AppState.activeMode === "balls_deep" ? "BALLS DEEP (v313 M1–M13)" : "DAVINCI");
+        : (AppState.activeMode === "balls_deep" ? "BALLS DEEP (M1–M13)" : "DAVINCI FLOW");
 
-    container.className = "table-responsive";
     container.innerHTML = `
-        <table class="quant-table">
+        <table class="pf-table">
             <thead>
                 <tr>
                     <th>Matchup</th>
                     <th>Mode Active</th>
-                    <th>M8 Circadian / Delay</th>
+                    <th>M8 Circadian</th>
                     <th>M9 Red-Zone (&Delta;RZ_fin)</th>
                     <th>M12 Turnover EPA</th>
-                    <th>Coupled Escalator (&Psi;_11,12)</th>
+                    <th>Coupled (&Psi;_11,12)</th>
                     <th>Model Fair Home Spread (M9)</th>
                 </tr>
             </thead>
             <tbody>
-                ${AppState.processedGames.map(g => {
-                    const tipSpreadStr = `${g.homeTeam} ${g.m9Base.fairHomeSpread > 0 ? '+' + g.m9Base.fairHomeSpread : g.m9Base.fairHomeSpread}`;
-                    const activeSpreadStr = `${g.homeTeam} ${g.m9.fairHomeSpread > 0 ? '+' + g.m9.fairHomeSpread : g.m9.fairHomeSpread}`;
-                    const tovColor = g.m12.netTurnoverEPA >= 0 ? "var(--accent-emerald)" : "var(--accent-danger)";
+                ${games.map(g => {
+                    const tipSpreadStr = `${g.homeTeam} ${fmtSigned(g.m9Base.fairHomeSpread, 2)}`;
+                    const activeSpreadStr = `${g.homeTeam} ${fmtSigned(g.m9.fairHomeSpread, 2)}`;
+                    const tovColor = g.m12.netTurnoverEPA >= 0 ? "var(--emerald)" : "var(--red)";
                     const rzVal = g.m9Base.deltaRzFin || 0;
-                    const rzColor = rzVal <= 0 ? "var(--accent-emerald)" : "var(--accent-danger)";
-                    const qbTag = g.thirdStringQbAlert ? `<br><small style="color:var(--accent-cyan);">🔄 3rd-QB: ${g.thirdStringTeam} TT Under</small>` : "";
+                    const rzColor = rzVal <= 0 ? "var(--emerald)" : "var(--red)";
+                    const qbTag = g.thirdStringQbAlert ? `<br><small style="color:var(--cyan);">🔄 3rd-QB: ${g.thirdStringTeam} TT Under</small>` : "";
 
                     return `
                         <tr>
                             <td><strong>${g.matchup}</strong>${qbTag}</td>
-                            <td style="color:var(--accent-cyan); font-weight:700;">${modeDisplay}</td>
-                            <td>CSI: ${g.m8.circadianStrainIndex} (&Phi;: ${g.m8.phiCircadianPenalty})${g.m8.charterDelayShock > 0 ? `<br><small style="color:#d8b4fe;">✈️ I_delay: ${g.m8.charterDelayShock}</small>` : ""}</td>
-                            <td style="color:${rzColor}; font-weight:700;">${rzVal > 0 ? '+' : ''}${rzVal} pts</td>
-                            <td style="color:${tovColor}; font-weight:700;">${g.m12.netTurnoverEPA > 0 ? '+' : ''}${g.m12.netTurnoverEPA}</td>
-                            <td>${showCoupledPsi ? `<span style="color:var(--accent-gold); font-weight:700;">${g.psi11_12 > 0 ? '+' : ''}${g.psi11_12} pts</span>` : renderLockCellHTML()}</td>
+                            <td style="color:var(--cyan); font-weight:700;">${modeDisplay}</td>
+                            <td>CSI: ${g.m8.circadianStrainIndex} (&Phi;: ${g.m8.phiCircadianPenalty})</td>
+                            <td style="color:${rzColor}; font-weight:700;">${rzVal > 0 ? "+" : ""}${rzVal} pts</td>
+                            <td style="color:${tovColor}; font-weight:700;">${g.m12.netTurnoverEPA > 0 ? "+" : ""}${g.m12.netTurnoverEPA}</td>
+                            <td>${showCoupledPsi ? `<span style="color:var(--gold); font-weight:700;">${fmtSigned(g.psi11_12, 2)} pts</span>` : renderLockSpanHTML("🔒")}</td>
                             <td>
                                 ${showCoupledPsi
-                                    ? `<span style="color:var(--text-secondary); margin-right:10px;">Tip: ${tipSpreadStr}</span> <strong style="color:var(--accent-emerald);">Active: ${activeSpreadStr}</strong>`
+                                    ? `<span style="color:var(--text-2); margin-right:8px;">Tip: ${tipSpreadStr}</span><strong style="color:var(--emerald);">Active: ${activeSpreadStr}</strong>`
                                     : `<strong>${tipSpreadStr}</strong>`
                                 }
                             </td>
@@ -2286,71 +2038,69 @@ function renderTelemetryInspector() {
 }
 
 // ==========================================
-// BIOPHYSICAL & WEATHER LAB (WITH 10-ZONE 0.1*Fz ASCENT/DESCENT Q1-Q4 CURVE)
+// VIEW 6: FAGQUESTIONS (FREQUENTLY ASKED GAMBLING QUESTIONS)
 // ==========================================
-function renderBioWeatherLab() {
-    const container = document.getElementById("biolab-container");
-    if (!container || AppState.processedGames.length === 0) return;
+const FAG_QUESTIONS_LIST = [
+    {
+        q: "How do I read a pick row and the Research Inspector?",
+        a: "Every row on <strong>Picks</strong> shows four things at a glance: the <strong>bold title</strong> is the Vegas sportsbook line you actually bet, <strong>Proj</strong> is what DixPix says the true fair line is, the <strong>Weather/Altitude pill</strong> highlights stadium physics, and the right-hand meter shows our <strong>Win Probability &amp; Expected Value (EV%)</strong>. Tap any pick to open the Research Inspector with live weather drag, visual Signal Drivers, and execution lines. Single-bet Quarter-Kelly sizing (<strong>f*</strong>) is hard-capped at <strong>4.0%</strong> of bankroll."
+    },
+    {
+        q: "What do the SMASH, TEASE, and PASS badges mean?",
+        a: "<span class='badge b-smash'>SMASH</span> flags <strong>&ge; +10.0% EV</strong> (57.6%+ win probability at -110)—green-light value.<br><br><span class='badge b-muted'>TEASE</span> sits in the tight <strong>-18.9% to +9.9% EV</strong> buffer where sportsbook juice eats the edge—quarantined off the card.<br><br><span class='badge b-pass'>PASS</span> marks <strong>&le; -19.0% EV</strong> public traps (or v313 guardrail-blocked spots like 3rd-string QB unders or compromised pass-pro) that we avoid or fade in Porky's."
+    },
+    {
+        q: "What is the difference between Just the Tip, Balls Deep, and DaVinci?",
+        a: "<strong>Just the Tip:</strong> Runs our pure Vegas-independent <strong>M1–M9</strong> baseline (efficiency, snap-by-snap EPA, turnover regression, weather ballistics, and travel strain) with zero M11–M13 leakage.<br><br><strong>Balls Deep:</strong> Unlocks <strong>M11–M13</strong> (10-Zone Elevation Hypoxia, Turnover EPA, Sacred Geometry M_rise), verified QB-only injury adjustments, the <strong>2-Key-Rung Perpetuity Alt Ladder</strong>, <strong>Always-On Wong Teasers</strong>, <strong>Regime Safe Totals</strong>, and <strong>Ceiling (+&phi;)</strong> escalators—and Balls Deep never overrules Just the Tip's side.<br><br><strong>DaVinci Mode:</strong> Opens the continuous <strong>Eye-Test Flow Slider (-3.236 to +3.236)</strong> so you can layer your own conviction on top of the model and watch spreads, totals, floors, and ceilings bend organically in real time."
+    },
+    {
+        q: "Why does DixPix emphasize Weather & Altitude Physics?",
+        a: "Standard sports research apps only look backward at box scores and hit rates. DixPix pulls live stadium temperature, wind speed, barometric pressure, and elevation to compute real <strong>Air Density (&rho;)</strong>, <strong>Field Goal Range Shifts (&Delta;D_FG)</strong>, <strong>Pass Game Modifiers (&Delta;Y)</strong>, and <strong>10-Zone Altitude Hypoxia</strong>. Tap the <strong>🌬️ Weather Edge</strong> filter on Picks or visit the <strong>Weather Lab</strong> tab to spot outdoor wind/cold Unders and mountain altitude fatigue spots before the market adjusts."
+    },
+    {
+        q: "How do I read and use all 13 Modules on the 13 Modules tab?",
+        a: "<strong>Golden Rule: Every column on the 13 Modules table feeds directly into the Home Team's Unified Win &amp; Cover Probability (P_agg).</strong><br><br>• <strong>Tier 1 (Weight 34 — Core Efficiency):</strong> <strong>M1</strong> strips Vegas vig; <strong>M5</strong> models continuous yardage via Gamma survival curves; <strong>M7</strong> computes Air Density (&rho; vs 1.225 kg/m&sup3; sea level—lower = thinner air/Overs, higher = heavy cold air/Unders).<br>• <strong>Tier 2 (Weight 21 — High Leverage):</strong> <strong>M6</strong> checks prop alt efficiency (MER &gt; 1.15); <strong>M10</strong> computes 30% Profit Boost &amp; Round Robin EV; <strong>M12</strong> measures net 4Q-weighted Turnover EPA (<strong>Green +</strong> favors Home, <strong>Red -</strong> favors Away).<br>• <strong>Tier 3 (Weight 13 — Tempo, Sizing &amp; Altitude):</strong> <strong>M2</strong> enforces Quarter-Kelly sizing (4.0% cap); <strong>M3</strong> runs our 2-Key-Rung Alt &amp; Wong Teaser ladder; <strong>M11</strong> tracks somatic load (&Phi;_bio) and 10-Zone elevation climbs/drops (&Psi;_elev—uses spread sign, so <strong>negative points like -1.52 favor the Home Team</strong>, and Zone 7+ climbs override M13 hype).<br>• <strong>Tier 4 (Weight 8 — Friction &amp; Travel):</strong> <strong>M4</strong> models discrete counts (Poisson/NegBin); <strong>M8</strong> tracks the <strong>away team's</strong> jet lag &amp; travel CSI—so <strong>Red (&gt; 0.80) helps the Home Team</strong>.<br>• <strong>M9 (Fair Margin Hub) &amp; M13 (Sacred Geometry):</strong> <strong>M9</strong> combines pure EPA, turnovers, HFA, and travel into the independent fair spread; <strong>M13</strong> multiplies poll/market hype divergence by underdog defensive havoc (first number is the underdog's multiplier; the signed number in parentheses is the Home Team delta).<br>• <strong>Final Readout:</strong> <strong>&Omega;_fib</strong> combines all active modules into <strong>Home P_agg</strong>—<strong>&gt; 52.4% (Green)</strong> clears -110 break-even for the Home Team; <strong>&lt; 52.4% (Red)</strong> leans Away."
+    },
+    {
+        q: "How do 2-Key-Rung Alts, Always-On Wong Teasers, and Regime Safe Totals work?",
+        a: "Football games cluster heavily on key scoring margins (3, 7, 10, 14, 17, 21)—and a push doesn't pay. In Balls Deep, every spread gets two disciplined execution routes: a <strong>2-Key-Rung Alt</strong> that buys cleanly across two full scoring rungs with a .5 hook (e.g., -8.5 &rarr; -2.5 or +5.5 &rarr; +10.5), and an <strong>Always-On Wong Teaser</strong> (6-pt at -120 or 7-pt at -135) built for 2-leg teasers without eating heavy standalone alt juice. Totals route into <strong>Regime Safe Totals</strong>—dropping 4 points into Safe Alt Overs in confirmed dome/high-pace shootouts, or buying 4 points up into Safe Alt Unders in cold/wind/backup-QB grind games."
+    },
+    {
+        q: "How do I use the Flagship 5-Pack, Porky's Fades, and the Bet Slip?",
+        a: "The <strong>Flagship 5-Pack</strong> locks in our top 5 pre-kickoff plays of the current week (strictly 1 pick per game, blended Spread + O/U for clean uncorrelated Round Robins), led by our top 3 plays—the <strong>Ménage à Trois</strong>. Flip to <strong>Porky's Safe Floor Fades</strong> to see the 5 ugliest public traps (&le; -19.0% EV) paired with counter-strike Safe Floor fades. Tap <strong>+</strong> on any pick or open the slide-over <strong>Slip</strong> from any page to load 1-tap presets and inspect 30% Profit Boost payouts plus 2-Leg/3-Leg Round Robin ROI."
+    },
+    {
+        q: "How does the Historical Ledger grade picks—and what is 'Blue Balls'?",
+        a: "Every game locks its closing line automatically at kickoff and grades live against ESPN final scores.<br><br>• <strong>✅ HIT:</strong> Cleared the closing line.<br>• <strong>🔵 BLUE BALLS (BB):</strong> Brutal beat missed by <strong>&le; 3.0 points</strong> (a single field goal or less).<br>• <strong>❌ MISS:</strong> Missed by more than 3.0 points.<br>• <strong>💣 Grenades Dodged:</strong> Counts every public trap we stamped PASS (&le; -19.0% EV) that failed to cover. Click any of the 6 Ledger Vault cards to inspect every completed receipt."
+    }
+];
 
-    const isLocked = (AppState.activeMode === "tip");
-    const modeScale = AppState.activeMode === "davinci"
-        ? (1.0 + AppState.intensitySlider * 0.382)
-        : 1.0;
+window.toggleFaqItem = function(idx) {
+    if (AppState.openFaq.has(idx)) AppState.openFaq.delete(idx);
+    else AppState.openFaq.add(idx);
+    renderFaqAccordion();
+};
 
-    const fmtShiftCell = (val, unit = "yds") => {
-        if (isLocked) return renderLockCellHTML();
-        const scaled = Number((val * modeScale).toFixed(2));
-        const color = scaled > 0 ? "var(--accent-emerald)" : (scaled < 0 ? "var(--accent-danger)" : "var(--text-secondary)");
-        return `<span style="color:${color}; font-weight:700;">${scaled > 0 ? '+' : ''}${scaled} ${unit}</span>`;
-    };
-
-    container.className = "table-responsive";
-    container.innerHTML = `
-        <table class="quant-table">
-            <thead>
-                <tr>
-                    <th>Matchup</th>
-                    <th>10-Zone Elevation (&Delta;h / Curve)</th>
-                    <th>Local Gravity g(h)</th>
-                    <th>Air Density &rho; (kg/m³)</th>
-                    <th>FG Shift (&Delta;D_FG)</th>
-                    <th>Pass Carry (&Delta;D_Pass)</th>
-                    <th>Pass Mod (&Delta;Y_Total)</th>
-                    <th>Somatic Density (&rho;_player)</th>
-                    <th>Bio + 10-Zone (&Phi;_bio &amp; &Psi;_elev)</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${AppState.processedGames.map(g => {
-                    const em = g.elevActive || g.elevMatrix || { zoneNumber: 1, wzWeight: 0.1, deltaFeet: 0, direction: "ASCENT", qCurve: [0.382, 0.618, 1.618, 1.618], psiElevPts: 0, hypoxicOverrideM13: false };
-                    const scaledBio = Number((g.m11CombinedDisplay * modeScale).toFixed(4));
-                    const bioColor = em.hypoxicOverrideM13 ? "var(--accent-gold)" : (scaledBio >= 0.025 ? "var(--accent-emerald)" : "var(--accent-cyan)");
-                    const zoneStr = `Zone ${em.zoneNumber} (0.1×F=${em.wzWeight}) ${em.direction}<br><small style="color:var(--text-secondary);">${em.deltaFeet > 0 ? '+' : ''}${em.deltaFeet} ft | Q1–Q4: ${em.qCurve.join("→")}</small>`;
-
-                    return `
-                        <tr>
-                            <td><strong>${g.matchup}</strong></td>
-                            <td>${isLocked ? `${g.elevationM}m` : zoneStr}</td>
-                            <td>${g.m11.localGravityG} m/s²</td>
-                            <td>${g.m7.airDensityRho}</td>
-                            <td>${fmtShiftCell(g.m7.fgRangeShiftYards, "yds")}</td>
-                            <td>${fmtShiftCell(g.m7.deepPassShiftYards, "yds")}</td>
-                            <td>${fmtShiftCell(g.m7.passGameModifierYards, "yds")}</td>
-                            <td>${isLocked ? renderLockCellHTML() : `${g.m11.rhoPlayerDensity} kg/m³`}</td>
-                            <td>${isLocked ? renderLockCellHTML() : `<span style="color:${bioColor}; font-weight:700;">&Psi;_elev: ${em.psiElevPts} pts | &Phi;_bio: ${g.m11.phiBioScore} (x${g.m11.closingMultiplier})</span>`}</td>
-                        </tr>
-                    `;
-                }).join("")}
-            </tbody>
-        </table>
-    `;
+function renderFaqAccordion() {
+    const el = document.getElementById("faq-accordion-list");
+    if (!el) return;
+    el.innerHTML = FAG_QUESTIONS_LIST.map((item, idx) => {
+        const isOpen = AppState.openFaq.has(idx);
+        return `
+            <div class="faq-item ${isOpen ? "open" : ""}">
+                <button type="button" class="faq-q" onclick="window.toggleFaqItem(${idx})">
+                    <span>${item.q}</span>
+                    <span class="faq-chev">▼</span>
+                </button>
+                <div class="faq-a">${item.a}</div>
+            </div>
+        `;
+    }).join("");
 }
 
 // ==========================================
-// PERMANENT ARCHIVE SEED + ZERO-TOKEN ESPN SCOREBOARD SYNC & 6 CLICKABLE VAULT CARDS
+// PERMANENT ARCHIVE + ZERO-TOKEN ESPN SCOREBOARD SYNC & 6 CLICKABLE LEDGER VAULTS
 // ==========================================
-const BLUE_BALLS_MARGIN = 3.0; // <= 3.0 pts miss from Vegas line = BLUE BALLS
-
 const PERMANENT_LEDGER_ARCHIVE = {
     "nfl_mnf_lac_bal_2026_w10": {
         league: "NFL",
@@ -2377,7 +2127,7 @@ const PERMANENT_LEDGER_ARCHIVE = {
             fade_proj: 2.1,
             fade_ev_pct: 27.62,
             safe_floor_hook: 10.5,
-            safe_floor_label: "Alt +10.5 (-175)",
+            safe_floor_label: "Alt +10.5 (-185)",
             safe_floor_win_pct: 88.4,
             result_floor: "HIT",
             result_straight: "HIT",
@@ -2433,11 +2183,6 @@ const PERMANENT_LEDGER_ARCHIVE = {
     }
 };
 
-const ESPN_SCORE_CACHE = {
-    lastFetchMs: 0,
-    gamesByMatchup: {}
-};
-
 async function syncEspnLiveScores() {
     const now = Date.now();
     if (now - ESPN_SCORE_CACHE.lastFetchMs < 60000) return;
@@ -2464,19 +2209,12 @@ async function syncEspnLiveScores() {
                 const awayCode = cleanTeamCode((awayObj.team && awayObj.team.abbreviation) || "");
                 const homeScore = parseFloat(homeObj.score || "0");
                 const awayScore = parseFloat(awayObj.score || "0");
-
                 const state = (ev.status && ev.status.type && ev.status.type.state) || "pre";
                 const shortDetail = (ev.status && ev.status.type && ev.status.type.shortDetail) || "";
                 const key = `${awayCode} @ ${homeCode}`;
                 const scoreObj = {
-                    league: ep.league,
-                    homeCode,
-                    awayCode,
-                    homeScore,
-                    awayScore,
-                    state,
-                    shortDetail,
-                    scoreStr: `${awayCode} ${awayScore} - ${homeCode} ${homeScore}`
+                    league: ep.league, homeCode, awayCode, homeScore, awayScore,
+                    state, shortDetail, scoreStr: `${awayCode} ${awayScore} - ${homeCode} ${homeScore}`
                 };
                 ESPN_SCORE_CACHE.gamesByMatchup[`${ep.league}_${key}`] = scoreObj;
                 if (!ESPN_SCORE_CACHE.gamesByMatchup[key] || ep.league === "NFL") {
@@ -2488,12 +2226,60 @@ async function syncEspnLiveScores() {
         }
     }
 
-    if (AppState.rawPayload) {
-        render_game_cards(AppState.rawPayload);
-    }
+    renderPicksFeed();
     renderHistoricalLedger();
     renderLiveBottomTicker();
 }
+
+window.toggleLedgerVault = function(vaultKey, event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    if (AppState.activeMode === "tip" && (vaultKey === "floors_ceilings" || vaultKey === "tip_vs_bd")) {
+        window.unlockBallsDeepMode(event);
+        return;
+    }
+    AppState.activeLedgerVault = (AppState.activeLedgerVault === vaultKey) ? null : vaultKey;
+    renderHistoricalLedger();
+};
+
+window.toggleLedgerFivePackView = function(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    AppState.ledgerFivePackView = (AppState.ledgerFivePackView === "flagship") ? "porkys" : "flagship";
+    if (AppState.activeLedgerVault === "flagship_5pack" || AppState.activeLedgerVault === "porkys_5pack") {
+        AppState.activeLedgerVault = (AppState.ledgerFivePackView === "porkys") ? "porkys_5pack" : "flagship_5pack";
+    }
+    renderHistoricalLedger();
+};
+
+window.setFivePackVaultWeek = function(weekVal, event) {
+    if (event) event.stopPropagation();
+    AppState.selectedFivePackWeek = weekVal || "ALL";
+    AppState.ledgerFivePackView = "flagship";
+    AppState.activeLedgerVault = "flagship_5pack";
+    renderHistoricalLedger();
+};
+
+window.setPorkysVaultWeek = function(weekVal, event) {
+    if (event) event.stopPropagation();
+    AppState.selectedPorkysWeek = weekVal || "ALL";
+    AppState.ledgerFivePackView = "porkys";
+    AppState.activeLedgerVault = "porkys_5pack";
+    renderHistoricalLedger();
+};
+
+window.toggleLedgerAllCompleted = function(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    AppState.ledgerShowAllCompleted = !AppState.ledgerShowAllCompleted;
+    renderHistoricalLedger();
+};
 
 function isRankedLedgerEntry(matchupStr, league, entryObj = null) {
     if (league === "NFL") return AppState.filters.nfl;
@@ -2507,9 +2293,7 @@ function isRankedLedgerEntry(matchupStr, league, entryObj = null) {
         if (entryObj && liveRanked.length >= 20) {
             const hFull = entryObj.home_full_name || "";
             const aFull = entryObj.away_full_name || "";
-            if (hFull || aFull) {
-                return liveRanked.includes(hFull) || liveRanked.includes(aFull);
-            }
+            if (hFull || aFull) return liveRanked.includes(hFull) || liveRanked.includes(aFull);
         }
         if (AppState.rawPayload && Array.isArray(AppState.rawPayload.games)) {
             const rawMatch = AppState.rawPayload.games.find(g => g.league === "NCAA" && `${cleanTeamCode(g.away_team)} @ ${cleanTeamCode(g.home_team)}` === matchupStr);
@@ -2543,53 +2327,6 @@ function gradeTotalByDirection(directionChar, targetLine, homeScore, awayScore) 
     return { outcome: "MISS", missBy: missPts };
 }
 
-function gradeTotalPick(projectedTotal, vegasTotal, homeScore, awayScore) {
-    const dirChar = (Number(projectedTotal) < Number(vegasTotal)) ? "U" : "O";
-    return gradeTotalByDirection(dirChar, vegasTotal, homeScore, awayScore);
-}
-
-// Collapsible Ledger Legend Drawer (VIP Club & Wingman Edition — "left the money on the dresser")
-function buildLedgerLegendHTML() {
-    const legendKey = "LEDGER_LEGEND_DRAWER";
-    const isLegendOpen = openCardMemory.has(legendKey);
-
-    return `
-        <div style="margin-bottom: 16px; border: 1px solid rgba(59, 130, 246, 0.45); border-radius: 8px; background: #0f172a; overflow: hidden;">
-            <div onclick="window.toggleLegendDrawer('${legendKey}', 'ledger', event)" style="cursor: pointer; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(90deg, rgba(59, 130, 246, 0.16), rgba(15, 23, 42, 0.9)); user-select: none;">
-                <span style="font-family: var(--font-mono); font-size: 12px; font-weight: 800; color: #60a5fa; letter-spacing: 0.03em;">
-                    💣 LEDGER DECODER: HOW WE GRADE MONEY SHOTS (W), BLUE BALLS (BB) &amp; GRENADES DODGED
-                </span>
-                <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); text-decoration: underline;">
-                    ${isLegendOpen ? 'Hide Decoder ▲' : 'Click to Expand ▼'}
-                </span>
-            </div>
-
-            <div style="display: ${isLegendOpen ? 'block' : 'none'}; padding: 14px 18px; border-top: 1px solid var(--border-subtle); font-size: 12px; line-height: 1.55; color: var(--text-secondary);">
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px;">
-                    <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
-                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">THE MORNING-AFTER SCORECARD (W - L - BB)</div>
-                        <div>• <strong style="color:var(--accent-emerald);">✅ HIT (W):</strong> <em>The Money Shot.</em> Covered the Vegas closing number, walked out, and left the money on the dresser.</div>
-                        <div style="margin-top: 4px;">• <strong style="color:#60a5fa;">🔵 BLUE BALLS (BB):</strong> <em>Robbed at the Two-Minute Warning.</em> Missed the Vegas line by <strong>&le;3.0 points (one field goal or less)</strong>—when she had you 99% of the way to the finish line and then Mom walks in.</div>
-                        <div style="margin-top: 4px;">• <strong style="color:var(--accent-danger);">❌ MISS (L):</strong> <em>Walk of Shame.</em> Missed the closing line by more than 3.0 points. No excuses—we post every receipt.</div>
-                    </div>
-
-                    <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
-                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">MAIN STAGE vs. LAP-DANCE COIN FLIPS</div>
-                        <div>• <strong style="color:var(--accent-emerald);">🔥 Official SMASH (&ge;+10.0% EV):</strong> Our headline earners that clear the +10% EV velvet rope, tracked alongside the <strong>Flagship 5-Pack</strong> and <strong>Ménage à Trois</strong>.</div>
-                        <div style="margin-top: 4px;">• <strong style="color:#60a5fa;">🔵 All Tease, No Squeeze (-18.9% to +9.9% EV):</strong> Tight toss-ups inside the -18.9% to +9.9% EV buffer—quarantined in their own booth so 50/50 bar-bet variance never waters down our Official SMASH record.</div>
-                    </div>
-
-                    <div style="background: rgba(30, 41, 59, 0.55); padding: 10px 12px; border-radius: 6px; border: 1px solid #1e293b;">
-                        <div style="font-family: var(--font-mono); font-weight: 800; color: var(--accent-danger); margin-bottom: 4px;">💣 GRENADES DODGED (&le;-19.0% EV)</div>
-                        <div>• <strong>Wingman Intervention:</strong> <em>You were a little too drunk to make that call last night.</em> Tracks the 1:45 AM beer-goggle public favorites we stamped with a red <strong>PASS (&le;-19.0% EV)</strong>—the ones that look like a 10 on TV after six drinks, right before they wreck your life.</div>
-                        <div style="margin-top: 4px;">• Every time a casual-bait favorite blows up and fails to cover, <strong>Grenades Dodged</strong> ticks up—counting how many times your wingman jumped on the grenade so you didn't wake up chewing your own arm off on Monday morning.</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
-}
-
 function renderHistoricalLedger() {
     const container = document.getElementById("ledger-container");
     if (!container) return;
@@ -2600,7 +2337,7 @@ function renderHistoricalLedger() {
 
     const ledgerObj = (AppState.rawPayload && AppState.rawPayload.historical_ledger) || {};
     const rawEntries = ledgerObj.entries || {};
-    const showBallsDeep = (AppState.activeMode === "balls_deep" || AppState.activeMode === "davinci");
+    const showBallsDeep = (AppState.activeMode !== "tip");
 
     const entriesMap = Object.assign({}, rawEntries, PERMANENT_LEDGER_ARCHIVE);
     Object.keys(rawEntries).forEach(k => {
@@ -2615,286 +2352,193 @@ function renderHistoricalLedger() {
     });
 
     const renderGradeBadge = (res, missBy = 0) => {
-        if (res === "HIT") {
-            return `<span class="badge-smash" style="font-size:11px;">✅ HIT</span>`;
-        }
-        if (res === "BLUE_BALLS") {
-            const marginTag = missBy > 0 ? ` (-${missBy} pts)` : "";
-            return `<span class="badge-pass" style="background:rgba(59,130,246,0.18);color:#60a5fa;border:1px solid rgba(59,130,246,0.55);font-size:11px;font-weight:800;">🔵 BLUE BALLS${marginTag}</span>`;
-        }
-        if (res === "MISS") {
-            return `<span class="badge-pass" style="background:rgba(239,68,68,0.18);color:var(--accent-danger);border-color:rgba(239,68,68,0.45);font-size:11px;">❌ MISS</span>`;
-        }
-        if (res === "PUSH") {
-            return `<span class="badge-pass" style="font-size:11px;">➖ PUSH</span>`;
-        }
-        return `<span class="badge-pass" style="color:var(--accent-cyan);border-color:rgba(6,182,212,0.4);font-size:11px;">⏳ LOCKED / PENDING</span>`;
+        if (res === "HIT") return `<span class="badge b-smash">✅ HIT</span>`;
+        if (res === "BLUE_BALLS") return `<span class="badge b-blue">🔵 BB${missBy > 0 ? ` (-${missBy})` : ""}</span>`;
+        if (res === "MISS") return `<span class="badge b-pass">❌ MISS</span>`;
+        if (res === "PUSH") return `<span class="badge b-muted">➖ PUSH</span>`;
+        return `<span class="badge b-cyan">⏳ PENDING</span>`;
     };
 
     const makeBucket = () => ({ hits: 0, misses: 0, blueBalls: 0, total: 0 });
     const buckets = {
-        flagship_5pack: makeBucket(),
-        menage_a_trois: makeBucket(),
-        porkys_5pack:   makeBucket(),
-        porkys_core3:   makeBucket(),
-        porkys_flex2:   makeBucket(),
-        overall_smash:  makeBucket(),
-        smash_key_exec: makeBucket(),
-        spread_smash:   makeBucket(),
-        total_smash:    makeBucket(),
-        all_tease:      makeBucket(),
+        flagship_5pack: makeBucket(), menage_a_trois: makeBucket(),
+        porkys_5pack: makeBucket(), porkys_core3: makeBucket(), porkys_flex2: makeBucket(),
+        overall_smash: makeBucket(), smash_key_exec: makeBucket(),
+        spread_smash: makeBucket(), total_smash: makeBucket(),
+        all_tease: makeBucket(),
         champagne_room: { dodged: 0, total: 0 },
-        safe_floors:    makeBucket(),
-        ceilings:       makeBucket(),
-        tip_all:        makeBucket(),
-        balls_deep_all: makeBucket()
+        safe_floors: makeBucket(), ceilings: makeBucket(),
+        wong_teasers: makeBucket(),
+        tip_all: makeBucket(), balls_deep_all: makeBucket()
     };
 
     const fivePackByWeek = {};
     const ensureWeekFivePackBucket = (wk) => {
-        if (!fivePackByWeek[wk]) {
-            fivePackByWeek[wk] = {
-                hits: 0,
-                misses: 0,
-                blueBalls: 0,
-                total: 0,
-                menage: makeBucket(),
-                rows: []
-            };
-        }
+        if (!fivePackByWeek[wk]) fivePackByWeek[wk] = { hits: 0, misses: 0, blueBalls: 0, total: 0, menage: makeBucket(), rows: [] };
         return fivePackByWeek[wk];
     };
 
     const porkysByWeek = {};
     const ensureWeekPorkysBucket = (wk) => {
-        if (!porkysByWeek[wk]) {
-            porkysByWeek[wk] = {
-                hits: 0,
-                misses: 0,
-                blueBalls: 0,
-                total: 0,
-                core3: makeBucket(),
-                flex2: makeBucket(),
-                coreLegs: [],
-                flexLegs: [],
-                rows: []
-            };
-        }
+        if (!porkysByWeek[wk]) porkysByWeek[wk] = { hits: 0, misses: 0, blueBalls: 0, total: 0, core3: makeBucket(), flex2: makeBucket(), coreLegs: [], flexLegs: [], rows: [] };
         return porkysByWeek[wk];
     };
 
     const vaultRows = {
-        flagship_5pack: [],
-        porkys_5pack: [],
-        overall_smash: [],
-        all_tease: [],
-        grenades_dodged: [],
-        floors_ceilings: [],
-        tip_vs_bd: []
+        flagship_5pack: [], porkys_5pack: [], overall_smash: [],
+        all_tease: [], grenades_dodged: [], floors_ceilings: [], tip_vs_bd: []
     };
 
-    const tallyGradeToObj = (targetObj, res) => {
+    const tallyObj = (obj, res) => {
         if (res !== "HIT" && res !== "MISS" && res !== "BLUE_BALLS") return;
-        targetObj.total += 1;
-        if (res === "HIT") targetObj.hits += 1;
-        else if (res === "BLUE_BALLS") targetObj.blueBalls += 1;
-        else if (res === "MISS") targetObj.misses += 1;
+        obj.total += 1;
+        if (res === "HIT") obj.hits += 1;
+        else if (res === "BLUE_BALLS") obj.blueBalls += 1;
+        else obj.misses += 1;
     };
-
-    const tallyGrade = (bucketKey, res) => {
-        tallyGradeToObj(buckets[bucketKey], res);
-    };
+    const tally = (key, res) => tallyObj(buckets[key], res);
 
     let upcomingRowsHTML = "";
     const renderedMatchups = new Set();
     const activeSlateMatchups = new Set(AppState.processedGames.map(g => `${g.league}_${g.matchup}_${g.weekLabel || "Week 11"}`));
-
-    const buildStandardVaultRowHTML = (weekLabel, cleanMatchup, statusLabel, type, slot, pickLabel, ledgerTier, vegasLine, baseOdds, tipColor, fmtTipProj, tipWinPct, tipEvPct, showBallsDeepFlag, bdColor, fmtBdProj, bdWinPct, bdEvPct, safeFloorLabel, safeFloorWinPct, bdAltLabel, bdAltEvPct, gradedTip, missByPts) => {
-        const floorInfoHTML = safeFloorLabel
-            ? `<small style="color:var(--accent-cyan);">🛡️ ${safeFloorLabel} (${safeFloorWinPct}%)</small> • `
-            : "";
-        return `
-            <tr>
-                <td><span style="font-family:var(--font-mono); font-size:10px; color:var(--accent-gold); font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
-                <td>${type} ${slot ? `<br><span class="${slot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}">${slot}</span>` : ""}</td>
-                <td><strong>${pickLabel}</strong> ${renderTierBadgeHTML(ledgerTier)}</td>
-                <td>${vegasLine} (${baseOdds > 0 ? '+' + baseOdds : baseOdds})</td>
-                <td style="color:${tipColor};">Proj: <strong>${fmtTipProj}</strong> (${tipWinPct}% | ${tipEvPct > 0 ? '+' : ''}${tipEvPct}% EV)</td>
-                <td>${showBallsDeepFlag ? `<span style="color:${bdColor};">Proj: <strong>${fmtBdProj}</strong> (${bdWinPct}% | ${bdEvPct > 0 ? '+' : ''}${bdEvPct}% EV)<br>${floorInfoHTML}<small style="color:var(--accent-gold);">🎯 ${bdAltLabel} (${bdAltEvPct > 0 ? '+' : ''}${bdAltEvPct}% EV)</small></span>` : renderLockCellHTML()}</td>
-                <td>${renderGradeBadge(gradedTip, missByPts)}</td>
-            </tr>
-        `;
-    };
-
-    const buildFloorCeilingVaultRowHTML = (weekLabel, cleanMatchup, statusLabel, type, pickLabel, vegasLine, safeFloorLabel, safeFloorWinPct, gradedFloor, floorMissBy, bdAltLabel, bdAltEvPct, gradedCeiling, ceilingMissBy) => {
-        return `
-            <tr>
-                <td><span style="font-family:var(--font-mono); font-size:10px; color:var(--accent-gold); font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
-                <td>${type}</td>
-                <td><strong>${pickLabel}</strong><br><span style="font-size:11px; color:var(--text-secondary);">Base Line: ${vegasLine}</span></td>
-                <td style="color:var(--accent-cyan); font-weight:700;">🛡️ ${safeFloorLabel || 'Safe Floor (-2φ)'}<br><small style="color:var(--text-secondary);">Floor Win Prob: ${safeFloorWinPct || 85.0}%</small></td>
-                <td>${renderGradeBadge(gradedFloor, floorMissBy)}</td>
-                <td style="color:var(--accent-gold); font-weight:700;">🎯 ${bdAltLabel || 'Ceiling Escalator (+φ)'}<br><small style="color:var(--text-secondary);">Alt EV: ${bdAltEvPct > 0 ? '+' : ''}${bdAltEvPct || 0}% EV</small></td>
-                <td>${renderGradeBadge(gradedCeiling, ceilingMissBy)}</td>
-            </tr>
-        `;
-    };
-
-    const buildPorkysVaultRowHTML = (weekLabel, cleanMatchup, statusLabel, slotLabel, isCore3, trapLabel, trapLine, trapProj, trapEvPct, fadeTeam, safeFloorLabel, safeFloorWinPct, fadeBaseLine, gradedFloor, floorMissBy, gradedStraight, straightMissBy) => {
-        const slotStyle = isCore3
-            ? "background:rgba(239,68,68,0.18); color:#f87171; border:1px solid rgba(239,68,68,0.55);"
-            : "background:rgba(236,72,153,0.16); color:#f472b6; border:1px solid rgba(236,72,153,0.5);";
-        const tierLabel = isCore3 ? "3-PICK CORE" : "2-PICK FLEX";
-        const fmtTrapLine = Number(trapLine) > 0 ? `+${trapLine}` : `${trapLine}`;
-        const fmtFadeLine = Number(fadeBaseLine) > 0 ? `+${fadeBaseLine}` : `${fadeBaseLine}`;
-        return `
-            <tr>
-                <td><span style="font-family:var(--font-mono); font-size:10px; color:#f87171; font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
-                <td><span style="font-family:var(--font-mono); font-size:10px; font-weight:800; padding:2px 6px; border-radius:4px; ${slotStyle}">🐷 ${slotLabel}</span><br><small style="color:var(--text-secondary);">${tierLabel}</small></td>
-                <td><strong style="color:var(--accent-danger);">🚫 ${trapLabel}</strong><br><small style="color:var(--text-secondary);">Line: ${fmtTrapLine} | Proj: ${trapProj} (${trapEvPct}% EV)</small></td>
-                <td style="color:var(--accent-cyan); font-weight:700;">🛡️ ${fadeTeam} ${safeFloorLabel}<br><small style="color:var(--text-secondary);">Base Fade: ${fadeTeam} ${fmtFadeLine} • Floor Win: ${safeFloorWinPct}%</small></td>
-                <td>${renderGradeBadge(gradedFloor, floorMissBy)}</td>
-                <td>${renderGradeBadge(gradedStraight, straightMissBy)}</td>
-                <td>${gradedFloor === "HIT" ? '<span class="badge-smash" style="font-size:11px;">🐷 PARLAY LEG HIT</span>' : (gradedFloor === "PENDING" ? '<span class="badge-pass" style="color:var(--accent-cyan);border-color:rgba(6,182,212,0.4);font-size:11px;">⏳ ACTIVE LEG</span>' : '<span class="badge-pass" style="background:rgba(239,68,68,0.18);color:var(--accent-danger);font-size:11px;">💥 LEG BUSTED</span>')}</td>
-            </tr>
-        `;
-    };
-
     const recordedPorkysMatchups = new Set();
 
-    // Helper: extract numeric {awayScore, homeScore} from ESPN live cache or archived final_score ("IND 3 - HOU 26")
+    const buildStandardRow = (weekLabel, cleanMatchup, statusLabel, type, slot, pickLabel, ledgerTier, vegasLine, baseOdds, tipColor, fmtTipProj, tipWinPct, tipEvPct, bdColor, fmtBdProj, bdWinPct, bdEvPct, safeFloorLabel, safeFloorWinPct, bdAltLabel, bdAltEvPct, gradedTip, missByPts) => `
+        <tr>
+            <td><span style="color:var(--gold); font-size:10px; font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+            <td>${type}${slot ? `<br><span class="badge ${slot.includes("MÉNAGE") ? "b-gold" : "b-cyan"}" style="margin-top:3px;">${slot}</span>` : ""}</td>
+            <td><strong>${pickLabel}</strong> ${renderTierBadgeHTML(ledgerTier)}</td>
+            <td>${vegasLine} (${baseOdds > 0 ? "+" : ""}${baseOdds})</td>
+            <td style="color:${tipColor};">Proj <strong>${fmtTipProj}</strong> (${tipWinPct}% · ${tipEvPct > 0 ? "+" : ""}${tipEvPct}%)</td>
+            <td>${showBallsDeep
+                ? `<span style="color:${bdColor};">Proj <strong>${fmtBdProj}</strong> (${bdWinPct}% · ${bdEvPct > 0 ? "+" : ""}${bdEvPct}%)<br><small style="color:var(--cyan);">🔑 ${safeFloorLabel} (${safeFloorWinPct}%)</small> · <small style="color:var(--gold);">🎯 ${bdAltLabel}</small></span>`
+                : renderLockSpanHTML("🔒 Balls Deep")
+            }</td>
+            <td>${renderGradeBadge(gradedTip, missByPts)}</td>
+        </tr>
+    `;
+
+    const buildFloorCeilingRow = (weekLabel, cleanMatchup, statusLabel, type, pickLabel, vegasLine, safeFloorLabel, safeFloorWinPct, gradedFloor, floorMissBy, bdAltLabel, bdAltEvPct, gradedCeiling, ceilingMissBy) => `
+        <tr>
+            <td><span style="color:var(--gold); font-size:10px; font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+            <td>${type}</td>
+            <td><strong>${pickLabel}</strong><br><small style="color:var(--text-3);">Base: ${vegasLine}</small></td>
+            <td style="color:var(--cyan); font-weight:700;">🔑 ${safeFloorLabel}<br><small style="color:var(--text-2);">Win Prob: ${safeFloorWinPct}%</small></td>
+            <td>${renderGradeBadge(gradedFloor, floorMissBy)}</td>
+            <td style="color:var(--gold); font-weight:700;">🎯 ${bdAltLabel}<br><small style="color:var(--text-2);">Alt EV: ${bdAltEvPct > 0 ? "+" : ""}${bdAltEvPct}%</small></td>
+            <td>${renderGradeBadge(gradedCeiling, ceilingMissBy)}</td>
+        </tr>
+    `;
+
+    const buildPorkysRow = (weekLabel, cleanMatchup, statusLabel, slotLabel, isCore3, trapLabel, trapLine, trapProj, trapEvPct, fadeTeam, safeFloorLabel, safeFloorWinPct, fadeBaseLine, gradedFloor, floorMissBy, gradedStraight, straightMissBy) => `
+        <tr>
+            <td><span style="color:var(--red); font-size:10px; font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
+            <td><span class="badge b-pass">🐷 ${slotLabel}</span><br><small style="color:var(--text-3);">${isCore3 ? "3-PICK CORE" : "2-PICK FLEX"}</small></td>
+            <td><strong style="color:var(--red);">🚫 ${trapLabel}</strong><br><small style="color:var(--text-3);">Line ${fmtSigned(trapLine, 1)} · Proj ${trapProj} (${trapEvPct}%)</small></td>
+            <td style="color:var(--cyan); font-weight:700;">${showBallsDeep ? `🛡️ ${fadeTeam} ${safeFloorLabel}<br><small style="color:var(--text-2);">Base ${fmtSigned(fadeBaseLine, 1)} · ${safeFloorWinPct}%</small>` : renderLockSpanHTML("🔒 Floor Locked")}</td>
+            <td>${showBallsDeep ? renderGradeBadge(gradedFloor, floorMissBy) : renderLockSpanHTML("🔒")}</td>
+            <td>${renderGradeBadge(gradedStraight, straightMissBy)}</td>
+        </tr>
+    `;
+
     const parseFinalScores = (entryObj, espnObj) => {
         if (espnObj && espnObj.state === "post" && !isNaN(espnObj.homeScore) && !isNaN(espnObj.awayScore)) {
             return { awayScore: Number(espnObj.awayScore), homeScore: Number(espnObj.homeScore) };
         }
         if (entryObj && typeof entryObj.final_score === "string") {
             const m = entryObj.final_score.match(/\s(\d+)\s*-\s*[A-Za-z0-9()]+\s+(\d+)/);
-            if (m) {
-                return { awayScore: Number(m[1]), homeScore: Number(m[2]) };
-            }
+            if (m) return { awayScore: Number(m[1]), homeScore: Number(m[2]) };
         }
         return null;
     };
 
-    // Prioritize permanent archive -> canonical prefixed FINAL/graded entries -> newer entries (fixes IND_HOU_2026 vs NFL_IND_HOU_2026 shadowing)
     const sortedArchiveIds = Object.keys(entriesMap).sort((a, b) => {
-        const ea = entriesMap[a] || {};
-        const eb = entriesMap[b] || {};
         const scoreEntry = (id, e) => {
             let s = 0;
             if (PERMANENT_LEDGER_ARCHIVE[id]) s += 100;
             const sOdds = Math.abs(Number((e.spread_record && e.spread_record.odds) || -110));
             const tOdds = Math.abs(Number((e.total_record && e.total_record.odds) || -110));
-            const isCorruptedLive = (sOdds >= 220 || tOdds >= 220);
-            if (!isCorruptedLive) s += 50;
+            if (sOdds < 220 && tOdds < 220) s += 50;
             if (e.status === "FINAL") s += 30;
             if (e.spread_record && e.spread_record.result_tip && e.spread_record.result_tip !== "PENDING") s += 20;
             if (id.startsWith("NFL_") || id.startsWith("NCAA_")) s += 10;
             return s;
         };
-        return scoreEntry(b, eb) - scoreEntry(a, ea);
+        return scoreEntry(b, entriesMap[b] || {}) - scoreEntry(a, entriesMap[a] || {});
     });
 
-    // 1. Process COMPLETED/FINAL archived games and store them in their respective Clickable Card Vaults
+    // 1. Completed Archive Entries -> Scorecard Vaults
     sortedArchiveIds.forEach(archId => {
         const entry = entriesMap[archId];
         if (!entry) return;
-
         const cleanMatchup = cleanLabelCodes(entry.matchup || "");
         const entryLeague = entry.league || "NFL";
         const weekLabel = inferFootballWeekLabel(entry, "Week 11");
         const rematchKey = `${entryLeague}_${cleanMatchup}_${weekLabel}`;
         if (!cleanMatchup || renderedMatchups.has(rematchKey)) return;
-
         if (!isRankedLedgerEntry(cleanMatchup, entryLeague, entry)) return;
 
         const espnMatch = getEspnScoreMatch(entryLeague, cleanMatchup);
         const parsedScores = parseFinalScores(entry, espnMatch);
-        const isFinal = entry.status === "FINAL" || (espnMatch && espnMatch.state === "post");
+        const isFinal = entry.status === "FINAL" || Boolean(espnMatch && espnMatch.state === "post");
+        if (activeSlateMatchups.has(rematchKey) && !isFinal) return;
 
-        if (activeSlateMatchups.has(`${entryLeague}_${cleanMatchup}_${weekLabel}`) && !isFinal) return;
-
-        const hasGradedResult = entry.spread_record && (
-            entry.spread_record.result_tip === "HIT" ||
-            entry.spread_record.result_tip === "MISS" ||
-            entry.spread_record.result_tip === "BLUE_BALLS" ||
-            entry.spread_record.result_tip === "PUSH"
-        );
-        if (!isFinal && !hasGradedResult) return;
+        const hasGraded = entry.spread_record && ["HIT", "MISS", "BLUE_BALLS", "PUSH"].includes(entry.spread_record.result_tip);
+        if (!isFinal && !hasGraded) return;
 
         renderedMatchups.add(rematchKey);
-        const scoreDisplay = entry.final_score || (espnMatch ? espnMatch.scoreStr : "COMPLETED");
-        const statusLabel = `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${scoreDisplay})</span>`;
+        const scoreDisplay = entry.final_score || (espnMatch ? espnMatch.scoreStr : "FINAL");
+        const statusLabel = `<span style="color:var(--emerald); font-weight:700;">${scoreDisplay}</span>`;
 
-        const matchupParts = cleanMatchup.split("@").map(s => cleanTeamCode(s.trim()));
-        const entryAwayCode = cleanTeamCode(entry.away_team || matchupParts[0] || "");
-        const entryHomeCode = cleanTeamCode(entry.home_team || matchupParts[1] || "");
+        const parts = cleanMatchup.split("@").map(s => cleanTeamCode(s.trim()));
+        const entryAwayCode = cleanTeamCode(entry.away_team || parts[0] || "");
+        const entryHomeCode = cleanTeamCode(entry.home_team || parts[1] || "");
 
-        // Detect Grenade Dodged from explicit archive metadata, Porky's record, OR any archived FINAL spread whose opposite side was <= -19.0% EV PASS
+        // Grenades Dodged Audit
         if (entry.trap_avoided) {
             buckets.champagne_room.total += 1;
             buckets.champagne_room.dodged += 1;
-            const trapLabel = cleanLabelCodes(entry.trap_pick_label || `${cleanMatchup} Public Favorite Trap`);
-            const trapLine = entry.trap_vegas_line !== undefined ? entry.trap_vegas_line : "--";
-            const trapProj = entry.trap_tip_proj !== undefined ? entry.trap_tip_proj : "--";
-            const trapEv = entry.trap_tip_ev_pct !== undefined ? `${entry.trap_tip_ev_pct}% EV` : "&le;-19.0% EV";
-            const fadeSideLabel = (entry.spread_record && entry.spread_record.pick_label) ? cleanLabelCodes(entry.spread_record.pick_label) : "Counter-Strike Dog";
-
             vaultRows.grenades_dodged.push(`
                 <tr>
-                    <td><span style="font-family:var(--font-mono); font-size:10px; color:var(--accent-gold); font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
-                    <td>PUBLIC GRENADE<br><span class="badge-pass" style="background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);font-size:10px;font-weight:800;">PASS</span></td>
-                    <td><strong style="color:var(--accent-danger);">🚫 TRAP: ${trapLabel}</strong></td>
-                    <td>${trapLine} (-110)</td>
-                    <td style="color:var(--accent-danger);">Proj: <strong>${trapProj}</strong> (${trapEv})</td>
-                    <td style="color:var(--accent-emerald);"><strong>✅ FADE HIT:</strong> ${fadeSideLabel}</td>
-                    <td><span class="badge-smash" style="font-size:11px;">💣 GRENADE DODGED</span></td>
+                    <td><span style="color:var(--gold); font-size:10px; font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br>${statusLabel}</td>
+                    <td><span class="badge b-pass">PASS TRAP</span></td>
+                    <td style="color:var(--red);"><strong>🚫 ${cleanLabelCodes(entry.trap_pick_label || `${cleanMatchup} Trap`)}</strong></td>
+                    <td>${entry.trap_vegas_line !== undefined ? entry.trap_vegas_line : "--"} (-110)</td>
+                    <td style="color:var(--red);">Proj ${entry.trap_tip_proj !== undefined ? entry.trap_tip_proj : "--"} (${entry.trap_tip_ev_pct !== undefined ? entry.trap_tip_ev_pct + "%" : "≤-19%"})</td>
+                    <td style="color:var(--emerald);">✅ ${cleanLabelCodes((entry.spread_record && entry.spread_record.pick_label) || "Counter-Strike Fade")}</td>
+                    <td><span class="badge b-smash">💣 DODGED</span></td>
                 </tr>
             `);
         } else if (isFinal && entry.spread_record) {
             const sr = entry.spread_record;
-            const fadeWinProb = Number(sr.tip_win_pct !== undefined ? sr.tip_win_pct : (sr.tipModelPct || 50)) / 100.0;
+            const fadeWinProb = Number(sr.tip_win_pct !== undefined ? sr.tip_win_pct : 50) / 100.0;
             const oppWinProb = Math.max(0.01, Math.min(0.99, 1.0 - fadeWinProb));
             const derivedTrapEv = Number((((oppWinProb * (100.0 / 110.0)) - (1.0 - oppWinProb)) * 100.0).toFixed(2));
-            const prTrapEv = (entry.porkys_record && entry.porkys_record.trap_ev_pct !== undefined) ? Number(entry.porkys_record.trap_ev_pct) : null;
-            const trapEvNum = prTrapEv !== null ? prTrapEv : derivedTrapEv;
+            const trapEvNum = (entry.porkys_record && entry.porkys_record.trap_ev_pct !== undefined) ? Number(entry.porkys_record.trap_ev_pct) : derivedTrapEv;
 
             if (trapEvNum <= PASS_EV_CUTOFF) {
-                const fadeLineNum = Number(sr.vegas_line !== undefined ? sr.vegas_line : (sr.vegas_closing_line !== undefined ? sr.vegas_closing_line : 0));
-                const fadeProjNum = Number(sr.tip_proj !== undefined ? sr.tip_proj : fadeLineNum);
+                const fadeLineNum = Number(sr.vegas_line !== undefined ? sr.vegas_line : (sr.vegas_closing_line || 0));
                 const fadeTeamClean = cleanTeamCode(sr.pick_team || "");
                 const fadeIsHome = (fadeTeamClean && fadeTeamClean === entryHomeCode) || cleanLabelCodes(sr.pick_label || "").startsWith(`${entryHomeCode} `);
                 const trapTeamCode = fadeIsHome ? entryAwayCode : entryHomeCode;
                 const trapLineNum = -fadeLineNum;
-                const trapProjNum = Number((-fadeProjNum).toFixed(2));
-                const fmtTrapLine = trapLineNum > 0 ? `+${trapLineNum}` : `${trapLineNum}`;
-                const fmtTrapProj = trapProjNum > 0 ? `+${trapProjNum}` : `${trapProjNum}`;
-                const trapLabel = (entry.porkys_record && entry.porkys_record.trap_label)
-                    ? cleanLabelCodes(entry.porkys_record.trap_label)
-                    : `${trapTeamCode} Spread (${fmtTrapLine}) (${cleanMatchup})`;
-                const fadeSideLabel = cleanLabelCodes(sr.pick_label || `${fadeTeamClean || (fadeIsHome ? entryHomeCode : entryAwayCode)} Spread`);
-
                 let trapOutcome = null;
-                if (parsedScores) {
-                    trapOutcome = gradeSpreadPick(!fadeIsHome, trapLineNum, parsedScores.homeScore, parsedScores.awayScore).outcome;
-                } else if (sr.result_tip && sr.result_tip !== "PENDING") {
-                    trapOutcome = (sr.result_tip === "HIT" || sr.result_tip === "PUSH") ? "MISS" : "HIT";
-                }
+                if (parsedScores) trapOutcome = gradeSpreadPick(!fadeIsHome, trapLineNum, parsedScores.homeScore, parsedScores.awayScore).outcome;
+                else if (sr.result_tip && sr.result_tip !== "PENDING") trapOutcome = (sr.result_tip === "HIT" || sr.result_tip === "PUSH") ? "MISS" : "HIT";
 
                 if (trapOutcome) {
                     buckets.champagne_room.total += 1;
-                    const dodgedSuccess = (trapOutcome !== "HIT");
-                    if (dodgedSuccess) {
+                    if (trapOutcome !== "HIT") {
                         buckets.champagne_room.dodged += 1;
                         vaultRows.grenades_dodged.push(`
                             <tr>
-                                <td><span style="font-family:var(--font-mono); font-size:10px; color:var(--accent-gold); font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
-                                <td>PUBLIC GRENADE<br><span class="badge-pass" style="background:rgba(239,68,68,0.16);color:#ef4444;border:1px solid rgba(239,68,68,0.45);font-size:10px;font-weight:800;">PASS</span></td>
-                                <td><strong style="color:var(--accent-danger);">🚫 TRAP: ${trapLabel}</strong></td>
-                                <td>${fmtTrapLine} (-110)</td>
-                                <td style="color:var(--accent-danger);">Proj: <strong>${fmtTrapProj}</strong> (${trapEvNum}% EV)</td>
-                                <td style="color:var(--accent-emerald);"><strong>✅ FADE HIT:</strong> ${fadeSideLabel}</td>
-                                <td><span class="badge-smash" style="font-size:11px;">💣 GRENADE DODGED</span></td>
+                                <td><span style="color:var(--gold); font-size:10px; font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br>${statusLabel}</td>
+                                <td><span class="badge b-pass">PASS TRAP</span></td>
+                                <td style="color:var(--red);"><strong>🚫 ${trapTeamCode} ${fmtSigned(trapLineNum, 1)}</strong></td>
+                                <td>${fmtSigned(trapLineNum, 1)} (-110)</td>
+                                <td style="color:var(--red);">${trapEvNum}% EV</td>
+                                <td style="color:var(--emerald);">✅ ${cleanLabelCodes(sr.pick_label || fadeTeamClean)}</td>
+                                <td><span class="badge b-smash">💣 DODGED</span></td>
                             </tr>
                         `);
                     }
@@ -2902,873 +2546,383 @@ function renderHistoricalLedger() {
             }
         }
 
-        // Audit archived Porky's 5-Pack (3 Core Day-Shift Traps + 2 Keep-It-In-Your-Pants Flex)
+        // Porky's Audit
         if (entry.porkys_record && !recordedPorkysMatchups.has(rematchKey)) {
             recordedPorkysMatchups.add(rematchKey);
             const pr = entry.porkys_record;
             const pSlot = pr.porkys_slot || "DAY-SHIFT TRAP #1";
             const isCore3 = pr.is_core_three !== undefined ? Boolean(pr.is_core_three) : pSlot.toUpperCase().includes("DAY-SHIFT");
-            const pTrapLabel = cleanLabelCodes(pr.trap_label || `${cleanMatchup} Trap`);
             const pFadeTeam = cleanTeamCode(pr.fade_team || entryHomeCode);
             const isHomeFade = (pFadeTeam === entryHomeCode);
-            const pFadeLine = Number(pr.fade_line !== undefined ? pr.fade_line : 0);
+            const pFadeLine = Number(pr.fade_line || 0);
             const pFloorHook = pr.safe_floor_hook !== undefined ? Number(pr.safe_floor_hook) : snapToHalfPointHook(pFadeLine, +3.5);
-            const pFloorLabel = pr.safe_floor_label || `Alt ${pFloorHook > 0 ? '+' + pFloorHook.toFixed(1) : pFloorHook.toFixed(1)} (-175)`;
-            const pFloorWinPct = pr.safe_floor_win_pct || 85.0;
-
-            let pFloorRes = pr.result_floor || "PENDING";
-            let pFloorMiss = Number(pr.floor_miss_by || 0);
-            let pStraightRes = pr.result_straight || "PENDING";
-            let pStraightMiss = Number(pr.straight_miss_by || 0);
+            const pFloorLabel = pr.safe_floor_label || `Alt ${fmtSigned(pFloorHook, 1)} (-185)`;
+            let pFloorRes = pr.result_floor || "PENDING", pFloorMiss = Number(pr.floor_miss_by || 0);
+            let pStraightRes = pr.result_straight || "PENDING", pStraightMiss = Number(pr.straight_miss_by || 0);
 
             if (parsedScores && (pFloorRes === "PENDING" || pStraightRes === "PENDING")) {
-                const flObj = gradeSpreadPick(isHomeFade, pFloorHook, parsedScores.homeScore, parsedScores.awayScore);
-                const stObj = gradeSpreadPick(isHomeFade, pFadeLine, parsedScores.homeScore, parsedScores.awayScore);
-                if (pFloorRes === "PENDING") { pFloorRes = flObj.outcome; pFloorMiss = flObj.missBy; }
-                if (pStraightRes === "PENDING") { pStraightRes = stObj.outcome; pStraightMiss = stObj.missBy; }
+                const fl = gradeSpreadPick(isHomeFade, pFloorHook, parsedScores.homeScore, parsedScores.awayScore);
+                const st = gradeSpreadPick(isHomeFade, pFadeLine, parsedScores.homeScore, parsedScores.awayScore);
+                if (pFloorRes === "PENDING") { pFloorRes = fl.outcome; pFloorMiss = fl.missBy; }
+                if (pStraightRes === "PENDING") { pStraightRes = st.outcome; pStraightMiss = st.missBy; }
             }
 
-            const pRowHTML = buildPorkysVaultRowHTML(
+            const pRow = buildPorkysRow(
                 weekLabel, cleanMatchup, statusLabel, pSlot, isCore3,
-                pTrapLabel, pr.trap_line !== undefined ? pr.trap_line : -pFadeLine,
+                cleanLabelCodes(pr.trap_label || `${cleanMatchup} Trap`),
+                pr.trap_line !== undefined ? pr.trap_line : -pFadeLine,
                 pr.trap_proj !== undefined ? pr.trap_proj : "--",
                 pr.trap_ev_pct !== undefined ? pr.trap_ev_pct : "--",
-                pFadeTeam, pFloorLabel, pFloorWinPct, pFadeLine,
+                pFadeTeam, pFloorLabel, pr.safe_floor_win_pct || 85.0, pFadeLine,
                 pFloorRes, pFloorMiss, pStraightRes, pStraightMiss
             );
-
-            const pWkObj = ensureWeekPorkysBucket(weekLabel);
-            if (pFloorRes === "HIT" || pFloorRes === "MISS" || pFloorRes === "BLUE_BALLS") {
-                tallyGrade("porkys_5pack", pFloorRes);
-                tallyGrade(isCore3 ? "porkys_core3" : "porkys_flex2", pFloorRes);
-                tallyGradeToObj(pWkObj, pFloorRes);
-                tallyGradeToObj(isCore3 ? pWkObj.core3 : pWkObj.flex2, pFloorRes);
+            const pWk = ensureWeekPorkysBucket(weekLabel);
+            if (["HIT", "MISS", "BLUE_BALLS"].includes(pFloorRes)) {
+                tally("porkys_5pack", pFloorRes);
+                tally(isCore3 ? "porkys_core3" : "porkys_flex2", pFloorRes);
+                tallyObj(pWk, pFloorRes);
+                tallyObj(isCore3 ? pWk.core3 : pWk.flex2, pFloorRes);
             }
-            if (isCore3) pWkObj.coreLegs.push({ slot: pSlot, outcome: pFloorRes });
-            else pWkObj.flexLegs.push({ slot: pSlot, outcome: pFloorRes });
-            pWkObj.rows.push(pRowHTML);
-            vaultRows.porkys_5pack.push({ weekLabel, rowHTML: pRowHTML, isCore3, outcome: pFloorRes });
+            if (isCore3) pWk.coreLegs.push({ outcome: pFloorRes });
+            else pWk.flexLegs.push({ outcome: pFloorRes });
+            pWk.rows.push(pRow);
+            vaultRows.porkys_5pack.push({ weekLabel, rowHTML: pRow });
         }
 
-        const archivedRecords = [
-            { type: "SPREAD", rec: entry.spread_record },
-            { type: "TOTAL (O/U)", rec: entry.total_record }
-        ].filter(x => x.rec);
+        // Spread + Total Records
+        [{ type: "SPREAD", rec: entry.spread_record }, { type: "TOTAL", rec: entry.total_record }]
+            .filter(x => x.rec)
+            .forEach(({ type, rec }) => {
+                const isSpread = (type === "SPREAD");
+                const pickLabel = cleanLabelCodes(rec.pick_label || rec.player || cleanMatchup);
+                const vegasLine = Number(rec.vegas_line !== undefined ? rec.vegas_line : (rec.vegas_closing_line !== undefined ? rec.vegas_closing_line : 0));
+                const baseOdds = Number(rec.odds || -110);
+                const tipProj = Number(rec.tip_proj !== undefined ? rec.tip_proj : vegasLine);
+                const tipWinPct = Number(rec.tip_win_pct !== undefined ? rec.tip_win_pct : 50);
+                const tipEvPct = Number(rec.tip_ev_pct !== undefined ? rec.tip_ev_pct : 0);
+                const ledgerTier = getTierFromEv(tipEvPct);
+                const tipColor = getTierColor(ledgerTier);
 
-        archivedRecords.forEach(({ type, rec }) => {
-            const isSpread = type === "SPREAD";
-            const pickLabel = cleanLabelCodes(rec.pick_label || rec.player || cleanMatchup);
-            const vegasLine = rec.vegas_line !== undefined ? Number(rec.vegas_line) : (rec.vegas_closing_line !== undefined ? Number(rec.vegas_closing_line) : (rec.line !== undefined ? Number(rec.line) : Number(rec.baseLine || 0)));
-            const baseOdds = rec.odds !== undefined ? rec.odds : (rec.baseOdds || -110);
-            const tipProj = rec.tip_proj !== undefined ? Number(rec.tip_proj) : Number(rec.tipProjectedMean || vegasLine);
-            const tipWinPct = rec.tip_win_pct !== undefined ? rec.tip_win_pct : (rec.tipModelPct || 50);
-            const tipEvPct = rec.tip_ev_pct !== undefined ? rec.tip_ev_pct : (rec.tipEvPct || 0);
-            const ledgerTier = getTierFromEv(tipEvPct);
-            const tipColor = getTierColor(ledgerTier);
+                const archEng = (typeof getLeagueEngine === "function") ? getLeagueEngine(entryLeague) : null;
+                const archWinProb = (gap) => !archEng ? calcPointGapWinProb(gap) : (!isSpread && archEng.totalWinProb ? archEng.totalWinProb(gap) : archEng.winProb(gap));
 
-            const archEng = (typeof getLeagueEngine === "function") ? getLeagueEngine(entryLeague) : null;
-            const archWinProbFn = (gap) => {
-                if (!archEng) return calcPointGapWinProb(gap);
-                if (!isSpread && archEng.totalWinProb) return archEng.totalWinProb(gap);
-                return archEng.winProb(gap);
-            };
-
-            let bdProj = rec.bd_proj !== undefined ? Number(rec.bd_proj) : (rec.balls_deep_proj !== undefined ? Number(rec.balls_deep_proj) : Number(rec.bdProjectedMean || tipProj));
-            const tipDirChar = !isSpread ? (tipProj < vegasLine ? "U" : "O") : "";
-            // STRICT NO-OVERRULE GUARDRAIL: Balls Deep ALWAYS enhances/tempers on Tip's side — NEVER flips opposite Tip!
-            if (isSpread) {
-                if ((vegasLine - tipProj) >= 0 && (vegasLine - bdProj) < 0) {
+                let bdProj = Number(rec.bd_proj !== undefined ? rec.bd_proj : (rec.balls_deep_proj !== undefined ? rec.balls_deep_proj : tipProj));
+                const tipDirChar = !isSpread ? (tipProj < vegasLine ? "U" : "O") : "";
+                if (isSpread && (vegasLine - tipProj) >= 0 && (vegasLine - bdProj) < 0) {
                     bdProj = Number((vegasLine - Math.min(0.25, Math.abs(vegasLine - tipProj))).toFixed(2));
+                } else if (!isSpread) {
+                    if (tipDirChar === "U" && bdProj >= vegasLine) bdProj = Number((vegasLine - 0.2).toFixed(1));
+                    if (tipDirChar === "O" && bdProj <= vegasLine) bdProj = Number((vegasLine + 0.2).toFixed(1));
                 }
-            } else {
-                if (tipDirChar === "U" && bdProj >= vegasLine) bdProj = Number((vegasLine - 0.2).toFixed(1));
-                else if (tipDirChar === "O" && bdProj <= vegasLine) bdProj = Number((vegasLine + 0.2).toFixed(1));
-            }
-            const safeDirChar = !isSpread ? tipDirChar : "";
-            const isUnderSafe = (safeDirChar === "U");
-            const hadStaleFlippedTotal = !isSpread && rec.safe_total_dir && String(rec.safe_total_dir).toUpperCase() !== tipDirChar;
+                const isUnderSafe = (tipDirChar === "U");
+                const archBdProbRaw = isSpread ? archWinProb(vegasLine - bdProj) : Math.max(0.50, archWinProb(Math.abs(bdProj - vegasLine)));
+                const bdWinPct = Number((archBdProbRaw * 100.0).toFixed(1));
+                const bdEvPct = Number(calcExpectedValueAndKelly(archBdProbRaw, isSpread ? baseOdds : -110).evPercentage.toFixed(1));
+                const bdColor = getTierColor(getTierFromEv(bdEvPct));
 
-            // Always compute archived Balls Deep Win% & EV% cleanly from bdProj vs vegasLine (eliminates stale mismatched numbers!)
-            const archBdProbRaw = isSpread
-                ? archWinProbFn(vegasLine - bdProj)
-                : Math.max(0.50, archWinProbFn(Math.abs(bdProj - vegasLine)));
-            const archBdEvObj = calcExpectedValueAndKelly(archBdProbRaw, isSpread ? baseOdds : -110);
-            const bdWinPct = Number((archBdProbRaw * 100.0).toFixed(2));
-            const bdEvPct = Number(archBdEvObj.evPercentage.toFixed(2));
-            const bdTier = getTierFromEv(bdEvPct);
-            const bdColor = getTierColor(bdTier);
+                const pickTeamClean = cleanTeamCode(rec.pick_team || "");
+                const isHomeSpreadPick = isSpread && ((pickTeamClean && pickTeamClean === entryHomeCode) || pickLabel.startsWith(`${entryHomeCode} `));
+                const keyAltFallback = isSpread
+                    ? (archEng && entryLeague === "NCAA" ? archEng.keyAlt(vegasLine, bdProj, baseOdds) : calcKeyNumberAltSpreadSafe(vegasLine, bdProj, baseOdds))
+                    : null;
 
-            const pickTeamClean = cleanTeamCode(rec.pick_team || "");
-            const isHomeSpreadPick = isSpread && (
-                (pickTeamClean && pickTeamClean === entryHomeCode) ||
-                pickLabel.startsWith(`${entryHomeCode} `)
-            );
+                const defaultFloorHook = isSpread
+                    ? keyAltFallback.altLine
+                    : (rec.safe_total_line !== undefined && rec.safe_total_line !== null ? Number(rec.safe_total_line) : (isUnderSafe ? Math.floor(vegasLine + 4) + 0.5 : Math.floor(vegasLine - 4) + 0.5));
+                const defaultCeilHook = isSpread
+                    ? snapToHalfPointHook(vegasLine, -3.0)
+                    : (isUnderSafe ? Math.floor(vegasLine - 3) + 0.5 : Math.floor(vegasLine + 3) + 0.5);
 
-            const keyAltFallback = isSpread
-                ? (archEng && entryLeague === "NCAA" ? archEng.keyAlt(vegasLine, bdProj, baseOdds) : calcKeyNumberAltSpreadSafe(vegasLine, bdProj, baseOdds))
-                : null;
-            // Enforce v237 2-Key-Rung Ladder in Perpetuity on all spreads (auto-upgrades any legacy 1-key archived spread!)
-            const hadLegacyOneKeySpread = isSpread && keyAltFallback && (
-                rec.key_alt_line === undefined || rec.key_alt_line === null ||
-                Math.abs(Number(rec.key_alt_line) - Number(keyAltFallback.altLine)) > 0.05
-            );
-            const defaultFloorHook = isSpread
-                ? keyAltFallback.altLine
-                : ((!hadStaleFlippedTotal && rec.safe_total_line !== undefined && rec.safe_total_line !== null) ? Number(rec.safe_total_line) : (isUnderSafe ? (Math.floor(vegasLine + 4.0) + 0.5) : (Math.floor(vegasLine - 4.0) + 0.5)));
-            // Ceiling ALWAYS shares Balls Deep's direction (safeDirChar) — NEVER shows Alt U + Alt O in the same cell!
-            const defaultCeilHook = isSpread
-                ? snapToHalfPointHook(vegasLine, -3.0)
-                : (isUnderSafe ? (Math.floor(vegasLine - 3.0) + 0.5) : (Math.floor(vegasLine + 3.0) + 0.5));
-            const wongSubStr = (isSpread && keyAltFallback && keyAltFallback.tier2Line !== null)
-                ? ` • 🎯 Wong ${keyAltFallback.tier2Line > 0 ? '+' : ''}${keyAltFallback.tier2Line.toFixed(1)} (${keyAltFallback.tier2Mode === "WONG_7PT" ? "7pt" : "6pt"})`
-                : "";
-            const safeFloorLabel = isSpread
-                ? `${keyAltFallback.altStr}${wongSubStr}`
-                : ((!hadStaleFlippedTotal && (rec.safe_total_label || rec.safe_floor_label || rec.safeFloorLabel)) || `Alt ${safeDirChar} ${defaultFloorHook.toFixed(1)} (-175)`);
-            const safeFloorWinPct = isSpread
-                ? keyAltFallback.altProbPct
-                : (rec.safe_total_win_pct || rec.safe_floor_win_pct || rec.safeFloorWinPct || 74.5);
+                const wongSubStr = (isSpread && keyAltFallback && keyAltFallback.tier2Line !== null)
+                    ? ` · 🎯 Wong ${fmtSigned(keyAltFallback.tier2Line, 1)}` : "";
+                const safeFloorLabel = isSpread ? `${keyAltFallback.altStr}${wongSubStr}` : (rec.safe_total_label || rec.safe_floor_label || `Alt ${tipDirChar} ${defaultFloorHook.toFixed(1)} (-175)`);
+                const safeFloorWinPct = isSpread ? keyAltFallback.altProbPct : (rec.safe_total_win_pct || rec.safe_floor_win_pct || 75.0);
+                const bdAltLabel = isSpread
+                    ? (rec.bd_alt_label || `Alt ${fmtSigned(defaultCeilHook, 1)} (+145)`)
+                    : `Alt ${tipDirChar} ${defaultCeilHook.toFixed(1)} (+155)`;
+                const ceilGap = isSpread ? (defaultCeilHook - bdProj) : (isUnderSafe ? (defaultCeilHook - bdProj) : (bdProj - defaultCeilHook));
+                const bdAltEvPct = Number(calcExpectedValueAndKelly(archWinProb(ceilGap), isSpread ? 145 : 155).evPercentage.toFixed(1));
+                const slot = rec.flagship_slot || "";
 
-            const bdAltLabel = isSpread
-                ? (rec.bd_alt_label || rec.bdAltLabel || `Alt ${defaultCeilHook > 0 ? '+' + defaultCeilHook.toFixed(1) : defaultCeilHook.toFixed(1)} (+145)`)
-                : `Alt ${safeDirChar} ${defaultCeilHook.toFixed(1)} (+155)`;
-            const archCeilGap = isSpread
-                ? (defaultCeilHook - bdProj)
-                : (isUnderSafe ? (defaultCeilHook - bdProj) : (bdProj - defaultCeilHook));
-            const archCeilEvCalc = Number(calcExpectedValueAndKelly(archWinProbFn(archCeilGap), isSpread ? 145 : 155).evPercentage.toFixed(2));
-            const bdAltEvPct = (rec.bd_alt_ev_pct !== undefined && rec.bd_alt_ev_pct !== 0)
-                ? rec.bd_alt_ev_pct
-                : ((rec.bdAltEvPct !== undefined && rec.bdAltEvPct !== 0) ? rec.bdAltEvPct : archCeilEvCalc);
-            const slot = rec.flagship_slot || rec.flagshipSlot || "";
+                let gradedTip = rec.result_tip || "PENDING";
+                let gradedBd = rec.result_bd || rec.result_balls_deep || gradedTip;
+                let missByPts = Number(rec.miss_by_pts || 0);
+                let gradedFloor = rec.result_key_alt || rec.result_safe_total || rec.result_floor || "";
+                let floorMissBy = 0;
+                let gradedCeiling = rec.result_ceiling || "";
+                let ceilingMissBy = 0;
+                let gradedWong = "";
 
-            let gradedTip = rec.result_tip || rec.result || "PENDING";
-            let gradedBd = rec.result_bd || rec.result_balls_deep || gradedTip;
-            let missByPts = Number(rec.miss_by_pts || 0);
-            let gradedFloor = rec.result_key_alt || rec.result_safe_total || rec.result_floor || "";
-            let floorMissBy = 0;
-            let gradedCeiling = rec.result_ceiling || "";
-            let ceilingMissBy = 0;
-
-            // Live client-side auto-grading from final score (EXPLICIT direction grading — NEVER flips O/U on Floors or Ceilings!)
-            if (parsedScores) {
-                const { homeScore, awayScore } = parsedScores;
-                const bdSameSideSpread = isSpread ? ((vegasLine - bdProj) >= 0) : true;
-                const liveTipObj = isSpread
-                    ? gradeSpreadPick(isHomeSpreadPick, vegasLine, homeScore, awayScore)
-                    : gradeTotalByDirection(tipDirChar, vegasLine, homeScore, awayScore);
-                const liveBdObj = isSpread
-                    ? (bdSameSideSpread
-                        ? gradeSpreadPick(isHomeSpreadPick, vegasLine, homeScore, awayScore)
-                        : gradeSpreadPick(!isHomeSpreadPick, -vegasLine, homeScore, awayScore))
-                    : gradeTotalByDirection(safeDirChar, vegasLine, homeScore, awayScore);
-                const liveFloorObj = isSpread
-                    ? gradeSpreadPick(isHomeSpreadPick, defaultFloorHook, homeScore, awayScore)
-                    : gradeTotalByDirection(safeDirChar, defaultFloorHook, homeScore, awayScore);
-                const liveCeilObj = isSpread
-                    ? gradeSpreadPick(isHomeSpreadPick, defaultCeilHook, homeScore, awayScore)
-                    : gradeTotalByDirection(safeDirChar, defaultCeilHook, homeScore, awayScore);
-
-                if (gradedTip === "PENDING" || (gradedTip === "MISS" && missByPts === 0)) {
-                    gradedTip = liveTipObj.outcome;
-                    missByPts = liveTipObj.missBy;
-                }
-                if (gradedBd === "PENDING" || hadStaleFlippedTotal || (gradedBd === "MISS" && !rec.miss_by_pts)) {
-                    gradedBd = liveBdObj.outcome;
-                }
-                if (!gradedFloor || gradedFloor === "PENDING" || hadStaleFlippedTotal || hadLegacyOneKeySpread) {
-                    gradedFloor = liveFloorObj.outcome;
-                    floorMissBy = liveFloorObj.missBy;
-                }
-                if (!gradedCeiling || gradedCeiling === "PENDING") {
-                    gradedCeiling = liveCeilObj.outcome;
-                    ceilingMissBy = liveCeilObj.missBy;
-                }
-            } else {
-                if (!gradedFloor) {
-                    if (gradedTip === "HIT" || gradedTip === "BLUE_BALLS") {
-                        gradedFloor = "HIT";
-                    } else if (gradedTip === "MISS") {
-                        const remMiss = Number((missByPts - 3.5).toFixed(1));
-                        if (missByPts > 0 && remMiss <= 0) gradedFloor = "HIT";
-                        else if (missByPts > 0 && remMiss <= BLUE_BALLS_MARGIN) { gradedFloor = "BLUE_BALLS"; floorMissBy = remMiss; }
-                        else { gradedFloor = "MISS"; floorMissBy = Math.max(0, remMiss); }
+                if (parsedScores) {
+                    const { homeScore, awayScore } = parsedScores;
+                    const liveTip = isSpread ? gradeSpreadPick(isHomeSpreadPick, vegasLine, homeScore, awayScore) : gradeTotalByDirection(tipDirChar, vegasLine, homeScore, awayScore);
+                    const liveFloor = isSpread ? gradeSpreadPick(isHomeSpreadPick, defaultFloorHook, homeScore, awayScore) : gradeTotalByDirection(tipDirChar, defaultFloorHook, homeScore, awayScore);
+                    const liveCeil = isSpread ? gradeSpreadPick(isHomeSpreadPick, defaultCeilHook, homeScore, awayScore) : gradeTotalByDirection(tipDirChar, defaultCeilHook, homeScore, awayScore);
+                    if (gradedTip === "PENDING" || (gradedTip === "MISS" && missByPts === 0)) { gradedTip = liveTip.outcome; missByPts = liveTip.missBy; }
+                    if (gradedBd === "PENDING") gradedBd = liveTip.outcome;
+                    gradedFloor = liveFloor.outcome; floorMissBy = liveFloor.missBy;
+                    gradedCeiling = liveCeil.outcome; ceilingMissBy = liveCeil.missBy;
+                    if (isSpread && keyAltFallback && keyAltFallback.tier2Line !== null) {
+                        gradedWong = gradeSpreadPick(isHomeSpreadPick, keyAltFallback.tier2Line, homeScore, awayScore).outcome;
                     }
+                } else {
+                    if (!gradedFloor) gradedFloor = (gradedTip === "HIT" || gradedTip === "BLUE_BALLS") ? "HIT" : "MISS";
+                    if (!gradedCeiling) gradedCeiling = (gradedTip === "HIT") ? "HIT" : "MISS";
                 }
-                if (!gradedCeiling) {
-                    if (gradedTip === "BLUE_BALLS" || gradedTip === "MISS") {
-                        gradedCeiling = "MISS";
-                        ceilingMissBy = Number((missByPts + 3.0).toFixed(1));
-                    } else if (gradedTip === "HIT") {
-                        gradedCeiling = "HIT";
+
+                const fmtTipProj = isSpread ? fmtSigned(tipProj, 1) : tipProj.toFixed(1);
+                const fmtBdProj = isSpread ? fmtSigned(bdProj, 1) : bdProj.toFixed(1);
+                const rowHTML = buildStandardRow(
+                    weekLabel, cleanMatchup, statusLabel, type, slot, pickLabel, ledgerTier,
+                    vegasLine, baseOdds, tipColor, fmtTipProj, tipWinPct, tipEvPct,
+                    bdColor, fmtBdProj, bdWinPct, bdEvPct, safeFloorLabel, safeFloorWinPct,
+                    bdAltLabel, bdAltEvPct, gradedTip, missByPts
+                );
+
+                if (["HIT", "MISS", "BLUE_BALLS", "PUSH"].includes(gradedTip)) {
+                    if (gradedTip !== "PUSH") {
+                        tally("tip_all", gradedTip);
+                        tally("balls_deep_all", gradedBd);
+                        tally("safe_floors", gradedFloor);
+                        tally("ceilings", gradedCeiling);
+                        if (gradedWong && gradedWong !== "PUSH") tally("wong_teasers", gradedWong);
                     }
-                }
-            }
-
-            const fmtTipProj = (isSpread && Number(tipProj) > 0) ? `+${tipProj}` : `${tipProj}`;
-            const fmtBdProj = (isSpread && Number(bdProj) > 0) ? `+${bdProj}` : `${bdProj}`;
-
-            const rowHTML = buildStandardVaultRowHTML(
-                weekLabel, cleanMatchup, statusLabel, type, slot, pickLabel, ledgerTier,
-                vegasLine, baseOdds, tipColor, fmtTipProj, tipWinPct, tipEvPct,
-                showBallsDeep, bdColor, fmtBdProj, bdWinPct, bdEvPct,
-                safeFloorLabel, safeFloorWinPct, bdAltLabel, bdAltEvPct, gradedTip, missByPts
-            );
-
-            if (gradedTip === "HIT" || gradedTip === "MISS" || gradedTip === "BLUE_BALLS" || gradedTip === "PUSH") {
-                if (gradedTip !== "PUSH") {
-                    tallyGrade("tip_all", gradedTip);
-                    tallyGrade("balls_deep_all", gradedBd);
-                    tallyGrade("safe_floors", gradedFloor);
-                    tallyGrade("ceilings", gradedCeiling);
-                }
-                vaultRows.tip_vs_bd.push(rowHTML);
-                vaultRows.floors_ceilings.push(
-                    buildFloorCeilingVaultRowHTML(
+                    vaultRows.tip_vs_bd.push(rowHTML);
+                    vaultRows.floors_ceilings.push(buildFloorCeilingRow(
                         weekLabel, cleanMatchup, statusLabel, type, pickLabel, vegasLine,
                         safeFloorLabel, safeFloorWinPct, gradedFloor, floorMissBy,
                         bdAltLabel, bdAltEvPct, gradedCeiling, ceilingMissBy
-                    )
-                );
-
-                if (slot) {
-                    if (gradedTip !== "PUSH") {
-                        tallyGrade("flagship_5pack", gradedTip);
-                        if (slot.includes("MÉNAGE")) tallyGrade("menage_a_trois", gradedTip);
+                    ));
+                    if (slot) {
+                        if (gradedTip !== "PUSH") {
+                            tally("flagship_5pack", gradedTip);
+                            if (slot.includes("MÉNAGE")) tally("menage_a_trois", gradedTip);
+                        }
+                        const wkObj = ensureWeekFivePackBucket(weekLabel);
+                        if (gradedTip !== "PUSH") {
+                            tallyObj(wkObj, gradedTip);
+                            if (slot.includes("MÉNAGE")) tallyObj(wkObj.menage, gradedTip);
+                        }
+                        wkObj.rows.push(rowHTML);
+                        vaultRows.flagship_5pack.push({ weekLabel, rowHTML });
                     }
-                    const wkObj = ensureWeekFivePackBucket(weekLabel);
-                    if (gradedTip !== "PUSH") {
-                        tallyGradeToObj(wkObj, gradedTip);
-                        if (slot.includes("MÉNAGE")) tallyGradeToObj(wkObj.menage, gradedTip);
+                    if (ledgerTier === "SMASH") {
+                        if (gradedTip !== "PUSH") {
+                            tally("overall_smash", gradedTip);
+                            tally(isSpread ? "spread_smash" : "total_smash", gradedTip);
+                        }
+                        if (gradedFloor && gradedFloor !== "PUSH") tally("smash_key_exec", gradedFloor);
+                        vaultRows.overall_smash.push(rowHTML);
+                    } else if (ledgerTier === "TOO_CLOSE") {
+                        if (gradedTip !== "PUSH") tally("all_tease", gradedTip);
+                        vaultRows.all_tease.push(rowHTML);
                     }
-                    wkObj.rows.push(rowHTML);
-                    vaultRows.flagship_5pack.push({ weekLabel, rowHTML });
+                } else {
+                    upcomingRowsHTML += rowHTML;
                 }
-
-                if (ledgerTier === "SMASH") {
-                    if (gradedTip !== "PUSH") {
-                        tallyGrade("overall_smash", gradedTip);
-                        tallyGrade(isSpread ? "spread_smash" : "total_smash", gradedTip);
-                    }
-                    if (gradedFloor && gradedFloor !== "PUSH" && gradedFloor !== "PENDING") {
-                        tallyGrade("smash_key_exec", gradedFloor);
-                    }
-                    vaultRows.overall_smash.push(rowHTML);
-                } else if (ledgerTier === "TOO_CLOSE") {
-                    if (gradedTip !== "PUSH") {
-                        tallyGrade("all_tease", gradedTip);
-                    }
-                    vaultRows.all_tease.push(rowHTML);
-                }
-            } else {
-                // Fallback: never silently drop an ungraded completed game — show it in the table as FINAL / AWAITING GRADE
-                upcomingRowsHTML += rowHTML;
-            }
-        });
+            });
     });
 
-    // 2. Process current week's slate (FINAL -> Vaults; UPCOMING/IN-PLAY -> Live Ledger Table)
+    // 2. Current-Week Active / In-Play Slate Rows
     AppState.processedGames.filter(g => g.isCurrentWeek).forEach(g => {
         const weekLabel = g.weekLabel || "Week 11";
-        const currRematchKey = `${g.league}_${g.matchup}_${weekLabel}`;
-        if (renderedMatchups.has(currRematchKey)) return;
+        const currKey = `${g.league}_${g.matchup}_${weekLabel}`;
+        if (renderedMatchups.has(currKey)) return;
         if (!isRankedLedgerEntry(g.matchup, g.league)) return;
-        renderedMatchups.add(currRematchKey);
+        renderedMatchups.add(currKey);
 
         const espnMatch = getEspnScoreMatch(g.league, g.matchup);
-        const kickedOffByClock = g.commenceTime ? (new Date(g.commenceTime).getTime() <= Date.now()) : false;
-
+        const kickedOff = g.commenceTime ? (new Date(g.commenceTime).getTime() <= Date.now()) : false;
         const isFinal = Boolean(espnMatch && espnMatch.state === "post");
-        const isLocked = isFinal || kickedOffByClock || Boolean(espnMatch && espnMatch.state === "in");
-        const scoreDisplay = espnMatch ? espnMatch.scoreStr : "";
-
+        const isLocked = isFinal || kickedOff || Boolean(espnMatch && espnMatch.state === "in");
         const statusLabel = isFinal
-            ? `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${scoreDisplay})</span>`
+            ? `<span style="color:var(--emerald); font-weight:700;">FINAL (${espnMatch.scoreStr})</span>`
             : (isLocked
-                ? `<span style="color:var(--accent-gold);font-weight:700;">🔒 IN-PLAY (${scoreDisplay || 'CLOSING LOCKED'})</span>`
-                : `<span style="color:var(--text-secondary);">PRE-KICKOFF SNAPSHOT</span>`);
+                ? `<span style="color:var(--gold); font-weight:700;">🔒 IN-PLAY (${espnMatch ? espnMatch.scoreStr : "LOCKED"})</span>`
+                : `<span style="color:var(--text-3);">${g.kickoffShort}</span>`);
 
-        const gameSpreads = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "spread").sort((a, b) => b.tipEvPct - a.tipEvPct);
-        const gameTotals = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "total");
-
-        if (isFinal && espnMatch && gameSpreads.length > 1) {
-            const trapSide = gameSpreads[gameSpreads.length - 1];
-            const bestSide = gameSpreads[0];
-            if (trapSide && trapSide.tipEvPct <= PASS_EV_CUTOFF) {
-                const trapGrade = gradeSpreadPick(trapSide.isHomeSpread, trapSide.baseLine, espnMatch.homeScore, espnMatch.awayScore);
-                buckets.champagne_room.total += 1;
-                const dodgedSuccess = (trapGrade.outcome !== "HIT");
-                if (dodgedSuccess) {
-                    buckets.champagne_room.dodged += 1;
-                    const fmtTrapProj = Number(trapSide.tipProjectedMean) > 0 ? `+${trapSide.tipProjectedMean}` : `${trapSide.tipProjectedMean}`;
-                    vaultRows.grenades_dodged.push(`
-                        <tr>
-                            <td><span style="font-family:var(--font-mono); font-size:10px; color:var(--accent-gold); font-weight:800;">${weekLabel}</span><br><strong>${g.matchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
-                            <td>PUBLIC GRENADE<br>${renderTierBadgeHTML("PASS")}</td>
-                            <td><strong style="color:var(--accent-danger);">🚫 TRAP: ${trapSide.player}</strong></td>
-                            <td>${trapSide.baseLine} (${trapSide.baseOdds})</td>
-                            <td style="color:var(--accent-danger);">Proj: <strong>${fmtTrapProj}</strong> (${trapSide.tipEvPct}% EV)</td>
-                            <td style="color:var(--accent-emerald);"><strong>✅ FADE HIT:</strong> ${bestSide ? bestSide.player : ''}</td>
-                            <td><span class="badge-smash" style="font-size:11px;">💣 GRENADE DODGED</span></td>
-                        </tr>
-                    `);
-                }
-            }
-        }
-
-        const topPicks = [gameSpreads[0], gameTotals[0]].filter(Boolean);
-
-        topPicks.forEach((p) => {
+        const gSpreads = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "spread").sort((a, b) => b.tipEvPct - a.tipEvPct);
+        const gTotals = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "total");
+        [gSpreads[0], gTotals[0]].filter(Boolean).forEach(p => {
             const isSpread = p.marketType === "spread";
-            const fmtTipProj = (isSpread && Number(p.tipProjectedMean) > 0) ? `+${p.tipProjectedMean}` : `${p.tipProjectedMean}`;
-            const fmtBdProj = (isSpread && Number(p.bdProjectedMean) > 0) ? `+${p.bdProjectedMean}` : `${p.bdProjectedMean}`;
             const ledgerTier = p.gatekeeperBlocked ? "PASS" : getTierFromEv(p.tipEvPct);
-            const tipColor = getTierColor(ledgerTier);
-            const bdTier = p.gatekeeperBlocked ? "PASS" : getTierFromEv(p.bdEvPct);
-            const bdColor = getTierColor(bdTier);
-
-            let gradedTip = "PENDING";
-            let gradedBd = "PENDING";
-            let missByPts = 0;
-            let gradedFloor = "PENDING";
-            let floorMissBy = 0;
-            let gradedCeiling = "PENDING";
-            let ceilingMissBy = 0;
-
+            const fmtTip = isSpread ? fmtSigned(p.tipProjectedMean, 1) : Number(p.tipProjectedMean).toFixed(1);
+            const fmtBd = isSpread ? fmtSigned(p.bdProjectedMean, 1) : Number(p.bdProjectedMean).toFixed(1);
+            let gradedTip = "PENDING", missBy = 0;
             if (isFinal && espnMatch) {
-                const liveTipDir = !isSpread ? (p.tipProjectedMean < p.baseLine ? "U" : "O") : "";
-                const liveSafeDir = !isSpread ? (p.safeFloorLabel && p.safeFloorLabel.includes("Alt U") ? "U" : (p.safeFloorLabel && p.safeFloorLabel.includes("Alt O") ? "O" : liveTipDir)) : "";
-                const liveBdSameSide = isSpread ? ((p.baseLine - p.bdProjectedMean) >= 0) : true;
-                const tipResObj = isSpread
+                const res = isSpread
                     ? gradeSpreadPick(p.isHomeSpread, p.baseLine, espnMatch.homeScore, espnMatch.awayScore)
-                    : gradeTotalByDirection(liveTipDir, p.baseLine, espnMatch.homeScore, espnMatch.awayScore);
-                const bdResObj = isSpread
-                    ? (liveBdSameSide
-                        ? gradeSpreadPick(p.isHomeSpread, p.baseLine, espnMatch.homeScore, espnMatch.awayScore)
-                        : gradeSpreadPick(!p.isHomeSpread, -p.baseLine, espnMatch.homeScore, espnMatch.awayScore))
-                    : gradeTotalByDirection(liveSafeDir, p.baseLine, espnMatch.homeScore, espnMatch.awayScore);
-                const floorResObj = isSpread
-                    ? gradeSpreadPick(p.isHomeSpread, p.safeFloorHookNum, espnMatch.homeScore, espnMatch.awayScore)
-                    : gradeTotalByDirection(liveSafeDir, p.safeFloorHookNum, espnMatch.homeScore, espnMatch.awayScore);
-                const ceilingResObj = isSpread
-                    ? gradeSpreadPick(p.isHomeSpread, p.ceilingHookNum, espnMatch.homeScore, espnMatch.awayScore)
-                    : gradeTotalByDirection(liveSafeDir, p.ceilingHookNum, espnMatch.homeScore, espnMatch.awayScore);
-
-                gradedTip = tipResObj.outcome;
-                gradedBd = bdResObj.outcome;
-                missByPts = tipResObj.missBy;
-                gradedFloor = floorResObj.outcome;
-                floorMissBy = floorResObj.missBy;
-                gradedCeiling = ceilingResObj.outcome;
-                ceilingMissBy = ceilingResObj.missBy;
+                    : gradeTotalByDirection(p.tipProjectedMean < p.baseLine ? "U" : "O", p.baseLine, espnMatch.homeScore, espnMatch.awayScore);
+                gradedTip = res.outcome; missBy = res.missBy;
             }
-
-            const hasPoisonedLiveOdds = Math.abs(Number(p.baseOdds || -110)) >= 220;
-            if (isFinal && !hasPoisonedLiveOdds && (gradedTip === "HIT" || gradedTip === "MISS" || gradedTip === "BLUE_BALLS")) {
-                const rowHTML = buildStandardVaultRowHTML(
-                    weekLabel, g.matchup, statusLabel, isSpread ? "SPREAD" : "TOTAL (O/U)", p.flagshipSlot,
-                    p.player, ledgerTier, p.baseLine, p.baseOdds, tipColor, fmtTipProj, p.tipModelPct, p.tipEvPct,
-                    showBallsDeep, bdColor, fmtBdProj, p.bdModelPct, p.bdEvPct,
-                    p.safeFloorLabel, p.safeFloorWinPct, p.bdAltLabel, p.bdAltEvPct, gradedTip, missByPts
-                );
-
-                tallyGrade("tip_all", gradedTip);
-                tallyGrade("balls_deep_all", gradedBd);
-                vaultRows.tip_vs_bd.push(rowHTML);
-
-                tallyGrade("safe_floors", gradedFloor);
-                tallyGrade("ceilings", gradedCeiling);
-                vaultRows.floors_ceilings.push(
-                    buildFloorCeilingVaultRowHTML(
-                        weekLabel, g.matchup, statusLabel, isSpread ? "SPREAD" : "TOTAL (O/U)", p.player, p.baseLine,
-                        p.safeFloorLabel, p.safeFloorWinPct, gradedFloor, floorMissBy,
-                        p.bdAltLabel, p.bdAltEvPct, gradedCeiling, ceilingMissBy
-                    )
-                );
-
-                if (p.flagshipSlot) {
-                    tallyGrade("flagship_5pack", gradedTip);
-                    if (p.flagshipSlot.includes("MÉNAGE")) tallyGrade("menage_a_trois", gradedTip);
-
-                    const wkObj = ensureWeekFivePackBucket(weekLabel);
-                    tallyGradeToObj(wkObj, gradedTip);
-                    if (p.flagshipSlot.includes("MÉNAGE")) tallyGradeToObj(wkObj.menage, gradedTip);
-                    wkObj.rows.push(rowHTML);
-                    vaultRows.flagship_5pack.push({ weekLabel, rowHTML });
-                }
-
-                if (ledgerTier === "SMASH") {
-                    tallyGrade("overall_smash", gradedTip);
-                    tallyGrade(isSpread ? "spread_smash" : "total_smash", gradedTip);
-                    if (gradedFloor && gradedFloor !== "PUSH" && gradedFloor !== "PENDING") {
-                        tallyGrade("smash_key_exec", gradedFloor);
-                    }
-                    vaultRows.overall_smash.push(rowHTML);
-                } else if (ledgerTier === "TOO_CLOSE") {
-                    tallyGrade("all_tease", gradedTip);
-                    vaultRows.all_tease.push(rowHTML);
-                }
-            } else {
-                upcomingRowsHTML += `
-                    <tr>
-                        <td><strong>${g.matchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
-                        <td>${isSpread ? 'SPREAD' : 'TOTAL (O/U)'} ${p.flagshipSlot ? `<br><span class="${p.flagshipSlot.includes('MÉNAGE') ? 'badge-menage' : 'badge-flex'}">${p.flagshipSlot}</span>` : ""}</td>
-                        <td><strong>${p.player}</strong> ${renderTierBadgeHTML(ledgerTier)}${renderGatekeeperPillsHTML(p.gatekeeperFlags, p.gatekeeperAction)}</td>
-                        <td>${p.baseLine} (${p.baseOdds > 0 ? '+' + p.baseOdds : p.baseOdds})</td>
-                        <td style="color:${tipColor};">Proj: <strong>${fmtTipProj}</strong> (${p.tipModelPct}% | ${p.tipEvPct > 0 ? '+' : ''}${p.tipEvPct}% EV)</td>
-                        <td>${showBallsDeep ? `<span style="color:${bdColor};">Proj: <strong>${fmtBdProj}</strong> (${p.bdModelPct}% | ${p.bdEvPct > 0 ? '+' : ''}${p.bdEvPct}% EV)<br><small style="color:var(--accent-cyan);">🛡️ ${p.safeFloorLabel} (${p.safeFloorWinPct}%)</small> • <small style="color:var(--accent-gold);">🎯 ${p.bdAltLabel} (${p.bdAltEvPct > 0 ? '+' : ''}${p.bdAltEvPct}% EV)</small></span>` : renderLockCellHTML()}</td>
-                        <td>${renderGradeBadge(gradedTip, missByPts)}</td>
-                    </tr>
-                `;
-            }
+            upcomingRowsHTML += buildStandardRow(
+                weekLabel, g.matchup, statusLabel, isSpread ? "SPREAD" : "TOTAL", p.flagshipSlot,
+                p.shortTitle, ledgerTier, p.baseLine, p.baseOdds, getTierColor(ledgerTier),
+                fmtTip, p.tipModelPct.toFixed(1), p.tipEvPct.toFixed(1),
+                getTierColor(getTierFromEv(p.bdEvPct)), fmtBd, p.bdModelPct.toFixed(1), p.bdEvPct.toFixed(1),
+                p.safeFloorLabel, p.safeFloorWinPct, p.bdAltLabel, p.bdAltEvPct, gradedTip, missBy
+            );
         });
     });
-
-    // 3. Audit Active / Current-Week Porky's 5-Pack (3 Core Day-Shift + 2 Keep-It-In-Your-Pants Flex)
-    if (Array.isArray(AppState.porkysFivePack) && AppState.porkysFivePack.length > 0) {
-        AppState.porkysFivePack.forEach(item => {
-            const trap = item.trapProp;
-            const fade = item.fadeProp;
-            if (!trap || !fade) return;
-            const matchup = fade.matchup;
-            const weekLabel = fade.weekLabel || "Week 12";
-            const pCurrKey = `${fade.league}_${matchup}_${weekLabel}`;
-            if (recordedPorkysMatchups.has(pCurrKey)) return;
-            if (!isRankedLedgerEntry(matchup, fade.league)) return;
-            recordedPorkysMatchups.add(pCurrKey);
-
-            const espnMatch = getEspnScoreMatch(fade.league, matchup);
-            const isFinal = Boolean(espnMatch && espnMatch.state === "post");
-            const isLive = Boolean(espnMatch && espnMatch.state === "in");
-            const scoreDisplay = espnMatch ? espnMatch.scoreStr : "";
-            const statusLabel = isFinal
-                ? `<span style="color:var(--accent-emerald);font-weight:700;">FINAL (${scoreDisplay})</span>`
-                : (isLive
-                    ? `<span style="color:var(--accent-gold);font-weight:700;">🔒 IN-PLAY (${scoreDisplay})</span>`
-                    : `<span style="color:var(--text-secondary);">ACTIVE WEEK TICKET</span>`);
-
-            const isCore3 = Boolean(item.isTopThreeTrap);
-            const fadeTeam = fade.isHomeSpread ? fade.homeTeam : fade.awayTeam;
-            let pFloorRes = "PENDING", pFloorMiss = 0, pStraightRes = "PENDING", pStraightMiss = 0;
-
-            if (isFinal && espnMatch) {
-                const flObj = gradeSpreadPick(fade.isHomeSpread, fade.safeFloorHookNum, espnMatch.homeScore, espnMatch.awayScore);
-                const stObj = gradeSpreadPick(fade.isHomeSpread, fade.baseLine, espnMatch.homeScore, espnMatch.awayScore);
-                pFloorRes = flObj.outcome;
-                pFloorMiss = flObj.missBy;
-                pStraightRes = stObj.outcome;
-                pStraightMiss = stObj.missBy;
-            }
-
-            const pRowHTML = buildPorkysVaultRowHTML(
-                weekLabel, matchup, statusLabel, item.slotLabel, isCore3,
-                trap.player, trap.baseLine,
-                Number(trap.tipProjectedMean) > 0 ? `+${trap.tipProjectedMean}` : `${trap.tipProjectedMean}`,
-                trap.tipEvPct, fadeTeam, fade.safeFloorLabel, fade.safeFloorWinPct, fade.baseLine,
-                pFloorRes, pFloorMiss, pStraightRes, pStraightMiss
-            );
-
-            const pWkObj = ensureWeekPorkysBucket(weekLabel);
-            if (isFinal && (pFloorRes === "HIT" || pFloorRes === "MISS" || pFloorRes === "BLUE_BALLS")) {
-                tallyGrade("porkys_5pack", pFloorRes);
-                tallyGrade(isCore3 ? "porkys_core3" : "porkys_flex2", pFloorRes);
-                tallyGradeToObj(pWkObj, pFloorRes);
-                tallyGradeToObj(isCore3 ? pWkObj.core3 : pWkObj.flex2, pFloorRes);
-            }
-            if (isCore3) pWkObj.coreLegs.push({ slot: item.slotLabel, outcome: pFloorRes });
-            else pWkObj.flexLegs.push({ slot: item.slotLabel, outcome: pFloorRes });
-            pWkObj.rows.push(pRowHTML);
-            vaultRows.porkys_5pack.push({ weekLabel, rowHTML: pRowHTML, isCore3, outcome: pFloorRes });
-        });
-    }
-
-    // Compute Weekly Porky's Parlay Audit (3-Pick Core Parlay, 2-Pick Flex Parlay, Full 5-Pick Parlay at -175 Safe Floor odds)
-    const evalParlayTicket = (legsArr, expectedLegCount) => {
-        if (!legsArr || legsArr.length === 0) return "EMPTY";
-        const hasLoss = legsArr.some(l => l.outcome === "MISS" || l.outcome === "BLUE_BALLS");
-        if (hasLoss) return "BUST";
-        const hits = legsArr.filter(l => l.outcome === "HIT").length;
-        const pushes = legsArr.filter(l => l.outcome === "PUSH").length;
-        if (legsArr.length >= expectedLegCount && (hits + pushes) === legsArr.length && hits > 0) return "CASH";
-        return "PENDING";
-    };
-
-    const computeParlaySummaryForWeeks = (weekKeys) => {
-        const res = {
-            core3: { cashed: 0, busted: 0, pending: 0 },
-            flex2: { cashed: 0, busted: 0, pending: 0 },
-            full5: { cashed: 0, busted: 0, pending: 0 }
-        };
-        weekKeys.forEach(wk => {
-            const w = porkysByWeek[wk];
-            if (!w) return;
-            const c3 = evalParlayTicket(w.coreLegs, 3);
-            const f2 = evalParlayTicket(w.flexLegs, 2);
-            const a5 = evalParlayTicket([...w.coreLegs, ...w.flexLegs], 5);
-            if (c3 === "CASH") res.core3.cashed++; else if (c3 === "BUST") res.core3.busted++; else if (c3 === "PENDING") res.core3.pending++;
-            if (f2 === "CASH") res.flex2.cashed++; else if (f2 === "BUST") res.flex2.busted++; else if (f2 === "PENDING") res.flex2.pending++;
-            if (a5 === "CASH") res.full5.cashed++; else if (a5 === "BUST") res.full5.busted++; else if (a5 === "PENDING") res.full5.pending++;
-        });
-        return res;
-    };
 
     const fmtBucketObj = (b) => {
         if (!b || !b.total) return "0W - 0L - 0BB (0.0%)";
         const pct = ((b.hits / b.total) * 100).toFixed(1);
-        return `${b.hits}W - ${b.misses}L - <span style="color:#60a5fa;">${b.blueBalls}BB</span> (${pct}%)`;
+        return `${b.hits}W - ${b.misses}L - <span style="color:var(--blue);">${b.blueBalls}BB</span> (${pct}%)`;
     };
+    const fmtBucket = (k) => fmtBucketObj(buckets[k]);
 
-    const fmtBucket = (key) => fmtBucketObj(buckets[key]);
+    const fivePackWeeks = Object.keys(fivePackByWeek).sort((a, b) => (parseInt(b.replace(/\D/g, ""), 10) || 0) - (parseInt(a.replace(/\D/g, ""), 10) || 0));
+    if (AppState.selectedFivePackWeek !== "ALL" && !fivePackByWeek[AppState.selectedFivePackWeek]) AppState.selectedFivePackWeek = "ALL";
+    const activeFpBucket = AppState.selectedFivePackWeek === "ALL" ? buckets.flagship_5pack : fivePackByWeek[AppState.selectedFivePackWeek];
+    const activeMenageBucket = AppState.selectedFivePackWeek === "ALL" ? buckets.menage_a_trois : fivePackByWeek[AppState.selectedFivePackWeek].menage;
 
-    const fmtTraps = () => {
-        const c = buckets.champagne_room;
-        const n = (c && c.dodged) ? c.dodged : 0;
-        return `${n} Grenade${n === 1 ? '' : 's'} Dodged`;
-    };
+    const porkysWeeks = Object.keys(porkysByWeek).sort((a, b) => (parseInt(b.replace(/\D/g, ""), 10) || 0) - (parseInt(a.replace(/\D/g, ""), 10) || 0));
+    if (AppState.selectedPorkysWeek !== "ALL" && !porkysByWeek[AppState.selectedPorkysWeek]) AppState.selectedPorkysWeek = "ALL";
+    const activePorkysCore = AppState.selectedPorkysWeek === "ALL" ? buckets.porkys_core3 : porkysByWeek[AppState.selectedPorkysWeek].core3;
+    const activePorkysFlex = AppState.selectedPorkysWeek === "ALL" ? buckets.porkys_flex2 : porkysByWeek[AppState.selectedPorkysWeek].flex2;
 
-    const availableFivePackWeeks = Object.keys(fivePackByWeek).sort((a, b) => {
-        const numA = parseInt(a.replace(/\D/g, ""), 10) || 0;
-        const numB = parseInt(b.replace(/\D/g, ""), 10) || 0;
-        return numB - numA;
-    });
-
-    if (AppState.selectedFivePackWeek !== "ALL" && !fivePackByWeek[AppState.selectedFivePackWeek]) {
-        AppState.selectedFivePackWeek = "ALL";
-    }
-
-    const activeFivePackRecordBucket = (AppState.selectedFivePackWeek === "ALL")
-        ? buckets.flagship_5pack
-        : fivePackByWeek[AppState.selectedFivePackWeek];
-
-    const activeMenageRecordBucket = (AppState.selectedFivePackWeek === "ALL")
-        ? buckets.menage_a_trois
-        : fivePackByWeek[AppState.selectedFivePackWeek].menage;
-
-    const totalFivePackGraded = buckets.flagship_5pack.total;
-    const weekDropdownHTML = `
-        <select onchange="window.setFivePackVaultWeek(this.value, event)" onclick="event.stopPropagation()" style="background:#0f172a; color:var(--accent-gold); border:1px solid rgba(245,158,11,0.55); border-radius:4px; padding:2px 6px; font-family:var(--font-mono); font-size:10.5px; font-weight:800; cursor:pointer;">
-            <option value="ALL" ${AppState.selectedFivePackWeek === "ALL" ? "selected" : ""}>All Weeks (${buckets.flagship_5pack.hits}/${totalFivePackGraded})</option>
-            ${availableFivePackWeeks.map(wk => {
-                const wObj = fivePackByWeek[wk];
-                return `<option value="${wk}" ${AppState.selectedFivePackWeek === wk ? "selected" : ""}>${wk} (${wObj.hits}/${wObj.total})</option>`;
-            }).join("")}
+    const fpWeekSelect = `
+        <select class="search-select" style="padding:2px 6px; font-size:10.5px;" onchange="window.setFivePackVaultWeek(this.value, event)" onclick="event.stopPropagation()">
+            <option value="ALL" ${AppState.selectedFivePackWeek === "ALL" ? "selected" : ""}>All (${buckets.flagship_5pack.hits}/${buckets.flagship_5pack.total})</option>
+            ${fivePackWeeks.map(wk => `<option value="${wk}" ${AppState.selectedFivePackWeek === wk ? "selected" : ""}>${wk} (${fivePackByWeek[wk].hits}/${fivePackByWeek[wk].total})</option>`).join("")}
+        </select>
+    `;
+    const porkyWeekSelect = `
+        <select class="search-select" style="padding:2px 6px; font-size:10.5px;" onchange="window.setPorkysVaultWeek(this.value, event)" onclick="event.stopPropagation()">
+            <option value="ALL" ${AppState.selectedPorkysWeek === "ALL" ? "selected" : ""}>All (${buckets.porkys_5pack.hits}/${buckets.porkys_5pack.total})</option>
+            ${porkysWeeks.map(wk => `<option value="${wk}" ${AppState.selectedPorkysWeek === wk ? "selected" : ""}>${wk} (${porkysByWeek[wk].hits}/${porkysByWeek[wk].total})</option>`).join("")}
         </select>
     `;
 
-    const availablePorkysWeeks = Object.keys(porkysByWeek).sort((a, b) => {
-        const numA = parseInt(a.replace(/\D/g, ""), 10) || 0;
-        const numB = parseInt(b.replace(/\D/g, ""), 10) || 0;
-        return numB - numA;
-    });
+    const isPorkysCard = (AppState.ledgerFivePackView === "porkys");
+    const teasePct = buckets.all_tease.total > 0 ? ((buckets.all_tease.hits / buckets.all_tease.total) * 100) : 0;
+    const tipPct = buckets.tip_all.total > 0 ? ((buckets.tip_all.hits / buckets.tip_all.total) * 100) : 0;
+    const floorPct = buckets.safe_floors.total > 0 ? ((buckets.safe_floors.hits / buckets.safe_floors.total) * 100) : 0;
+    const execLift = Number((floorPct - tipPct).toFixed(1));
+    const nDodged = buckets.champagne_room.dodged || 0;
 
-    if (AppState.selectedPorkysWeek !== "ALL" && !porkysByWeek[AppState.selectedPorkysWeek]) {
-        AppState.selectedPorkysWeek = "ALL";
-    }
-
-    const activePorkysRecordBucket = (AppState.selectedPorkysWeek === "ALL")
-        ? buckets.porkys_5pack
-        : porkysByWeek[AppState.selectedPorkysWeek];
-    const activePorkysCore3Bucket = (AppState.selectedPorkysWeek === "ALL")
-        ? buckets.porkys_core3
-        : porkysByWeek[AppState.selectedPorkysWeek].core3;
-    const activePorkysFlex2Bucket = (AppState.selectedPorkysWeek === "ALL")
-        ? buckets.porkys_flex2
-        : porkysByWeek[AppState.selectedPorkysWeek].flex2;
-
-    const activePorkysWeekKeys = (AppState.selectedPorkysWeek === "ALL")
-        ? availablePorkysWeeks
-        : [AppState.selectedPorkysWeek];
-    const activePorkysParlays = computeParlaySummaryForWeeks(activePorkysWeekKeys);
-
-    const totalPorkysGraded = buckets.porkys_5pack.total;
-    const porkysWeekDropdownHTML = `
-        <select onchange="window.setPorkysVaultWeek(this.value, event)" onclick="event.stopPropagation()" style="background:#0f172a; color:#f87171; border:1px solid rgba(239,68,68,0.55); border-radius:4px; padding:2px 6px; font-family:var(--font-mono); font-size:10.5px; font-weight:800; cursor:pointer;">
-            <option value="ALL" ${AppState.selectedPorkysWeek === "ALL" ? "selected" : ""}>All Weeks (${buckets.porkys_5pack.hits}/${totalPorkysGraded})</option>
-            ${availablePorkysWeeks.map(wk => {
-                const wObj = porkysByWeek[wk];
-                return `<option value="${wk}" ${AppState.selectedPorkysWeek === wk ? "selected" : ""}>${wk} (${wObj.hits}/${wObj.total})</option>`;
-            }).join("")}
-        </select>
-    `;
-
-    let activeVaultDrawerHTML = "";
+    // Active Vault Drawer
+    let activeVaultHTML = "";
     if (AppState.activeLedgerVault) {
-        let vaultTitle = "";
-        let vaultAccentColor = "var(--accent-cyan)";
-        let selectedRowsHTML = "";
-        let vaultSubBannerHTML = "";
-        const isFloorsCeilingsVault = (AppState.activeLedgerVault === "floors_ceilings");
-        const isPorkysVault = (AppState.activeLedgerVault === "porkys_5pack");
+        let title = "", rowsHTML = "";
+        let colsHead = `<tr><th>Week &amp; Final</th><th>Market</th><th>Official Pick</th><th>Vegas</th><th>Tip Closing</th><th>Balls Deep</th><th>Result</th></tr>`;
 
         if (AppState.activeLedgerVault === "flagship_5pack") {
-            const wkFilter = AppState.selectedFivePackWeek;
-            const wkScoreTag = wkFilter === "ALL"
-                ? `ALL WEEKS (${buckets.flagship_5pack.hits}/${totalFivePackGraded} HIT)`
-                : `${wkFilter.toUpperCase()} (${fivePackByWeek[wkFilter].hits}/${fivePackByWeek[wkFilter].total} HIT)`;
-            vaultTitle = `👑 FLAGSHIP 5-PACK &amp; MÉNAGE À TROIS VAULT // ${wkScoreTag}`;
-            vaultAccentColor = "var(--accent-gold)";
-            const matchingRows = vaultRows.flagship_5pack
-                .filter(item => wkFilter === "ALL" || item.weekLabel === wkFilter)
-                .map(item => item.rowHTML);
-            selectedRowsHTML = matchingRows.join("");
-        } else if (isPorkysVault) {
-            const wkFilter = AppState.selectedPorkysWeek;
-            const wkScoreTag = wkFilter === "ALL"
-                ? `ALL WEEKS (${buckets.porkys_5pack.hits}/${totalPorkysGraded} FLOOR FADES HIT)`
-                : `${wkFilter.toUpperCase()} (${porkysByWeek[wkFilter].hits}/${porkysByWeek[wkFilter].total} FLOOR FADES HIT)`;
-            vaultTitle = `🐷 PORKY&apos;S 5-PACK &amp; PARLAY AUDIT VAULT // ${wkScoreTag}`;
-            vaultAccentColor = "#f87171";
-
-            const dec175 = americanToDecimal(-175);
-            const mult3 = Math.pow(dec175, 3);
-            const mult2 = Math.pow(dec175, 2);
-            const mult5 = Math.pow(dec175, 5);
-            const fmtNet10 = (cashed, busted, mult) => {
-                const net = (cashed * 10.0 * (mult - 1.0)) - (busted * 10.0);
-                const sign = net >= 0 ? "+" : "-";
-                const col = net >= 0 ? "var(--accent-emerald)" : "var(--accent-danger)";
-                return `<span style="color:${col}; font-weight:800;">${sign}$${Math.abs(net).toFixed(2)}</span>`;
-            };
-
-            vaultSubBannerHTML = `
-                <div style="padding: 10px 16px; background: rgba(239, 68, 68, 0.08); border-bottom: 1px solid rgba(239, 68, 68, 0.35); display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; font-family: var(--font-mono); font-size: 11px;">
-                    <div style="background: rgba(15, 23, 42, 0.85); padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(239, 68, 68, 0.45);">
-                        <div style="color: #f87171; font-weight: 800;">🐷 3-PICK CORE PARLAY (#1–#3 @ ${mult3.toFixed(2)}x)</div>
-                        <div style="margin-top: 3px;">Legs: <strong>${fmtBucketObj(activePorkysCore3Bucket)}</strong></div>
-                        <div style="margin-top: 2px;">Tickets: <strong style="color:var(--accent-emerald);">${activePorkysParlays.core3.cashed}W</strong> - <strong style="color:var(--accent-danger);">${activePorkysParlays.core3.busted}L</strong> (${activePorkysParlays.core3.pending} Live) • $10 Net: ${fmtNet10(activePorkysParlays.core3.cashed, activePorkysParlays.core3.busted, mult3)}</div>
-                    </div>
-                    <div style="background: rgba(15, 23, 42, 0.85); padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(236, 72, 153, 0.45);">
-                        <div style="color: #f472b6; font-weight: 800;">🔞 2-PICK FLEX PARLAY (#4–#5 @ ${mult2.toFixed(2)}x)</div>
-                        <div style="margin-top: 3px;">Legs: <strong>${fmtBucketObj(activePorkysFlex2Bucket)}</strong></div>
-                        <div style="margin-top: 2px;">Tickets: <strong style="color:var(--accent-emerald);">${activePorkysParlays.flex2.cashed}W</strong> - <strong style="color:var(--accent-danger);">${activePorkysParlays.flex2.busted}L</strong> (${activePorkysParlays.flex2.pending} Live) • $10 Net: ${fmtNet10(activePorkysParlays.flex2.cashed, activePorkysParlays.flex2.busted, mult2)}</div>
-                    </div>
-                    <div style="background: rgba(15, 23, 42, 0.85); padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(6, 182, 212, 0.45);">
-                        <div style="color: var(--accent-cyan); font-weight: 800;">🛡️ FULL 5-PICK SAFE FLOOR PARLAY (@ ${mult5.toFixed(2)}x)</div>
-                        <div style="margin-top: 3px;">All 5 Legs: <strong>${fmtBucketObj(activePorkysRecordBucket)}</strong></div>
-                        <div style="margin-top: 2px;">Tickets: <strong style="color:var(--accent-emerald);">${activePorkysParlays.full5.cashed}W</strong> - <strong style="color:var(--accent-danger);">${activePorkysParlays.full5.busted}L</strong> (${activePorkysParlays.full5.pending} Live) • $10 Net: ${fmtNet10(activePorkysParlays.full5.cashed, activePorkysParlays.full5.busted, mult5)}</div>
-                    </div>
-                </div>
-            `;
-
-            const matchingRows = vaultRows.porkys_5pack
-                .filter(item => wkFilter === "ALL" || item.weekLabel === wkFilter)
-                .map(item => item.rowHTML);
-            selectedRowsHTML = matchingRows.join("");
+            title = `👑 FLAGSHIP 5-PACK VAULT (${AppState.selectedFivePackWeek})`;
+            rowsHTML = vaultRows.flagship_5pack.filter(x => AppState.selectedFivePackWeek === "ALL" || x.weekLabel === AppState.selectedFivePackWeek).map(x => x.rowHTML).join("");
+        } else if (AppState.activeLedgerVault === "porkys_5pack") {
+            title = `🐷 PORKY'S 5-PACK FADES VAULT (${AppState.selectedPorkysWeek})`;
+            colsHead = `<tr><th>Week &amp; Final</th><th>Slot</th><th>🚫 Public Trap</th><th>🛡️ Safe Floor Fade</th><th>Floor Result</th><th>Straight Fade</th></tr>`;
+            rowsHTML = vaultRows.porkys_5pack.filter(x => AppState.selectedPorkysWeek === "ALL" || x.weekLabel === AppState.selectedPorkysWeek).map(x => x.rowHTML).join("");
         } else if (AppState.activeLedgerVault === "overall_smash") {
-            vaultTitle = `🔥 OFFICIAL SMASH VAULT (&ge;+10.0% EV COMPLETED RECEIPTS) // ${fmtBucket("overall_smash")}`;
-            vaultAccentColor = "var(--accent-emerald)";
-            selectedRowsHTML = vaultRows.overall_smash.join("");
+            title = `🔥 OFFICIAL SMASH VAULT (≥+10.0% EV)`;
+            rowsHTML = vaultRows.overall_smash.join("");
         } else if (AppState.activeLedgerVault === "all_tease") {
-            vaultTitle = `🔵 ALL TEASE, NO SQUEEZE // NO-BET QUARANTINE (${buckets.all_tease.total} COIN-FLIPS SKIPPED)`;
-            vaultAccentColor = "#60a5fa";
-            selectedRowsHTML = vaultRows.all_tease.join("");
+            title = `🔵 ALL TEASE, NO SQUEEZE (NO-BET QUARANTINE)`;
+            rowsHTML = vaultRows.all_tease.join("");
         } else if (AppState.activeLedgerVault === "grenades_dodged") {
-            vaultTitle = `💣 GRENADES DODGED VAULT (&le;-19.0% EV PUBLIC TRAPS AVOIDED) // ${fmtTraps()}`;
-            vaultAccentColor = "var(--accent-danger)";
-            selectedRowsHTML = vaultRows.grenades_dodged.join("");
-        } else if (isFloorsCeilingsVault) {
-            vaultTitle = `🔑 KEY-NUMBER ALT BUYS &amp; 🛡️ REGIME SAFE TOTALS VAULT // Key/Safe: ${fmtBucket("safe_floors")} • Ceilings: ${fmtBucket("ceilings")}`;
-            vaultAccentColor = "var(--accent-gold)";
-            selectedRowsHTML = vaultRows.floors_ceilings.join("");
+            title = `💣 GRENADES DODGED VAULT (≤-19.0% EV TRAPS AVOIDED)`;
+            rowsHTML = vaultRows.grenades_dodged.join("");
+        } else if (AppState.activeLedgerVault === "floors_ceilings") {
+            title = `🔑 2-KEY ALTS, WONG TEASERS & CEILINGS (+φ)`;
+            colsHead = `<tr><th>Week &amp; Final</th><th>Market</th><th>Base Pick</th><th>🔑 2-Key / Safe Floor</th><th>Floor Result</th><th>🎯 Ceiling (+φ)</th><th>Ceiling Result</th></tr>`;
+            rowsHTML = vaultRows.floors_ceilings.join("");
         } else if (AppState.activeLedgerVault === "tip_vs_bd") {
-            vaultTitle = `⚡ TIP vs. BALLS DEEP MASTER ARCHIVE (ALL COMPLETED GAMES)`;
-            vaultAccentColor = "var(--accent-cyan)";
-            selectedRowsHTML = vaultRows.tip_vs_bd.join("");
+            title = `⚡ TIP RAW vs. BALLS DEEP MASTER ARCHIVE`;
+            rowsHTML = vaultRows.tip_vs_bd.join("");
         }
 
-        const vaultTableHeadHTML = isPorkysVault
-            ? `
-                <tr>
-                    <th>Week &amp; Score</th>
-                    <th>Porky&apos;s Slot</th>
-                    <th>🚫 Public Trap (PASS)</th>
-                    <th>🛡️ Safe Floor Fade (-2&phi; / -175)</th>
-                    <th>Floor Result</th>
-                    <th>Straight Fade</th>
-                    <th>Parlay Status</th>
-                </tr>
-            `
-            : (isFloorsCeilingsVault
-                ? `
-                    <tr>
-                        <th>Week &amp; Final Score</th>
-                        <th>Market</th>
-                        <th>Base Model Pick</th>
-                        <th>🔑 2-Key-Rung Floor &amp; Wong Teaser</th>
-                        <th>Floor Result</th>
-                        <th>🎯 Ceiling Escalator (+&phi;)</th>
-                        <th>Ceiling Result</th>
-                    </tr>
-                `
-                : `
-                    <tr>
-                        <th>Week &amp; Final Score</th>
-                        <th>Market &amp; Slot</th>
-                        <th>Official Model Pick</th>
-                        <th>Vegas Closing</th>
-                        <th>Just the Tip Closing</th>
-                        <th>${AppState.activeLedgerVault === "grenades_dodged" ? "Counter-Strike Fade Outcome" : "Balls Deep Closing"}</th>
-                        <th>Graded Result</th>
-                    </tr>
-                `);
-
-        const swapBtnLabel = isPorkysVault ? "👑 Swap to Flagship 5-Pack ➔" : "🐷 Swap to Porky&apos;s Audit ➔";
-        const vaultHeaderToggleBtn = (AppState.activeLedgerVault === "flagship_5pack" || isPorkysVault)
-            ? `<button class="calc-action-btn" onclick="window.toggleLedgerFivePackView(event)" style="font-size: 11px; padding: 4px 10px; border-color: ${isPorkysVault ? 'var(--accent-gold)' : 'rgba(239,68,68,0.65)'}; color: ${isPorkysVault ? 'var(--accent-gold)' : '#f87171'};">
-                   ${swapBtnLabel}
-               </button>`
-            : "";
-
-        activeVaultDrawerHTML = `
-            <div style="margin-bottom: 22px; border: 1px solid ${vaultAccentColor}; border-radius: 8px; background: #0f172a; box-shadow: 0 8px 24px rgba(0,0,0,0.5); overflow: hidden;">
-                <div style="padding: 12px 16px; background: rgba(30, 41, 59, 0.85); border-bottom: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-                    <span style="font-family: var(--font-mono); font-size: 12.5px; font-weight: 800; color: ${vaultAccentColor};">
-                        📂 ${vaultTitle}
-                    </span>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        ${vaultHeaderToggleBtn}
-                        <button class="calc-action-btn" onclick="window.toggleLedgerVault('${AppState.activeLedgerVault}', event)" style="font-size: 11px; padding: 4px 10px;">
-                            ✕ Close Vault ▲
-                        </button>
-                    </div>
+        activeVaultHTML = `
+            <div class="vault-drawer">
+                <div class="vault-drawer-head">
+                    <span class="mono" style="font-size:12px; font-weight:800; color:var(--text-1);">${title}</span>
+                    <button type="button" class="chip" style="padding:3px 9px; font-size:11px;" onclick="window.toggleLedgerVault('${AppState.activeLedgerVault}', event)">Close ▲</button>
                 </div>
-                ${vaultSubBannerHTML}
-                <div class="table-responsive">
-                    <table class="quant-table">
-                        <thead>
-                            ${vaultTableHeadHTML}
-                        </thead>
-                        <tbody>
-                            ${selectedRowsHTML || `<tr><td colspan="7" style="text-align:center; color:var(--text-secondary); padding:18px;">No completed games in this vault yet—active games move here automatically as soon as they hit FINAL.</td></tr>`}
-                        </tbody>
+                <div class="table-box" style="border:none; border-radius:0;">
+                    <table class="pf-table">
+                        <thead>${colsHead}</thead>
+                        <tbody>${rowsHTML || `<tr><td colspan="7" style="text-align:center; color:var(--text-2); padding:18px;">Completed games move into this vault automatically once FINAL.</td></tr>`}</tbody>
                     </table>
                 </div>
             </div>
         `;
     }
 
-    const cardActiveStyle = (key, defaultBorder) => (AppState.activeLedgerVault === key)
-        ? `border: 2px solid var(--accent-cyan); box-shadow: 0 0 16px rgba(6, 182, 212, 0.35);`
-        : `border: 1px solid ${defaultBorder};`;
-
     container.innerHTML = `
-        ${buildLedgerLegendHTML()}
-
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-bottom: 20px; font-family: var(--font-mono);">
-            ${AppState.ledgerFivePackView === "porkys" ? `
-            <div onclick="window.toggleLedgerVault('porkys_5pack', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('porkys_5pack', 'rgba(239, 68, 68, 0.6)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
-                <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
-                    <span style="font-size: 11px; color: #f87171; font-weight: 800;">🐷 PORKY&apos;S 5-PACK</span>
-                    <button onclick="window.toggleLedgerFivePackView(event)" title="Swap back to Flagship 5-Pack" style="cursor:pointer; font-family:var(--font-mono); font-size:9.5px; font-weight:800; padding:2px 6px; border-radius:4px; background:rgba(15,23,42,0.9); color:var(--accent-gold); border:1px solid rgba(245,158,11,0.6);">👑 Flagship ➔</button>
+        <div class="vault-grid">
+            <div class="vault-tile ${AppState.activeLedgerVault === (isPorkysCard ? "porkys_5pack" : "flagship_5pack") ? "active" : ""}" onclick="window.toggleLedgerVault('${isPorkysCard ? "porkys_5pack" : "flagship_5pack"}', event)">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">
+                    <span class="mono" style="font-size:10.5px; font-weight:800; color:${isPorkysCard ? "var(--red)" : "var(--gold)"};">${isPorkysCard ? "🐷 PORKY'S 5-PACK" : "👑 FLAGSHIP 5-PACK"}</span>
+                    <button type="button" class="chip" style="padding:2px 7px; font-size:10px;" onclick="window.toggleLedgerFivePackView(event)">${isPorkysCard ? "👑 Flagship" : "🐷 Porky's"}</button>
                 </div>
-                <div style="margin-top: 6px; display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
-                    <span style="font-size: 13.5px; font-weight: 800; color: var(--accent-cyan);">Core 3: ${fmtBucketObj(activePorkysCore3Bucket)}</span>
-                    ${porkysWeekDropdownHTML}
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; margin-top:8px;">
+                    <span class="mono" style="font-size:13.5px; font-weight:800;">${isPorkysCard ? `Core 3: ${fmtBucketObj(activePorkysCore)}` : fmtBucketObj(activeFpBucket)}</span>
+                    ${isPorkysCard ? porkyWeekSelect : fpWeekSelect}
                 </div>
-                <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
-                    Flex 2: <strong>${fmtBucketObj(activePorkysFlex2Bucket)}</strong> • Parlays (3/5): <strong style="color:var(--accent-emerald);">${activePorkysParlays.core3.cashed}-${activePorkysParlays.core3.busted}</strong> / <strong style="color:var(--accent-gold);">${activePorkysParlays.full5.cashed}-${activePorkysParlays.full5.busted}</strong>
-                </div>
-            </div>
-            ` : `
-            <div onclick="window.toggleLedgerVault('flagship_5pack', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('flagship_5pack', 'rgba(245, 158, 11, 0.5)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
-                <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
-                    <span style="font-size: 11px; color: var(--accent-gold); font-weight: 800;">👑 FLAGSHIP 5-PACK</span>
-                    <button onclick="window.toggleLedgerFivePackView(event)" title="Swap to Porky&apos;s 5-Pack &amp; Parlay Audit" style="cursor:pointer; font-family:var(--font-mono); font-size:9.5px; font-weight:800; padding:2px 6px; border-radius:4px; background:rgba(15,23,42,0.9); color:#f87171; border:1px solid rgba(239,68,68,0.6);">🐷 Porky&apos;s ➔</button>
-                </div>
-                <div style="margin-top: 6px; display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
-                    <span style="font-size: 13.5px; font-weight: 800;">5-Pack: ${fmtBucketObj(activeFivePackRecordBucket)}</span>
-                    ${weekDropdownHTML}
-                </div>
-                <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 4px;">Ménage à Trois: <strong>${fmtBucketObj(activeMenageRecordBucket)}</strong></div>
-            </div>
-            `}
-
-            <div onclick="window.toggleLedgerVault('overall_smash', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('overall_smash', 'rgba(16, 185, 129, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
-                <div style="font-size: 11px; color: var(--accent-emerald); font-weight: 800;">🔥 OFFICIAL SMASH (&ge;+10.0% EV)</div>
-                <div style="font-size: 14px; font-weight: 800; margin: 6px 0; color: var(--accent-cyan);">🔑 Key-Buy Exec: ${fmtBucket("smash_key_exec")}</div>
-                <div style="font-size: 11px; color: var(--text-secondary);">
-                    Raw -110: <strong>${fmtBucket("overall_smash")}</strong><br>Spreads: <strong>${fmtBucket("spread_smash")}</strong> • Totals: <strong>${fmtBucket("total_smash")}</strong>
+                <div style="font-size:11px; color:var(--text-2); margin-top:4px;">
+                    ${isPorkysCard ? `Flex 2: <strong>${fmtBucketObj(activePorkysFlex)}</strong>` : `Ménage à Trois: <strong>${fmtBucketObj(activeMenageBucket)}</strong>`}
                 </div>
             </div>
 
-            <div onclick="window.toggleLedgerVault('all_tease', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('all_tease', 'rgba(59, 130, 246, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
-                <div style="font-size: 11px; color: #60a5fa; font-weight: 800;">🔵 ALL TEASE, NO SQUEEZE (NO-BET ZONE)</div>
-                ${(() => {
-                    const t = buckets.all_tease || { hits: 0, misses: 0, blueBalls: 0, total: 0 };
-                    const sk = buckets.smash_key_exec || { hits: 0, total: 0 };
-                    const sr = buckets.overall_smash || { hits: 0, total: 0 };
-                    const teasePct = t.total > 0 ? ((t.hits / t.total) * 100) : 0;
-                    const smashPct = sk.total > 0 ? ((sk.hits / sk.total) * 100) : (sr.total > 0 ? ((sr.hits / sr.total) * 100) : 0);
-                    const edgeLift = Number((smashPct - teasePct).toFixed(1));
-                    const liftColor = edgeLift >= 0 ? "var(--accent-emerald)" : "var(--text-secondary)";
-                    const breakEvenTag = teasePct < 52.4 ? "Below 52.4% Break-Even — Good Skip" : "Tight Coin-Flip Buffer";
-                    return `
-                        <div style="font-size: 15.5px; font-weight: 800; margin: 6px 0; color: var(--text-primary);">${t.total} Coin-Flips Skipped</div>
-                        <div style="font-size: 11px; color: var(--text-secondary); line-height: 1.45;">
-                            SMASH Filter Edge: <strong style="color:${liftColor};">${edgeLift >= 0 ? '+' : ''}${edgeLift}%</strong> vs. Skipped<br>
-                            <span style="color:var(--text-muted);">Skipped Raw: ${teasePct.toFixed(1)}% (${breakEvenTag})</span>
-                        </div>
-                    `;
-                })()}
+            <div class="vault-tile ${AppState.activeLedgerVault === "overall_smash" ? "active" : ""}" onclick="window.toggleLedgerVault('overall_smash', event)">
+                <div class="mono" style="font-size:10.5px; font-weight:800; color:var(--emerald);">🔥 OFFICIAL SMASH (&ge;+10.0% EV)</div>
+                <div class="mono" style="font-size:14px; font-weight:800; margin:7px 0 4px 0;">${showBallsDeep ? `Key Exec: ${fmtBucket("smash_key_exec")}` : `Raw -110: ${fmtBucket("overall_smash")}`}</div>
+                <div style="font-size:11px; color:var(--text-2);">
+                    Spreads: <strong>${fmtBucket("spread_smash")}</strong> · Totals: <strong>${fmtBucket("total_smash")}</strong>
+                </div>
             </div>
 
-            <div onclick="window.toggleLedgerVault('grenades_dodged', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('grenades_dodged', 'rgba(239, 68, 68, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
-                <div style="font-size: 11px; color: var(--accent-danger); font-weight: 800;">💣 GRENADES DODGED (&le;-19.0% EV)</div>
-                <div style="font-size: 18px; font-weight: 800; margin: 6px 0; color: var(--accent-emerald);">${fmtTraps()}</div>
-                <div style="font-size: 11px; color: var(--text-muted);">You were a little too drunk to make that call last night</div>
+            <div class="vault-tile ${AppState.activeLedgerVault === "all_tease" ? "active" : ""}" onclick="window.toggleLedgerVault('all_tease', event)">
+                <div class="mono" style="font-size:10.5px; font-weight:800; color:var(--blue);">🔵 ALL TEASE, NO SQUEEZE</div>
+                <div class="mono" style="font-size:15px; font-weight:800; margin:7px 0 4px 0;">${buckets.all_tease.total} Coin-Flips Skipped</div>
+                <div style="font-size:11px; color:var(--text-2);">Skipped Raw: ${teasePct.toFixed(1)}% (${teasePct < 52.4 ? "Below 52.4% BE — Good Skip" : "Tight Buffer"})</div>
             </div>
 
-            <div onclick="window.toggleLedgerVault('floors_ceilings', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('floors_ceilings', 'rgba(245, 158, 11, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
-                <div style="font-size: 11px; color: var(--accent-gold); font-weight: 800;">🔑 KEY-NUM ALTS &amp; 🛡️ SAFE TOTALS</div>
-                <div style="font-size: 13px; font-weight: 800; margin: 6px 0; color: var(--accent-cyan);">🔑 Key Alts / Safe Totals: ${fmtBucket("safe_floors")}</div>
-                <div style="font-size: 12.5px; font-weight: 800; color: var(--accent-gold);">🎯 Ceilings (+&phi;): ${fmtBucket("ceilings")}</div>
+            <div class="vault-tile ${AppState.activeLedgerVault === "grenades_dodged" ? "active" : ""}" onclick="window.toggleLedgerVault('grenades_dodged', event)">
+                <div class="mono" style="font-size:10.5px; font-weight:800; color:var(--red);">💣 GRENADES DODGED (&le;-19% EV)</div>
+                <div class="mono" style="font-size:16px; font-weight:800; margin:7px 0 4px 0; color:var(--emerald);">${nDodged} Grenade${nDodged === 1 ? "" : "s"} Dodged</div>
+                <div style="font-size:11px; color:var(--text-2);">Public traps stamped PASS that failed to cover</div>
             </div>
 
-            <div onclick="window.toggleLedgerVault('tip_vs_bd', event)" style="cursor: pointer; background: var(--bg-elevated); ${cardActiveStyle('tip_vs_bd', 'rgba(6, 182, 212, 0.45)')} border-radius: 8px; padding: 14px; transition: all 0.15s ease;">
-                <div style="font-size: 11px; color: var(--accent-cyan); font-weight: 800;">⚡ TIP RAW vs. BALLS DEEP EXEC</div>
-                <div style="font-size: 13px; font-weight: 800; margin: 6px 0;">Tip (-110): ${fmtBucket("tip_all")}</div>
+            <div class="vault-tile ${AppState.activeLedgerVault === "floors_ceilings" ? "active" : ""}" onclick="window.toggleLedgerVault('floors_ceilings', event)">
+                <div class="mono" style="font-size:10.5px; font-weight:800; color:var(--cyan);">🔑 2-KEY ALTS &amp; WONG TEASERS</div>
                 ${showBallsDeep
-                    ? (() => {
-                        const tp = buckets.tip_all.total > 0 ? (buckets.tip_all.hits / buckets.tip_all.total) * 100 : 0;
-                        const fp = buckets.safe_floors.total > 0 ? (buckets.safe_floors.hits / buckets.safe_floors.total) * 100 : 0;
-                        const lift = Number((fp - tp).toFixed(1));
-                        return `<div style="font-size: 13px; font-weight: 800; color: var(--accent-emerald);">BD Exec: ${fmtBucket("safe_floors")} <span style="font-size:11px; color:var(--accent-cyan);">(${lift >= 0 ? '+' : ''}${lift}%)</span></div>`;
-                    })()
-                    : `<div style="font-size: 11px; color: var(--accent-gold); cursor: pointer;" onclick="window.unlockBallsDeepMode(event)">🔒 Click to unlock Balls Deep Exec Lift</div>`
+                    ? `<div class="mono" style="font-size:13.5px; font-weight:800; margin:7px 0 4px 0; color:var(--cyan);">2-Key / Safe: ${fmtBucket("safe_floors")}</div>
+                       <div style="font-size:11px; color:var(--text-2);">Wong: <strong>${fmtBucket("wong_teasers")}</strong> · Ceilings: <strong>${fmtBucket("ceilings")}</strong></div>`
+                    : `<div class="mono" style="font-size:14px; font-weight:800; margin:7px 0 4px 0; color:var(--gold);">🔒 Balls Deep Locked</div>
+                       <div style="font-size:11px; color:var(--text-2);">Click to unlock 2-Key Alt &amp; Wong Teaser receipts</div>`
+                }
+            </div>
+
+            <div class="vault-tile ${AppState.activeLedgerVault === "tip_vs_bd" ? "active" : ""}" onclick="window.toggleLedgerVault('tip_vs_bd', event)">
+                <div class="mono" style="font-size:10.5px; font-weight:800; color:var(--emerald);">⚡ TIP RAW vs. BALLS DEEP LIFT</div>
+                <div class="mono" style="font-size:13.5px; font-weight:800; margin:7px 0 4px 0;">Tip (-110): ${fmtBucket("tip_all")}</div>
+                ${showBallsDeep
+                    ? `<div style="font-size:11.5px; color:var(--emerald); font-weight:700;">BD Exec Lift: ${execLift >= 0 ? "+" : ""}${execLift}% (${floorPct.toFixed(1)}% vs ${tipPct.toFixed(1)}%)</div>`
+                    : `<div style="font-size:11px; color:var(--gold);">🔒 Click to unlock Balls Deep Execution Lift</div>`
                 }
             </div>
         </div>
 
-        ${activeVaultDrawerHTML}
+        ${activeVaultHTML}
 
-        <div style="margin-bottom: 10px; padding: 8px 14px; border-radius: 6px; background: rgba(15, 23, 42, 0.85); border: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; font-family: var(--font-mono);">
-            <span style="font-size: 12px; font-weight: 800; color: var(--accent-cyan);">
-                🕒 ACTIVE WEEK // UPCOMING &amp; IN-PLAY CLOSING LINE LEDGER
-            </span>
-            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                <button onclick="window.toggleLedgerAllCompleted(event)" class="calc-action-btn" style="font-size: 10.5px; padding: 3px 9px; border-color: ${AppState.ledgerShowAllCompleted ? 'var(--accent-emerald)' : 'rgba(245,158,11,0.55)'}; color: ${AppState.ledgerShowAllCompleted ? 'var(--accent-emerald)' : 'var(--accent-gold)'};">
-                    ${AppState.ledgerShowAllCompleted ? '📋 Showing ALL Completed FBS + NFL (Click for Top-25 Only)' : '🏆 Top-25 NCAA + NFL Only (Click to Show ALL FBS Finals)'}
-                </button>
-                <span style="font-size: 11px; color: var(--text-secondary);">
-                    Completed games move automatically into the 6 Scorecard Vaults above upon hitting FINAL
-                </span>
-            </div>
+        <div class="section-head" style="margin-top:8px;">
+            <span class="mono" style="font-size:12px; font-weight:800; color:var(--text-1);">🕒 ACTIVE WEEK // UPCOMING &amp; IN-PLAY CLOSING LINES</span>
+            <button type="button" class="chip" style="font-size:11px;" onclick="window.toggleLedgerAllCompleted(event)">
+                ${AppState.ledgerShowAllCompleted ? "📋 Showing ALL FBS + NFL" : "🏆 Top-25 NCAA + NFL Only"}
+            </button>
         </div>
 
-        <div class="table-responsive">
-            <table class="quant-table">
+        <div class="table-box">
+            <table class="pf-table">
                 <thead>
                     <tr>
-                        <th>Matchup &amp; Status</th>
-                        <th>Market &amp; Slot</th>
-                        <th>Official Model Pick</th>
-                        <th>Vegas Closing</th>
-                        <th>Just the Tip Closing</th>
-                        <th>Balls Deep Closing</th>
-                        <th>Graded Result</th>
+                        <th>Matchup &amp; Status</th><th>Market</th><th>Official Pick</th><th>Vegas</th><th>Tip Closing</th><th>Balls Deep</th><th>Result</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${upcomingRowsHTML}
+                    ${upcomingRowsHTML || `<tr><td colspan="7" style="text-align:center; color:var(--text-2); padding:18px;">No upcoming current-week closing lines pending.</td></tr>`}
                 </tbody>
             </table>
         </div>
@@ -3776,105 +2930,40 @@ function renderHistoricalLedger() {
 }
 
 // ==========================================
-// RESPONSIVE 5-PACK CSS & FIXED-BOTTOM ZERO-TOKEN ESPN LIVE WIRE TICKER (300s CRAWL)
+// SLIM LIVE WIRE BOTTOM TICKER
 // ==========================================
-function ensureTickerStylesInjected() {
-    if (document.getElementById("dixpix-ticker-keyframes")) return;
-    const styleEl = document.createElement("style");
-    styleEl.id = "dixpix-ticker-keyframes";
-    styleEl.textContent = `
-        @keyframes dixpixMarqueeScroll {
-            0% { transform: translateX(0%); }
-            100% { transform: translateX(-50%); }
-        }
-        #dixpix-live-wire-track:hover {
-            animation-play-state: paused !important;
-        }
-        #flagship-banner-toggle {
-            position: relative;
-            cursor: pointer;
-            padding: 14px 145px;
-            text-align: center;
-            user-select: none;
-        }
-        .five-pack-corner-btn {
-            position: absolute;
-            top: 12px;
-            right: 14px;
-        }
-        @media (max-width: 720px) {
-            #flagship-banner-toggle {
-                padding: 12px 14px !important;
-            }
-            .five-pack-corner-btn {
-                position: static !important;
-                display: inline-block !important;
-                margin-bottom: 8px !important;
-            }
-        }
-    `;
-    document.head.appendChild(styleEl);
-    document.body.style.paddingBottom = "46px";
-}
-
 function renderLiveBottomTicker() {
-    ensureTickerStylesInjected();
+    const track = document.getElementById("dixpix-live-wire-track");
+    if (!track) return;
 
-    let tickerBar = document.getElementById("dixpix-live-wire-bar");
-    if (!tickerBar) {
-        tickerBar = document.createElement("div");
-        tickerBar.id = "dixpix-live-wire-bar";
-        tickerBar.style.cssText = "position:fixed; bottom:0; left:0; right:0; height:36px; background:rgba(9,13,22,0.96); border-top:1px solid rgba(245,158,11,0.55); box-shadow:0 -4px 16px rgba(0,0,0,0.65); z-index:9999; display:flex; align-items:center; overflow:hidden; font-family:var(--font-mono); font-size:11.5px;";
-        document.body.appendChild(tickerBar);
-    }
+    const tickerItems = [
+        `<span style="color:var(--emerald); font-weight:800;">🟢 FINAL: LAC 23 - BAL 20</span> <span style="color:var(--text-1);">[BAL +6.5 ✅ HIT (+27.6% EV) · O 44.5 🔵 BB (-1.5)]</span>`
+    ];
 
-    const tickerItems = [];
-
-    // 1. Add Permanent Graded Archive Highlights
-    tickerItems.push(`<span style="color:var(--accent-emerald);font-weight:800;">🟢 FINAL: LAC 23 - BAL 20</span> <span style="color:var(--text-primary);">[BAL +6.5 ✅ HIT (+27.6% EV) • O 44.5 🔵 BLUE BALLS (-1.5 pts)]</span>`);
-
-    // 2. Add Live / Final ESPN Feed Games + Current Week Slate Picks
-    const currentWeekGames = AppState.processedGames.filter(g => g.isCurrentWeek);
-    currentWeekGames.forEach(g => {
+    AppState.processedGames.filter(g => g.isCurrentWeek).forEach(g => {
         const espnMatch = getEspnScoreMatch(g.league, g.matchup);
-        const gameSpreads = AppState.processedProps.filter(p => p.gameId === g.gameId && p.marketType === "spread").sort((a, b) => b.tipEvPct - a.tipEvPct);
-        const topSpread = gameSpreads[0];
+        const topSpread = AppState.processedProps
+            .filter(p => p.gameId === g.gameId && p.marketType === "spread")
+            .sort((a, b) => b.tipEvPct - a.tipEvPct)[0];
         if (!topSpread) return;
 
-        const pickTag = `${topSpread.player} (${topSpread.tipEvPct > 0 ? '+' : ''}${topSpread.tipEvPct}% EV)`;
-        const tierColor = getTierColor(topSpread.tipBadge, true);
+        const pickTag = `${topSpread.shortTitle} (${topSpread.tipEvPct > 0 ? "+" : ""}${topSpread.tipEvPct.toFixed(1)}% EV)`;
+        const tierCol = getTierColor(topSpread.tipBadge);
 
         if (espnMatch && espnMatch.state === "in") {
-            tickerItems.push(`<span style="color:#ef4444;font-weight:800;">🔴 LIVE (${espnMatch.shortDetail || 'IN-PLAY'}): ${espnMatch.scoreStr}</span> <span style="color:${tierColor};">[Model: ${pickTag}]</span>`);
+            tickerItems.push(`<span style="color:var(--red); font-weight:800;">🔴 LIVE (${espnMatch.shortDetail || "IN-PLAY"}): ${espnMatch.scoreStr}</span> <span style="color:${tierCol};">[${pickTag}]</span>`);
         } else if (espnMatch && espnMatch.state === "post") {
-            tickerItems.push(`<span style="color:var(--accent-emerald);font-weight:800;">🟢 FINAL: ${espnMatch.scoreStr}</span> <span style="color:${tierColor};">[Model: ${pickTag}]</span>`);
+            tickerItems.push(`<span style="color:var(--emerald); font-weight:800;">🟢 FINAL: ${espnMatch.scoreStr}</span> <span style="color:${tierCol};">[${pickTag}]</span>`);
         } else {
-            let kickStr = "UPCOMING";
-            if (g.commenceTime) {
-                const dt = new Date(g.commenceTime);
-                kickStr = dt.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase() + " " + dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-            }
             const badgeStr = topSpread.tipBadge === "SMASH" ? "🔥 SMASH" : (topSpread.tipBadge === "PASS" ? "💣 PASS" : "⚖️ TEASE");
-            tickerItems.push(`<span style="color:var(--accent-cyan);font-weight:700;">🕒 ${kickStr}: ${g.matchup}</span> <span style="color:${tierColor};">[${badgeStr}: ${pickTag}]</span>`);
+            tickerItems.push(`<span style="color:var(--cyan); font-weight:700;">${g.kickoffShort}: ${g.matchup}</span> <span style="color:${tierCol};">[${badgeStr}: ${pickTag}]</span>`);
         }
     });
 
-    const joinedStrip = tickerItems.join(` <span style="color:rgba(245,158,11,0.55);margin:0 18px;">//</span> `);
-    // Dynamic broadcast crawl speed (~60 px/sec regardless of item count — fixes snail crawl on short slates!)
-    const tickerDurationSec = Math.max(18, Math.min(180, tickerItems.length * 10));
-
-    tickerBar.innerHTML = `
-        <div style="flex-shrink:0; height:100%; padding:0 12px; background:linear-gradient(90deg, rgba(245,158,11,0.25), rgba(15,23,42,0.98)); border-right:1px solid rgba(245,158,11,0.55); display:flex; align-items:center; gap:7px; color:var(--accent-gold); font-weight:800; letter-spacing:0.03em; z-index:2;">
-            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--accent-emerald); box-shadow:0 0 8px var(--accent-emerald);"></span>
-            📡 DIXPIX LIVE WIRE
-        </div>
-        <div style="flex:1; overflow:hidden; white-space:nowrap; position:relative;">
-            <div id="dixpix-live-wire-track" style="display:inline-block; white-space:nowrap; padding-left:24px; animation: dixpixMarqueeScroll ${tickerDurationSec}s linear infinite;">
-                <span>${joinedStrip}</span>
-                <span style="color:rgba(245,158,11,0.55);margin:0 18px;">//</span>
-                <span>${joinedStrip}</span>
-            </div>
-        </div>
-    `;
+    const sep = `<span style="color:var(--border-strong); margin:0 16px;">//</span>`;
+    const joined = tickerItems.join(sep);
+    const durSec = Math.max(20, Math.min(180, tickerItems.length * 10));
+    track.style.animationDuration = `${durSec}s`;
+    track.innerHTML = `<span>${joined}</span>${sep}<span>${joined}</span>`;
 }
-// === END OF APP_CONTROLLER.JS (v260) ===
+// === END OF APP_CONTROLLER.JS (v261) ===
