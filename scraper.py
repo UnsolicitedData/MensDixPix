@@ -1,5 +1,5 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v237 — 2-KEY-RUNG LADDER IN PERPETUITY + ALWAYS-ON WONG TEASER ENGINE)
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v238 — PRICED MONEYLINE H2H + OUTRIGHT ML AUTO-GRADER + 2-KEY-RUNG PERPETUITY)
 Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
   1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
   2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
@@ -1872,6 +1872,10 @@ def fetch_espn_free_odds(league_label):
                 a_sp_price = _parse_espn_american_odds(a_odds_blk.get("spreadOdds"), -110)
                 o_price = _parse_espn_american_odds(odds_obj.get("overOdds"), -110)
                 u_price = _parse_espn_american_odds(odds_obj.get("underOdds"), -110)
+                h_ml_raw = h_odds_blk.get("moneyLine")
+                a_ml_raw = a_odds_blk.get("moneyLine")
+                h_ml_price = _parse_espn_american_odds(h_ml_raw, None) if h_ml_raw not in (None, "") else None
+                a_ml_price = _parse_espn_american_odds(a_ml_raw, None) if a_ml_raw not in (None, "") else None
 
                 markets = []
                 if home_sp is not None:
@@ -1888,6 +1892,14 @@ def fetch_espn_free_odds(league_label):
                         "outcomes": [
                             {"name": "Over", "point": round(ou_val, 1), "price": o_price},
                             {"name": "Under", "point": round(ou_val, 1), "price": u_price}
+                        ]
+                    })
+                if h_ml_price is not None and a_ml_price is not None:
+                    markets.append({
+                        "key": "h2h",
+                        "outcomes": [
+                            {"name": home_full, "price": h_ml_price},
+                            {"name": away_full, "price": a_ml_price}
                         ]
                     })
 
@@ -1915,7 +1927,7 @@ def fetch_live_odds_for_sport(sport_key, league_label):
     if ODDS_API_KEY and ODDS_API_KEY != "PASTE_YOUR_API_KEY_HERE":
         url = (
             f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/"
-            f"?apiKey={ODDS_API_KEY}&regions=us&markets=spreads,totals&oddsFormat=american"
+            f"?apiKey={ODDS_API_KEY}&regions=us&markets=spreads,totals,h2h&oddsFormat=american"
         )
         try:
             req = urllib.request.Request(url, headers=HEADERS)
@@ -2153,11 +2165,13 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
 
         spread_props = [p for p in g.get("props_board", []) if p.get("market_type") == "spread"]
         total_props = [p for p in g.get("props_board", []) if p.get("market_type") == "total"]
+        ml_props = [p for p in g.get("props_board", []) if p.get("market_type") == "moneyline"]
         if not spread_props:
             continue
 
         best_spread = max(spread_props, key=lambda x: x.get("ev_pct", -100.0))
         best_total = total_props[0] if total_props else None
+        best_ml = max(ml_props, key=lambda x: x.get("model_win_prob", 0.0)) if ml_props else None
 
         # Reject live in-game garbage juice (e.g. +430 / -1000 during a 45-7 blowout) from poisoning pre-game ledger snapshots!
         has_live_garbage_odds = (
@@ -2255,6 +2269,22 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                     "result_tip": "PENDING",
                     "result_balls_deep": "PENDING",
                     "result_safe_total": "PENDING"
+                }
+            if best_ml:
+                ml_team = best_ml.get("team") or (g["home_team"] if not best_ml.get("is_away_player") else g["away_team"])
+                existing["ml_record"] = {
+                    "pick_label": best_ml["player"],
+                    "pick_team": ml_team,
+                    "ml_odds": int(best_ml.get("base_odds_over", -110)),
+                    "is_underdog": bool(best_ml.get("is_underdog", False)),
+                    "is_upset_pick": bool(best_ml.get("is_upset_pick", False)),
+                    "tip_win_pct": round(float(best_ml.get("model_win_prob", 0.5)) * 100.0, 2),
+                    "tip_ev_pct": float(best_ml.get("ev_pct", 0.0)),
+                    "balls_deep_win_pct": round(float(best_ml.get("balls_deep_win_prob", best_ml.get("model_win_prob", 0.5))) * 100.0, 2),
+                    "balls_deep_ev_pct": float(best_ml.get("balls_deep_ev_pct", best_ml.get("ev_pct", 0.0))),
+                    "tier_badge": best_ml.get("tier_badge", "TOO_CLOSE"),
+                    "result_tip": "PENDING",
+                    "result_balls_deep": "PENDING"
                 }
 
         if not existing.get("is_locked", False):
@@ -2670,6 +2700,46 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                 p_rec["straight_miss_by"] = st_miss
                 p_rec["trap_dodged"] = (p_rec["result_straight"] == "HIT")
 
+            # Straight-Up Moneyline (ML) Winners & Outright Dog Upsets Auto-Grader
+            m_rec = entry.get("ml_record")
+            if not m_rec and s_rec and s_rec.get("tip_proj") is not None:
+                sr_team = s_rec.get("pick_team") or entry["home_team"]
+                sr_is_home = (sr_team == entry["home_team"])
+                sr_tip_proj = _f(s_rec.get("tip_proj"), 0.0)
+                sr_line = _f(s_rec.get("vegas_closing_line"), 0.0)
+                fair_home = sr_tip_proj if sr_is_home else -sr_tip_proj
+                vegas_home = sr_line if sr_is_home else -sr_line
+                pick_home_ml = (fair_home <= 0.0)
+                ml_team = entry["home_team"] if pick_home_ml else entry["away_team"]
+                is_dog_ml = bool((vegas_home > 0.0) if pick_home_ml else (vegas_home < 0.0))
+                lg_ml = get_dedicated_engine(entry.get("league", "NFL"))
+                ml_wp = round(lg_ml.win_prob(abs(fair_home)) * 100.0, 2)
+                m_rec = {
+                    "pick_label": f"{ml_team} ML (Proj)",
+                    "pick_team": ml_team,
+                    "ml_odds": None,
+                    "is_underdog": is_dog_ml,
+                    "is_upset_pick": is_dog_ml,
+                    "tip_win_pct": ml_wp,
+                    "tip_ev_pct": 0.0,
+                    "balls_deep_win_pct": ml_wp,
+                    "balls_deep_ev_pct": 0.0,
+                    "tier_badge": "TOO_CLOSE",
+                    "result_tip": "PENDING",
+                    "result_balls_deep": "PENDING"
+                }
+                entry["ml_record"] = m_rec
+
+            if m_rec and (m_rec.get("result_tip") == "PENDING" or m_rec.get("result_balls_deep") == "PENDING"):
+                ml_team = m_rec.get("pick_team", entry["home_team"])
+                if h_pts == a_pts:
+                    ml_grade = "PUSH"
+                else:
+                    actual_winner = entry["home_team"] if h_pts > a_pts else entry["away_team"]
+                    ml_grade = "HIT" if ml_team == actual_winner else "MISS"
+                m_rec["result_tip"] = ml_grade
+                m_rec["result_balls_deep"] = ml_grade
+
     counters = {
         "overall_smash": {"hits": 0, "total": 0},
         "spread_smash": {"hits": 0, "total": 0},
@@ -2678,7 +2748,9 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
         "menage_a_trois": {"hits": 0, "total": 0},
         "pass_audit": {"hits": 0, "total": 0},
         "tip_all": {"hits": 0, "total": 0},
-        "balls_deep_all": {"hits": 0, "total": 0}
+        "balls_deep_all": {"hits": 0, "total": 0},
+        "ml_winners": {"hits": 0, "total": 0},
+        "ml_upsets": {"hits": 0, "total": 0}
     }
 
     def tally(bucket, result_str):
@@ -2710,6 +2782,12 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                 tally("flagship_5pack", res_tip)
                 if "MÉNAGE" in slot.upper():
                     tally("menage_a_trois", res_tip)
+
+        m_rec = entry.get("ml_record")
+        if m_rec and m_rec.get("result_tip") in ("HIT", "MISS"):
+            tally("ml_winners", m_rec["result_tip"])
+            if m_rec.get("is_upset_pick") or m_rec.get("is_underdog"):
+                tally("ml_upsets", m_rec["result_tip"])
 
     summary_out = {}
     for k, v in counters.items():
@@ -2889,9 +2967,13 @@ def build_master_payload():
                (game.get("bookmakers")[0] if game.get("bookmakers") else None)
 
         if book:
+            vegas_home_sp = None
+            fair_home_bd = calc_report_calibrated_bd_spread(
+                fair_home_tip, fair_home_tip, home_meta, away_meta,
+                injury_diff, psi_11_12, elev_info, kickoff_local_hour, game_league
+            )
             spread_market = next((m for m in book.get("markets", []) if m["key"] == "spreads"), None)
             if spread_market:
-                vegas_home_sp = None
                 for o_chk in spread_market.get("outcomes", []):
                     if o_chk.get("name") == home_full:
                         vegas_home_sp = float(o_chk.get("point", 0.0))
@@ -3016,6 +3098,50 @@ def build_master_payload():
                         "alt_line": t_point - 3.5 if is_under else t_point + 3.5,
                         "alt_odds_over": 155
                     })
+
+            h2h_market = next((m for m in book.get("markets", []) if m["key"] == "h2h"), None)
+            if h2h_market:
+                h2h_outs = h2h_market.get("outcomes", [])
+                home_ml_out = next((o for o in h2h_outs if o.get("name") == home_full), None)
+                away_ml_out = next((o for o in h2h_outs if o.get("name") == away_full), None)
+                if home_ml_out and away_ml_out:
+                    h_ml_px = int(home_ml_out.get("price", -110))
+                    a_ml_px = int(away_ml_out.get("price", -110))
+                    lg_ml_eng = get_dedicated_engine(game_league)
+                    for is_away_ml, ml_code, ml_opp, ml_px, opp_px in [
+                        (False, home_code, away_code, h_ml_px, a_ml_px),
+                        (True, away_code, home_code, a_ml_px, h_ml_px)
+                    ]:
+                        model_tip_sp = round(-fair_home_tip if is_away_ml else fair_home_tip, 2)
+                        model_bd_sp = round(-fair_home_bd if is_away_ml else fair_home_bd, 2)
+                        ml_prob_tip = lg_ml_eng.win_prob(0.0 - model_tip_sp)
+                        ml_prob_bd = lg_ml_eng.win_prob(0.0 - model_bd_sp)
+                        ml_ev_tip = calc_ev_pct(ml_prob_tip, ml_px)
+                        ml_ev_bd = calc_ev_pct(ml_prob_bd, ml_px)
+                        is_dog = bool(ml_px > 0)
+                        is_upset = bool(is_dog and ml_prob_tip > 0.50)
+                        ml_badge = "SMASH" if ml_ev_tip >= SMASH_EV_THRESHOLD else ("PASS" if ml_ev_tip <= -19.0 else "TOO_CLOSE")
+                        ml_pfx = "@" if is_away_ml else "vs"
+                        props_board.append({
+                            "player": f"{ml_code} ML ({'+' if ml_px > 0 else ''}{ml_px}) ({ml_code} {ml_pfx} {ml_opp})",
+                            "market_type": "moneyline",
+                            "team": ml_code,
+                            "is_away_player": is_away_ml,
+                            "is_underdog": is_dog,
+                            "is_upset_pick": is_upset,
+                            "model_win_prob": round(ml_prob_tip, 4),
+                            "projected_mean_mu": model_tip_sp,
+                            "balls_deep_proj": model_bd_sp,
+                            "balls_deep_win_prob": round(ml_prob_bd, 4),
+                            "ev_pct": ml_ev_tip,
+                            "balls_deep_ev_pct": ml_ev_bd,
+                            "tier_badge": ml_badge,
+                            "flagship_slot": "",
+                            "projected_variance_sigma2": 0,
+                            "base_line": 0.0,
+                            "base_odds_over": ml_px,
+                            "base_odds_under": opp_px
+                        })
 
         if not props_board:
             continue
@@ -3245,7 +3371,7 @@ def build_master_payload():
             "league": "NFL_NCAA",
             "week": dynamic_week,
             "last_updated": now_iso,
-            "telemetry_version": "v237_2key_rung_perpetuity",
+            "telemetry_version": "v238_moneyline_h2h_perpetuity",
             "ranked_ncaa_teams": live_ranked_ncaa
         },
         "games": games_slate,
@@ -3260,7 +3386,7 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v237 — 2-KEY-RUNG LADDER IN PERPETUITY + ALWAYS-ON WONG TEASER ENGINE)")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v238 — PRICED MONEYLINE H2H + 2-KEY-RUNG PERPETUITY + WONG TEASER)")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("=========================================================")
 
