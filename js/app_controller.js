@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & RESEARCH CONTROLLER (v261 — PICKFINDER-STYLE UI + WEATHER MOAT)
- * Synced 1:1 with math_engine.js (v323) & scraper.py (v237)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & RESEARCH CONTROLLER (v262 — PRICED MONEYLINE H2H + OUTRIGHT ML VAULT + PICKFINDER UI)
+ * Synced 1:1 with math_engine.js (v323) & scraper.py (v238)
  *  - Pure OG M1–M9 Firewall in Just the Tip | Full M11–M13 Physics, 2-Key-Rung Alts, Always-On Wong Teasers & Regime Safe Totals in Balls Deep / DaVinci
  *  - PickFinder-Style Scannable Picks Feed + Split Research Inspector (Weather & Ballistic Physics Moat)
  *  - Flagship 5-Pack (Ménage à Trois) & Porky's Safe Floor Fades + Weather Lab + 13 Modules (Home-Team Frame) + FAGquestions + 6 Ledger Vaults + Slide-Over Bet Slip
@@ -444,7 +444,7 @@ window.setLeagueFilter = function(lg) {
 
 window.setMarketFilter = function(mk) {
     AppState.marketFilter = mk;
-    ["ALL", "spread", "total"].forEach(k => {
+    ["ALL", "spread", "total", "moneyline"].forEach(k => {
         const el = document.getElementById(`f-mk-${k}`);
         if (el) el.classList.toggle("active", k === mk);
     });
@@ -860,7 +860,23 @@ function recalculateAndRenderAll(opts = {}) {
                 psiBd,
                 psi11_12,
                 baseTelemetryTotal,
-                weatherImpact
+                weatherImpact,
+                mlWinnerTeam: (m9.fairHomeSpread <= 0) ? cleanHome : cleanAway,
+                mlTipWinnerTeam: (m9Base.fairHomeSpread <= 0) ? cleanHome : cleanAway,
+                mlWinnerProbPct: (() => {
+                    const lgE = (typeof getLeagueEngine === "function") ? getLeagueEngine(gameLeague) : null;
+                    const pFn = (gap) => (lgE && gameLeague === "NCAA") ? lgE.winProb(gap) : calcPointGapWinProb(gap);
+                    return Number((pFn(Math.abs(m9.fairHomeSpread)) * 100.0).toFixed(1));
+                })(),
+                mlIsUpset: Boolean((m9.fairHomeSpread <= 0 && vegasHomeSpread > 0) || (m9.fairHomeSpread > 0 && vegasHomeSpread < 0)),
+                mlHomeOdds: (() => {
+                    const m = Array.isArray(game.props_board) && game.props_board.find(x => x.market_type === "moneyline" && !x.is_away_player);
+                    return m ? Number(m.base_odds_over) : null;
+                })(),
+                mlAwayOdds: (() => {
+                    const m = Array.isArray(game.props_board) && game.props_board.find(x => x.market_type === "moneyline" && x.is_away_player);
+                    return m ? Number(m.base_odds_over) : null;
+                })()
             };
 
             AppState.processedGames.push(gameRecord);
@@ -1009,6 +1025,34 @@ function recalculateAndRenderAll(opts = {}) {
                         const altTotalEdge = isUnderActive ? (altTotalVal - finalCalculatedLine) : (finalCalculatedLine - altTotalVal);
                         bdReachProb = totProbFn(altTotalEdge);
 
+                    } else if (prop.market_type === "moneyline") {
+                        const isHomeMl = !isAwayPlayer;
+                        baseProjectedLine = isHomeMl ? m9Base.fairHomeSpread : Number((-m9Base.fairHomeSpread).toFixed(2));
+                        bdProjectedLine = isHomeMl ? m9Bd.fairHomeSpread : Number((-m9Bd.fairHomeSpread).toFixed(2));
+                        finalCalculatedLine = (mode === "balls_deep")
+                            ? bdProjectedLine
+                            : ((mode === "davinci")
+                                ? (isHomeMl ? m9.fairHomeSpread : Number((-m9.fairHomeSpread).toFixed(2)))
+                                : baseProjectedLine);
+
+                        const lgMlEng = (typeof getLeagueEngine === "function") ? getLeagueEngine(gameLeague) : null;
+                        const mlProbFn = (gap) => (lgMlEng && gameLeague === "NCAA") ? lgMlEng.winProb(gap) : calcPointGapWinProb(gap);
+                        tipModelProb = mlProbFn(0.0 - baseProjectedLine);
+                        bdModelProb = mlProbFn(0.0 - bdProjectedLine);
+                        activeModelProb = (mode === "balls_deep") ? bdModelProb : ((mode === "davinci") ? mlProbFn(0.0 - finalCalculatedLine) : tipModelProb);
+
+                        const mlPx = Number(prop.base_odds_over || -110);
+                        const mlPxStr = `${mlPx > 0 ? "+" : ""}${mlPx}`;
+                        safeFloorHookNum = 0.0;
+                        safeFloorOdds = mlPx;
+                        safeFloorWinPct = Number((activeModelProb * 100.0).toFixed(1));
+                        safeFloorEvPct = Number(calcExpectedValueAndKelly(activeModelProb, mlPx).evPercentage.toFixed(2));
+                        keyAltNote = (mlPx > 0) ? "Underdog ML Ambush" : "Straight-Up Favorite ML";
+                        safeFloorLabel = `ML ${mlPxStr}`;
+                        bdAltLineLabel = `${isHomeMl ? cleanHome : cleanAway} -3.5 (+145)`;
+                        bdLongerOdds = 145;
+                        bdReachProb = mlProbFn(-3.5 - finalCalculatedLine);
+
                     } else {
                         const gatedMu = gatekeeper.adjustedMu > 0 ? gatekeeper.adjustedMu : (prop.projected_mean_mu || vegasLine || 50);
                         baseProjectedLine = Number(gatedMu.toFixed(1));
@@ -1046,15 +1090,24 @@ function recalculateAndRenderAll(opts = {}) {
                         bdReachProb = Math.max(0.05, calcGammaSurvivalProb(finalCalculatedLine, varianceSigma2, ceilingMilestone).trueOverProb);
                     }
 
-                    const pickTeamCode = (prop.market_type === "spread") ? (isHomeSpread ? cleanHome : cleanAway) : `${cleanAway}/${cleanHome}`;
+                    const pickTeamCode = (prop.market_type === "spread")
+                        ? (isHomeSpread ? cleanHome : cleanAway)
+                        : (prop.market_type === "moneyline" ? (isAwayPlayer ? cleanAway : cleanHome) : `${cleanAway}/${cleanHome}`);
                     let shortTitle = cleanLabelCodes(prop.player);
                     let tipDisplayLabel = cleanLabelCodes(prop.player);
                     let activeDisplayLabel = cleanLabelCodes(prop.player);
                     let lineDisplay = fmtSigned(vegasLine);
+                    const isUnderdogMl = Boolean(prop.market_type === "moneyline" && (prop.is_underdog || Number(prop.base_odds_over || -110) > 0));
+                    const isUpsetMlPick = Boolean(prop.market_type === "moneyline" && isUnderdogMl && activeModelProb > 0.50);
 
                     if (prop.market_type === "spread") {
                         shortTitle = `${pickTeamCode} ${fmtSigned(vegasLine)}`;
                         lineDisplay = fmtSigned(vegasLine);
+                    } else if (prop.market_type === "moneyline") {
+                        const mlPx = Number(prop.base_odds_over || -110);
+                        const mlPxStr = `${mlPx > 0 ? "+" : ""}${mlPx}`;
+                        shortTitle = `${pickTeamCode} ML (${mlPxStr})`;
+                        lineDisplay = `ML ${mlPxStr}`;
                     } else if (prop.market_type === "total") {
                         const isUnderTip = baseProjectedLine < vegasLine;
                         const isUnderActive = finalCalculatedLine < vegasLine;
@@ -1137,6 +1190,8 @@ function recalculateAndRenderAll(opts = {}) {
                         gatekeeperBlocked: gatekeeper.blocked,
                         gatekeeperAction: gatekeeper.action,
                         gatekeeperFlags: gatekeeper.flags,
+                        isUnderdogMl,
+                        isUpsetMlPick,
                         flagshipSlot: "",
                         porkysSlot: "",
                         psiBd,
@@ -1276,11 +1331,25 @@ function getVisibleFeedProps() {
         const gTotals = AppState.processedProps
             .filter(p => p.gameId === g.gameId && p.marketType === "total");
 
+        const gMls = AppState.processedProps
+            .filter(p => p.gameId === g.gameId && p.marketType === "moneyline")
+            .sort((a, b) => b.evPct - a.evPct);
+
         if (gSpreads[0]) pool.push(gSpreads[0]);
         if (gTotals[0]) pool.push(gTotals[0]);
-        // Also surface any non-spread/non-total player props if present in data.json
+        if (gMls.length > 0) {
+            if (AppState.marketFilter === "moneyline") {
+                gMls.forEach(m => pool.push(m));
+            } else {
+                // On All Markets, show the single highest-EV ML side (or projected outright winner)
+                const bestMl = (gMls[0].evPct > 0)
+                    ? gMls[0]
+                    : [...gMls].sort((a, b) => b.activeModelPct - a.activeModelPct)[0];
+                if (bestMl) pool.push(bestMl);
+            }
+        }
         AppState.processedProps
-            .filter(p => p.gameId === g.gameId && p.marketType !== "spread" && p.marketType !== "total")
+            .filter(p => p.gameId === g.gameId && p.marketType !== "spread" && p.marketType !== "total" && p.marketType !== "moneyline")
             .forEach(p => pool.push(p));
     });
 
@@ -1318,10 +1387,18 @@ function buildPickRowHTML(p) {
     const espnMatch = getEspnScoreMatch(p.league, p.matchup);
     const isLive = Boolean(espnMatch && espnMatch.state === "in");
     const col = getTierColor(p.tierBadge);
-    const projDisp = (p.marketType === "spread") ? fmtSigned(p.projectedMean, 1) : Number(p.projectedMean).toFixed(1);
+    const isMl = (p.marketType === "moneyline");
+    const projDisp = isMl
+        ? `${p.activeModelPct.toFixed(0)}% Win`
+        : ((p.marketType === "spread") ? fmtSigned(p.projectedMean, 1) : Number(p.projectedMean).toFixed(1));
+    const upsetBadge = (isMl && p.isUpsetMlPick)
+        ? (AppState.activeMode === "tip"
+            ? `<span class="badge b-gold">🔒 DOG UPSET</span>`
+            : `<span class="badge b-gold">🐶 UPSET ALERT</span>`)
+        : (isMl ? `<span class="badge b-muted">ML</span>` : "");
     const slotBadge = p.flagshipSlot
         ? `<span class="badge ${p.flagshipSlot.includes("MÉNAGE") ? "b-gold" : "b-cyan"}">${p.flagshipSlot.replace("MÉNAGE À TROIS", "MÉNAGE").replace("5-PACK ", "")}</span>`
-        : "";
+        : upsetBadge;
 
     return `
         <div class="pick-row ${isSelected ? "selected" : ""} ${isLive ? "is-live" : ""}" onclick="window.selectPick('${p.propKey}', true)">
@@ -1339,8 +1416,8 @@ function buildPickRowHTML(p) {
             </div>
 
             <div class="pick-line-col">
-                <div class="line-main">Proj ${projDisp}</div>
-                <div class="line-sub">Vegas ${p.lineDisplay}</div>
+                <div class="line-main">${isMl ? projDisp : `Proj ${projDisp}`}</div>
+                <div class="line-sub">${isMl ? `Imp ${p.vigFreePct.toFixed(0)}%` : `Vegas ${p.lineDisplay}`}</div>
             </div>
 
             <div class="prob-col">
@@ -1417,7 +1494,10 @@ function renderPickInspector() {
     const locked = (AppState.activeMode === "tip");
     const inSlip = AppState.selectedParlayLegs.has(p.propKey);
     const col = getTierColor(p.tierBadge);
-    const projDisp = (p.marketType === "spread") ? fmtSigned(p.projectedMean, 1) : Number(p.projectedMean).toFixed(1);
+    const isMlPick = (p.marketType === "moneyline");
+    const projDisp = isMlPick
+        ? `${p.activeModelPct.toFixed(1)}%`
+        : ((p.marketType === "spread") ? fmtSigned(p.projectedMean, 1) : Number(p.projectedMean).toFixed(1));
     const em = g.elevActive || g.elevMatrix || { zoneNumber: 1, venueElevFeet: 0, direction: "ASCENT", psiElevPts: 0 };
     const env = g.envPayload || {};
     const csiVal = Number((g.m8 && g.m8.circadianStrainIndex) || 0);
@@ -1462,17 +1542,31 @@ function renderPickInspector() {
 
             <div class="stat-trio">
                 <div class="stat-box">
-                    <div class="stat-k">Vegas Line</div>
+                    <div class="stat-k">${isMlPick ? "Vegas ML" : "Vegas Line"}</div>
                     <div class="stat-v">${p.lineDisplay}</div>
                 </div>
                 <div class="stat-box">
-                    <div class="stat-k">DixPix Proj</div>
+                    <div class="stat-k">${isMlPick ? "DixPix Win %" : "DixPix Proj"}</div>
                     <div class="stat-v" style="color:${col};">${projDisp}</div>
                 </div>
                 <div class="stat-box">
                     <div class="stat-k">Model EV</div>
                     <div class="stat-v" style="color:${col};">${p.evPct > 0 ? "+" : ""}${p.evPct.toFixed(1)}%</div>
                 </div>
+            </div>
+
+            <!-- STRAIGHT-UP OUTRIGHT ML WINNER CALLOUT -->
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; padding:9px 12px; border-radius:var(--r-sm); background:var(--bg-input); border:1px solid ${g.mlIsUpset && !locked ? "var(--gold-bd)" : "var(--border)"}; font-family:var(--font-mono); font-size:11.5px;">
+                <span>
+                    🏆 Outright Winner: <strong style="color:var(--text-1);">${g.mlWinnerTeam}</strong> (${g.mlWinnerProbPct}%)
+                    ${isMlPick ? ` · <span style="color:var(--text-2);">Mkt Imp ${p.vigFreePct.toFixed(1)}%</span>` : ""}
+                </span>
+                ${g.mlIsUpset
+                    ? (locked
+                        ? renderLockSpanHTML("🔒 Dog Upset Alert")
+                        : `<span class="badge b-gold">🐶 OUTRIGHT UPSET ALERT</span>`)
+                    : `<span style="color:var(--text-3); font-size:10.5px;">Fair Margin ${fmtSigned(g.m9.fairHomeSpread, 1)}</span>`
+                }
             </div>
 
             <!-- DIXPIX WEATHER & BALLISTIC PHYSICS MOAT -->
@@ -2070,8 +2164,12 @@ const FAG_QUESTIONS_LIST = [
         a: "The <strong>Flagship 5-Pack</strong> locks in our top 5 pre-kickoff plays of the current week (strictly 1 pick per game, blended Spread + O/U for clean uncorrelated Round Robins), led by our top 3 plays—the <strong>Ménage à Trois</strong>. Flip to <strong>Porky's Safe Floor Fades</strong> to see the 5 ugliest public traps (&le; -19.0% EV) paired with counter-strike Safe Floor fades. Tap <strong>+</strong> on any pick or open the slide-over <strong>Slip</strong> from any page to load 1-tap presets and inspect 30% Profit Boost payouts plus 2-Leg/3-Leg Round Robin ROI."
     },
     {
+        q: "How do Moneyline (ML) Winners, Outright Dog Upsets, and ML Parlays work?",
+        a: "Every game's independent fair spread feeds directly into our NFL/NCAA Dual-Engine logistic curve at zero margin (<code>0 - Fair Spread</code>) to project the <strong>Straight-Up Outright Winner (ML Win %)</strong> and compare it against live sportsbook Moneyline odds (<code>h2h</code>).<br><br>• Filter by <strong>Moneyline</strong> on the Picks tab to shop priced MLs, compare DixPix Win% against Vig-Free Implied %, and add ML legs directly into the slide-over <strong>Slip</strong> for parlays or Round Robins.<br>• In <strong>Balls Deep</strong> mode, anytime DixPix projects a Vegas underdog to win outright, it triggers a <strong>🐶 UPSET ALERT</strong>.<br>• On the <strong>Ledger</strong> tab, click the <strong>🏆 ML WINNERS &amp; UPSETS</strong> vault card to track our overall straight-up winner record and outright underdog upsets called."
+    },
+    {
         q: "How does the Historical Ledger grade picks—and what is 'Blue Balls'?",
-        a: "Every game locks its closing line automatically at kickoff and grades live against ESPN final scores.<br><br>• <strong>✅ HIT:</strong> Cleared the closing line.<br>• <strong>🔵 BLUE BALLS (BB):</strong> Brutal beat missed by <strong>&le; 3.0 points</strong> (a single field goal or less).<br>• <strong>❌ MISS:</strong> Missed by more than 3.0 points.<br>• <strong>💣 Grenades Dodged:</strong> Counts every public trap we stamped PASS (&le; -19.0% EV) that failed to cover. Click any of the 6 Ledger Vault cards to inspect every completed receipt."
+        a: "Every game locks its closing line automatically at kickoff and grades live against ESPN final scores.<br><br>• <strong>✅ HIT:</strong> Cleared the closing line (or won outright on ML).<br>• <strong>🔵 BLUE BALLS (BB):</strong> Brutal spread/total beat missed by <strong>&le; 3.0 points</strong> (a single field goal or less).<br>• <strong>❌ MISS:</strong> Missed by more than 3.0 points.<br>• <strong>💣 Grenades Dodged:</strong> Counts every public trap we stamped PASS (&le; -19.0% EV) that failed to cover. Click any of the 7 Ledger Vault cards to inspect every completed receipt."
     }
 ];
 
@@ -2179,6 +2277,19 @@ const PERMANENT_LEDGER_ARCHIVE = {
             result_floor: "HIT",
             result_ceiling: "MISS",
             miss_by_pts: 1.5
+        },
+        ml_record: {
+            pick_label: "LAC ML (-265) (LAC @ BAL)",
+            pick_team: "LAC",
+            ml_odds: -265,
+            is_underdog: false,
+            is_upset_pick: false,
+            tip_win_pct: 56.7,
+            tip_ev_pct: -21.9,
+            balls_deep_win_pct: 54.5,
+            balls_deep_ev_pct: -24.9,
+            result_tip: "HIT",
+            result_balls_deep: "HIT"
         }
     }
 };
@@ -2369,7 +2480,8 @@ function renderHistoricalLedger() {
         champagne_room: { dodged: 0, total: 0 },
         safe_floors: makeBucket(), ceilings: makeBucket(),
         wong_teasers: makeBucket(),
-        tip_all: makeBucket(), balls_deep_all: makeBucket()
+        tip_all: makeBucket(), balls_deep_all: makeBucket(),
+        ml_winners: makeBucket(), ml_upsets: makeBucket()
     };
 
     const fivePackByWeek = {};
@@ -2386,7 +2498,7 @@ function renderHistoricalLedger() {
 
     const vaultRows = {
         flagship_5pack: [], porkys_5pack: [], overall_smash: [],
-        all_tease: [], grenades_dodged: [], floors_ceilings: [], tip_vs_bd: []
+        all_tease: [], grenades_dodged: [], floors_ceilings: [], tip_vs_bd: [], ml_winners: []
     };
 
     const tallyObj = (obj, res) => {
@@ -2587,6 +2699,65 @@ function renderHistoricalLedger() {
             else pWk.flexLegs.push({ outcome: pFloorRes });
             pWk.rows.push(pRow);
             vaultRows.porkys_5pack.push({ weekLabel, rowHTML: pRow });
+        }
+
+        // Straight-Up Moneyline (ML) Winners & Outright Dog Upsets Audit (explicit ml_record or retroactive from spread_record)
+        let mlRec = entry.ml_record || null;
+        if (!mlRec && entry.spread_record && entry.spread_record.tip_proj !== undefined) {
+            const sr = entry.spread_record;
+            const srTeam = cleanTeamCode(sr.pick_team || "");
+            const srIsHome = (srTeam && srTeam === entryHomeCode) || cleanLabelCodes(sr.pick_label || "").startsWith(`${entryHomeCode} `);
+            const srTipProj = Number(sr.tip_proj || 0);
+            const srLine = Number(sr.vegas_line !== undefined ? sr.vegas_line : (sr.vegas_closing_line || 0));
+            const fairHome = srIsHome ? srTipProj : -srTipProj;
+            const vegasHome = srIsHome ? srLine : -srLine;
+            const pickHomeMl = (fairHome <= 0);
+            const mlTeam = pickHomeMl ? entryHomeCode : entryAwayCode;
+            const isDogMl = Boolean((vegasHome > 0) ? pickHomeMl : (vegasHome < 0 ? !pickHomeMl : false));
+            const lgEng = (typeof getLeagueEngine === "function") ? getLeagueEngine(entryLeague) : null;
+            const mlProb = lgEng && entryLeague === "NCAA" ? lgEng.winProb(Math.abs(fairHome)) : calcPointGapWinProb(Math.abs(fairHome));
+            mlRec = {
+                pick_label: `${mlTeam} ML`,
+                pick_team: mlTeam,
+                ml_odds: null,
+                is_underdog: isDogMl,
+                is_upset_pick: isDogMl,
+                tip_win_pct: Number((mlProb * 100.0).toFixed(1)),
+                tip_ev_pct: 0.0,
+                result_tip: "PENDING"
+            };
+        }
+        if (mlRec) {
+            const mlTeam = cleanTeamCode(mlRec.pick_team || entryHomeCode);
+            let mlOutcome = mlRec.result_tip || "PENDING";
+            if (parsedScores && (mlOutcome === "PENDING" || !mlOutcome)) {
+                if (parsedScores.homeScore === parsedScores.awayScore) mlOutcome = "PUSH";
+                else {
+                    const actualWinner = (parsedScores.homeScore > parsedScores.awayScore) ? entryHomeCode : entryAwayCode;
+                    mlOutcome = (mlTeam === actualWinner) ? "HIT" : "MISS";
+                }
+            }
+            if (mlOutcome === "HIT" || mlOutcome === "MISS") {
+                tally("ml_winners", mlOutcome);
+                const isUpsetCall = Boolean(mlRec.is_upset_pick || mlRec.is_underdog);
+                if (isUpsetCall) tally("ml_upsets", mlOutcome);
+                const oddsText = (mlRec.ml_odds !== null && mlRec.ml_odds !== undefined)
+                    ? `${Number(mlRec.ml_odds) > 0 ? "+" : ""}${mlRec.ml_odds}`
+                    : (isUpsetCall ? "Vegas Dog" : "Vegas Fav");
+                const upsetPill = isUpsetCall
+                    ? (showBallsDeep ? `<span class="badge b-gold">🐶 DOG UPSET</span>` : renderLockSpanHTML("🔒 Dog Upset"))
+                    : `<span class="badge b-muted">FAV</span>`;
+                vaultRows.ml_winners.push(`
+                    <tr>
+                        <td><span style="color:var(--gold); font-size:10px; font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br>${statusLabel}</td>
+                        <td>${upsetPill}</td>
+                        <td><strong>${mlTeam} ML</strong></td>
+                        <td>${oddsText}</td>
+                        <td>Win ${Number(mlRec.tip_win_pct || 50).toFixed(1)}%</td>
+                        <td>${mlOutcome === "HIT" ? `<span class="badge b-smash">✅ WIN</span>` : `<span class="badge b-pass">❌ LOSS</span>`}</td>
+                    </tr>
+                `);
+            }
         }
 
         // Spread + Total Records
@@ -2831,6 +3002,10 @@ function renderHistoricalLedger() {
         } else if (AppState.activeLedgerVault === "tip_vs_bd") {
             title = `⚡ TIP RAW vs. BALLS DEEP MASTER ARCHIVE`;
             rowsHTML = vaultRows.tip_vs_bd.join("");
+        } else if (AppState.activeLedgerVault === "ml_winners") {
+            title = `🏆 STRAIGHT-UP ML WINNERS & OUTRIGHT DOG UPSETS VAULT`;
+            colsHead = `<tr><th>Week &amp; Final</th><th>Spot</th><th>Projected ML Winner</th><th>ML Price</th><th>Model Win %</th><th>Result</th></tr>`;
+            rowsHTML = vaultRows.ml_winners.join("");
         }
 
         activeVaultHTML = `
@@ -2903,6 +3078,19 @@ function renderHistoricalLedger() {
                     : `<div style="font-size:11px; color:var(--gold);">🔒 Click to unlock Balls Deep Execution Lift</div>`
                 }
             </div>
+
+            <div class="vault-tile ${AppState.activeLedgerVault === "ml_winners" ? "active" : ""}" onclick="window.toggleLedgerVault('ml_winners', event)">
+                <div class="mono" style="font-size:10.5px; font-weight:800; color:var(--gold);">🏆 ML WINNERS &amp; UPSETS</div>
+                <div class="mono" style="font-size:14px; font-weight:800; margin:7px 0 4px 0; color:var(--emerald);">
+                    ${buckets.ml_winners.total ? `${buckets.ml_winners.hits}W - ${buckets.ml_winners.misses}L (${((buckets.ml_winners.hits / buckets.ml_winners.total) * 100).toFixed(1)}%)` : "0W - 0L (0.0%)"}
+                </div>
+                <div style="font-size:11px; color:var(--text-2);">
+                    ${showBallsDeep
+                        ? `🐶 Dog Upsets Called: <strong style="color:var(--gold);">${buckets.ml_upsets.hits}W - ${buckets.ml_upsets.misses}L</strong>`
+                        : `Straight-Up Record · ${renderLockSpanHTML("🔒 Dog Upsets")}`
+                    }
+                </div>
+            </div>
         </div>
 
         ${activeVaultHTML}
@@ -2966,4 +3154,4 @@ function renderLiveBottomTicker() {
     track.style.animationDuration = `${durSec}s`;
     track.innerHTML = `<span>${joined}</span>${sep}<span>${joined}</span>`;
 }
-// === END OF APP_CONTROLLER.JS (v261) ===
+// === END OF APP_CONTROLLER.JS (v262) ===
