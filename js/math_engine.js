@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v323 — 2-KEY-RUNG LADDER IN PERPETUITY + ALWAYS-ON WONG TEASER ENGINE)
- * Pure OG M1–M9 + Verified ΔQB-Only Filter + Key-Number Alt Buys (MER > 1.15) + Regime Safe Totals (Synced 1:1 with scraper.py v237)
+ * DIXPIX QUANTITATIVE ENGINE — 13-MODULE MASTER COMPENDIUM ENGINE (v324 — DAVINCI DUAL-SLIDER GAME-SCRIPT SIMULATOR + 2-KEY-RUNG PERPETUITY + WONG TEASER)
+ * Pure OG M1–M9 + Verified ΔQB-Only Filter + Key-Number Alt Buys (MER > 1.15) + Regime Safe Totals (Synced 1:1 with scraper.py v239)
  *  - PURE OG MODULES 1–9 RESTORED: 100% Independent Fair Margin (ZERO Vegas-Spread Anchoring)
  *  - Live Roster/Injury Integration (qb_replacement_delta) + Fixed opp_rz_dvoa Sign
  *  - Strict M1–M9 Firewall in Just the Tip | Full M11–M13 Physics & Sacred Geometry in Balls Deep/DaVinci
@@ -1183,4 +1183,113 @@ function getLeagueEngine(league = "NFL") {
     return (String(league || "NFL").toUpperCase() === "NCAA") ? DixPixNcaaEngine : DixPixNflEngine;
 }
 
-// === END OF MATH_ENGINE.JS (v323) ===
+// ==============================================================================
+// UPGRADE #8 (v324): EXPANSIVE DUAL-SLIDER DAVINCI GAME-SCRIPT SIMULATOR
+//   - Per-Game Margin Shift (spreadDelta in [-30.0, +30.0] pts, home-spread sign)
+//   - Per-Game Total / Pace Shift (totalDelta in [-20.0, +20.0] pts)
+//   - Computes Simulated Implied Final Score, Outright ML Win %, and directional
+//     Run / Pass / TD game-script multipliers for M4 (Poisson/NegBin) & M5 (Gamma)
+//     so live player prop pulls react organically when a user flips a game script
+//     (e.g., dragging a +17.5 underdog all the way to -10.5 favorite).
+// ==============================================================================
+function calcDaVinciGameScript(baseHomeSpread, baseTotal, spreadDelta = 0.0, totalDelta = 0.0, league = "NFL") {
+    const baseSp = Number(baseHomeSpread || 0);
+    const baseTot = Number(baseTotal || (league === "NCAA" ? 51.5 : 43.5));
+    const sDelta = Math.max(-30.0, Math.min(30.0, Number(spreadDelta || 0)));
+    const tDelta = Math.max(-20.0, Math.min(20.0, Number(totalDelta || 0)));
+
+    const simHomeSpread = Number((baseSp + sDelta).toFixed(1));
+    const simTotal = Number(Math.max(17.5, Math.min(99.5, baseTot + tDelta)).toFixed(1));
+
+    // Implied team scores: Home = (T - S_home)/2, Away = (T + S_home)/2
+    const baseHomePts = Math.max(3.0, (baseTot - baseSp) / 2.0);
+    const baseAwayPts = Math.max(3.0, (baseTot + baseSp) / 2.0);
+    const simHomePts = Math.max(3.0, Number(((simTotal - simHomeSpread) / 2.0).toFixed(1)));
+    const simAwayPts = Math.max(3.0, Number(((simTotal + simHomeSpread) / 2.0).toFixed(1)));
+
+    const eng = getLeagueEngine(league);
+    const simHomeMlProb = eng.winProb(0.0 - simHomeSpread);
+    const simAwayMlProb = Number((1.0 - simHomeMlProb).toFixed(4));
+
+    // Pace & scoring ratios relative to untouched Balls Deep baseline
+    const totalPaceRatio = simTotal / Math.max(20.0, baseTot);
+    const homeScoreRatio = simHomePts / Math.max(6.0, baseHomePts);
+    const awayScoreRatio = simAwayPts / Math.max(6.0, baseAwayPts);
+
+    // Margin shift in team-favoring units (+ = team becomes stronger favorite / leads more)
+    const homeLeadShift = -sDelta; // negative home spread = home favored
+    const awayLeadShift = sDelta;
+
+    function buildTeamScript(leadShift, scoreRatio, simTeamSpread) {
+        // Leading teams bleed clock (+RB rush attempts/yards); trailing teams throw more (+QB pass att/yds, +WR rec)
+        const rushAttMult = Math.max(0.55, Math.min(1.55, (1.0 + (leadShift * 0.016)) * Math.pow(totalPaceRatio, 0.45)));
+        const rushYdsMult = Math.max(0.50, Math.min(1.65, (1.0 + (leadShift * 0.018)) * Math.pow(scoreRatio, 0.35)));
+        const passAttMult = Math.max(0.65, Math.min(1.50, (1.0 - (leadShift * 0.012)) * Math.pow(totalPaceRatio, 0.65)));
+        const passYdsMult = Math.max(0.55, Math.min(1.65, (1.0 - (leadShift * 0.008)) * Math.pow(scoreRatio, 0.45) * Math.pow(totalPaceRatio, 0.40)));
+        const recMult     = Math.max(0.65, Math.min(1.55, (1.0 - (leadShift * 0.011)) * Math.pow(totalPaceRatio, 0.60)));
+        const tdLambdaMult = Math.max(0.35, Math.min(2.25, scoreRatio));
+        const topStarvationTriggered = (simTeamSpread >= 10.0);
+
+        return {
+            simTeamSpread: Number(simTeamSpread.toFixed(1)),
+            rushAttMult: Number(rushAttMult.toFixed(4)),
+            rushYdsMult: Number(rushYdsMult.toFixed(4)),
+            passAttMult: Number(passAttMult.toFixed(4)),
+            passYdsMult: Number(passYdsMult.toFixed(4)),
+            recMult: Number(recMult.toFixed(4)),
+            tdLambdaMult: Number(tdLambdaMult.toFixed(4)),
+            topStarvationTriggered
+        };
+    }
+
+    return {
+        isCustom: (Math.abs(sDelta) >= 0.05 || Math.abs(tDelta) >= 0.05),
+        spreadDelta: Number(sDelta.toFixed(1)),
+        totalDelta: Number(tDelta.toFixed(1)),
+        simHomeSpread,
+        simAwaySpread: Number((-simHomeSpread).toFixed(1)),
+        simTotal,
+        simHomePts,
+        simAwayPts,
+        simHomeMlProb: Number(simHomeMlProb.toFixed(4)),
+        simAwayMlProb,
+        simHomeMlPct: Number((simHomeMlProb * 100.0).toFixed(1)),
+        simAwayMlPct: Number((simAwayMlProb * 100.0).toFixed(1)),
+        homeScript: buildTeamScript(homeLeadShift, homeScoreRatio, simHomeSpread),
+        awayScript: buildTeamScript(awayLeadShift, awayScoreRatio, -simHomeSpread)
+    };
+}
+
+function applyDaVinciScriptToProp(baseMeanMu, marketType = "", isAwayPlayer = false, scriptObj = null) {
+    const mu = Number(baseMeanMu || 0);
+    if (!scriptObj || !scriptObj.isCustom || mu <= 0) {
+        return { adjustedMu: mu, multiplier: 1.0, topStarvationTriggered: false };
+    }
+    const ts = isAwayPlayer ? scriptObj.awayScript : scriptObj.homeScript;
+    const mk = String(marketType || "").toLowerCase();
+    let mult = 1.0;
+
+    if (mk.includes("rush_att") || mk.includes("carries")) {
+        mult = ts.rushAttMult;
+    } else if (mk.includes("rush")) {
+        mult = ts.rushYdsMult;
+    } else if (mk.includes("pass_att") || mk.includes("completions")) {
+        mult = ts.passAttMult;
+    } else if (mk.includes("pass")) {
+        mult = ts.passYdsMult;
+    } else if (mk.includes("rec")) {
+        mult = ts.recMult;
+    } else if (mk.includes("td") || mk.includes("touchdown") || mk.includes("anytime")) {
+        mult = ts.tdLambdaMult;
+    } else {
+        mult = (ts.rushYdsMult + ts.passYdsMult) / 2.0;
+    }
+
+    return {
+        adjustedMu: Number(Math.max(0.1, mu * mult).toFixed(2)),
+        multiplier: Number(mult.toFixed(4)),
+        topStarvationTriggered: Boolean(ts.topStarvationTriggered && (mk.includes("rush_att") || mk.includes("carries")))
+    };
+}
+
+// === END OF MATH_ENGINE.JS (v324) ===
