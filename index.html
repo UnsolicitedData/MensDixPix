@@ -1215,6 +1215,217 @@
       .slip-trigger .slip-txt { display: none; }
       .search-input { width: 125px; }
     }
+
+    /* Weather Condition Badges (Upgrade #6) */
+    .weather-pill.snow   { background: rgba(147, 197, 253, 0.16); border-color: rgba(147, 197, 253, 0.48); color: #bfdbfe; }
+    .weather-pill.rain   { background: var(--blue-bg); border-color: var(--blue-bd); color: var(--blue); }
+    .weather-pill.wind   { background: var(--cyan-bg); border-color: var(--cyan-bd); color: var(--cyan); }
+    .weather-pill.freeze { background: rgba(165, 243, 252, 0.14); border-color: rgba(103, 232, 249, 0.45); color: #a5f3fc; }
+
+    /* 1-Tile-Per-Game Unified Matchup Card (Upgrade #1) */
+    .matchup-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: border-color 0.14s ease, background 0.14s ease;
+    }
+    .matchup-card:hover { border-color: var(--border-strong); background: #141720; }
+    .matchup-card.selected { border-color: var(--text-2); background: var(--bg-card); }
+    .matchup-card.is-live  { border-color: var(--gold-bd); }
+
+    .matchup-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .matchup-title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--text-1);
+    }
+
+    .market-strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .market-cell {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 9px 10px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      transition: border-color 0.14s ease, background 0.14s ease;
+    }
+    .market-cell:hover { border-color: var(--border-strong); background: var(--bg-card); }
+    .market-cell.selected {
+      border-color: var(--text-1);
+      background: var(--bg-card-hover);
+      box-shadow: inset 0 0 0 1px rgba(244, 246, 251, 0.18);
+    }
+    .mc-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-3);
+      font-weight: 700;
+    }
+    .mc-line {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--text-1);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .mc-foot {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+    .mini-add-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      border: 1px solid var(--border-strong);
+      background: var(--bg-surface);
+      color: var(--text-1);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 800;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .mini-add-btn:hover { background: var(--bg-card-hover); }
+    .mini-add-btn.in-slip { background: var(--cyan); border-color: var(--cyan); color: #041318; font-size: 11px; }
+
+    /* Dual-Slider DaVinci Game-Script Box inside Research Inspector (Upgrade #8) */
+    .dv-script-box {
+      background: linear-gradient(180deg, rgba(245, 158, 11, 0.08), var(--bg-card));
+      border: 1px solid var(--gold-bd);
+      border-radius: var(--r-md);
+      padding: 13px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .dv-score-banner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 8px 10px;
+      border-radius: 7px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .dv-slider-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .dv-slider-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-2);
+    }
+
+    /* Unified Filterable Ledger Bar & Clickable Rows (Upgrade #3) */
+    .ledger-filter-bar {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .clickable-row { cursor: pointer; transition: background 0.12s ease; }
+    .clickable-row:hover { background: rgba(6, 182, 212, 0.08) !important; }
+
+    /* Unified 13-Module Game Dossier & Pre-Kick Receipt Slide-Over Drawer (Upgrades #4 & #5) */
+    .dossier-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: min(560px, 100vw);
+      background: var(--bg-surface);
+      border-left: 1px solid var(--border-strong);
+      z-index: 660;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .dossier-drawer.open { transform: translateX(0); }
+    .dossier-tier-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .dossier-tier-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      color: var(--cyan);
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .dossier-mod-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 10px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+    }
+    .dossier-mod-k { color: var(--text-2); }
+    .dossier-mod-v { color: var(--text-1); font-weight: 700; text-align: right; }
+
+    @media (max-width: 768px) {
+      .market-strip { grid-template-columns: 1fr; }
+    }
+
   </style>
 </head>
 <body>
@@ -1252,18 +1463,15 @@
       </div>
     </div>
 
-    <!-- Slim DaVinci Eye-Test Flow Bar (opens only in DaVinci mode) -->
+    <!-- Slim DaVinci Game-Script Status Bar (opens only in DaVinci mode) -->
     <div class="davinci-bar" id="davinci-bar">
       <div class="davinci-bar-inner">
         <span class="mono" style="font-size:11px; font-weight:800; color:var(--gold);">
-          DAVINCI EYE-TEST FLOW // I_flow &in; [-2&phi;, +2&phi;]
+          🎨 DAVINCI GAME-SCRIPT SIMULATOR ACTIVE — Select any matchup to bend Margin (&plusmn;30 pts) &amp; Total (&plusmn;20 pts) in the Research Inspector
         </span>
-        <div class="dv-controls">
-          <span class="mono" style="font-size:10.5px; color:var(--text-3);">-3.236</span>
-          <input type="range" class="dv-range" id="davinci-intensity-slider" min="-3.236" max="3.236" step="0.1" value="0" />
-          <span class="mono" style="font-size:10.5px; color:var(--text-3);">+3.236</span>
-          <output class="badge b-gold" id="davinci-readout">0.0</output>
-          <button type="button" class="chip" style="padding:3px 9px; font-size:11px;" onclick="window.resetDavinciSlider()">Reset</button>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="badge b-gold" id="davinci-custom-count">0 Custom Scripts</span>
+          <button type="button" class="chip" style="padding:3px 9px; font-size:11px;" onclick="window.resetAllDaVinciScripts()">Reset All</button>
         </div>
       </div>
     </div>
@@ -1287,10 +1495,10 @@
     <div class="chip-group">
       <input type="text" class="search-input" id="picks-search-input" placeholder="Filter team..." oninput="window.setSearchFilter(this.value)" />
       <select class="search-select" id="sort-select" onchange="window.setSortOrder(this.value)">
-        <option value="ev">Sort: Highest EV%</option>
+        <option value="kickoff" selected>Sort: Kickoff Time</option>
+        <option value="ev">Sort: Best Confidence Edge</option>
         <option value="prob">Sort: Highest Win %</option>
         <option value="weather">Sort: Biggest Weather Shift</option>
-        <option value="kickoff">Sort: Kickoff Time</option>
       </select>
     </div>
   </div>
@@ -1502,6 +1710,19 @@
     <div class="drawer-foot" id="slip-drawer-foot"></div>
   </aside>
 
+  <!-- UNIFIED 13-MODULE GAME DOSSIER & PRE-KICK LEDGER RECEIPT DRAWER (UPGRADES #4 & #5) -->
+  <aside class="dossier-drawer" id="dossier-drawer" aria-label="13-Module Game Dossier">
+    <div class="drawer-head">
+      <div>
+        <div style="font-weight:800; font-size:15px;" id="dossier-drawer-title">13-Module Game Dossier</div>
+        <div class="mono" style="font-size:11px; color:var(--text-2);" id="dossier-drawer-sub">HOME-TEAM UNIFIED P_AGG FRAME</div>
+      </div>
+      <button type="button" class="chip" onclick="window.closeModuleDossier()">✕</button>
+    </div>
+    <div class="drawer-body" id="dossier-drawer-body"></div>
+    <div class="drawer-foot" id="dossier-drawer-foot"></div>
+  </aside>
+
   <!-- SLIM LIVE WIRE TICKER DOCK -->
   <div class="live-wire-bar" id="dixpix-live-wire-bar">
     <div class="live-wire-tag">
@@ -1523,7 +1744,7 @@
   </nav>
 
   <!-- Live Engine & Controller Scripts -->
-  <script src="./js/math_engine.js?v=323"></script>
-  <script src="./js/app_controller.js?v=262"></script>
+  <script src="./js/math_engine.js?v=324"></script>
+  <script src="./js/app_controller.js?v=263"></script>
 </body>
 </html>
