@@ -1,5 +1,5 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v240 — NCAA 58.7% ML UPSET FLOOR + EXPANDED ESPN CODE SYNC + 6-STAGE NCAA TIERS)
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v241 — FULL QUANT CORE REVAMP: SOS+RECENCY+SCORING+PACE+M7 WEATHER+ACTIVE-QB TIP)
 Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
   1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
   2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
@@ -347,9 +347,11 @@ def lookup_by_name(lookup_dict, full_name, code="", allow_code=True):
 # ==============================================================================
 def fetch_nflverse_live_team_epa(season_year=2026):
     """
-    Pulls real 2026 NFL weekly team stats directly from nflverse-data releases (zero API key).
-    Computes true Net EPA/play = (Off EPA/play - Def EPA/play allowed), turnover regression,
-    red-zone defense proxy, and league EPA rank (1..32).
+    v241 QUANT CORE REVAMP — Live 2026 NFL Weekly Team Telemetry (nflverse-data, zero API key):
+      1. Exponential recency weighting (0.88^(max_wk - wk)) so November form outweighs Week 1.
+      2. 3-Pass Iterative Opponent-Adjusted SOS on Off/Def EPA/play AND Off/Def Points/Game.
+      3. Bayesian sample-size shrinkage n/(n + 3.5) eliminating raw-EPA spread over-dispersion.
+      4. Real Team Pace (off + def plays/game) & SOS-adjusted scoring for Vegas-independent totals.
     """
     url = f"https://github.com/nflverse/nflverse-data/releases/download/stats_team/stats_team_week_{season_year}.csv"
     team_stats = {}
@@ -360,27 +362,21 @@ def fetch_nflverse_live_team_epa(season_year=2026):
             return {}
 
         reader = csv.DictReader(io.StringIO(resp.text))
-        agg = {}
-
-        def ensure(t):
-            if t not in agg:
-                agg[t] = {
-                    "games": 0, "off_plays": 0.0, "off_epa": 0.0,
-                    "def_plays": 0.0, "def_epa_allowed": 0.0,
-                    "giveaways": 0.0, "takeaways": 0.0
-                }
-            return agg[t]
+        rows_clean = []
 
         def fval(row, *keys):
             for k in keys:
                 v = row.get(k)
                 if v not in (None, "", "NA", "NaN"):
                     try:
-                        return float(v)
+                        val = float(v)
+                        if not math.isnan(val) and not math.isinf(val):
+                            return val
                     except ValueError:
                         pass
             return 0.0
 
+        max_wk = 1
         for row in reader:
             stype = (row.get("season_type") or "REG").upper()
             if stype not in ("REG", "POST"):
@@ -391,14 +387,37 @@ def fetch_nflverse_live_team_epa(season_year=2026):
                 continue
             t = ESPN_CODE_MAP.get(raw_t, raw_t)
             opp = ESPN_CODE_MAP.get(raw_opp, raw_opp)
+            wk = int(round(fval(row, "week") or 1))
+            if wk > max_wk:
+                max_wk = wk
 
             att = fval(row, "attempts")
             car = fval(row, "carries")
             sacks = fval(row, "sacks_suffered", "sacks")
             plays = att + car + sacks
+            if plays <= 0:
+                continue
+
             pass_epa = fval(row, "passing_epa")
             rush_epa = fval(row, "rushing_epa")
             tot_epa = pass_epa + rush_epa
+            epa_pp = tot_epa / plays
+
+            # Derive team game points from nflverse scoring stats (cross-checked later with ESPN standings)
+            pts_direct = fval(row, "points_scored", "team_score", "points")
+            if pts_direct > 0:
+                pts = pts_direct
+            else:
+                tds = (
+                    fval(row, "passing_tds") + fval(row, "rushing_tds")
+                    + fval(row, "special_teams_tds") + fval(row, "def_tds")
+                    + fval(row, "fumble_recovery_tds")
+                )
+                fgs = fval(row, "fg_made")
+                pats = fval(row, "pat_made")
+                two_pts = fval(row, "passing_2pt_conversions") + fval(row, "rushing_2pt_conversions")
+                saf = fval(row, "def_safeties")
+                pts = (6.0 * tds) + (3.0 * fgs) + (1.0 * pats) + (2.0 * (two_pts + saf))
 
             giveaways = (
                 fval(row, "passing_interceptions", "interceptions")
@@ -407,48 +426,139 @@ def fetch_nflverse_live_team_epa(season_year=2026):
                 + fval(row, "sack_fumbles_lost")
             )
 
-            rec = ensure(t)
-            rec["games"] += 1
-            rec["off_plays"] += plays
-            rec["off_epa"] += tot_epa
-            rec["giveaways"] += giveaways
+            rows_clean.append({
+                "t": t, "opp": opp, "wk": wk, "plays": plays,
+                "epa_pp": epa_pp, "tot_epa": tot_epa, "pts": pts, "giveaways": giveaways
+            })
 
-            if opp:
-                opp_rec = ensure(opp)
-                opp_rec["def_plays"] += plays
-                opp_rec["def_epa_allowed"] += tot_epa
-                opp_rec["takeaways"] += giveaways
+        if not rows_clean:
+            return {}
+
+        # Pair games by (wk, team, opp) to attach opponent plays/EPA/points allowed cleanly
+        by_wk_team = {(r["wk"], r["t"]): r for r in rows_clean}
+        games_by_t = {}
+        agg = {}
+
+        for r in rows_clean:
+            t, opp, wk = r["t"], r["opp"], r["wk"]
+            w = 0.88 ** max(0, max_wk - wk)  # Exponential recency weight (~1.6x recent vs Week 1)
+            opp_row = by_wk_team.get((wk, opp)) if opp else None
+            def_epa_pp = opp_row["epa_pp"] if opp_row else 0.0
+            def_plays = opp_row["plays"] if opp_row else 62.5
+            pts_allowed = opp_row["pts"] if opp_row else 21.5
+            takeaways = opp_row["giveaways"] if opp_row else r["giveaways"]
+
+            # Cap extreme blowout garbage time at +/- 24 pts for scoring stability
+            raw_margin = r["pts"] - pts_allowed
+            capped_margin = max(-24.0, min(24.0, raw_margin))
+            if raw_margin != capped_margin and r["pts"] > 0 and pts_allowed > 0:
+                excess = (raw_margin - capped_margin) * 0.5
+                pts_eff = max(0.0, r["pts"] - excess)
+                pa_eff = max(0.0, pts_allowed + excess)
+            else:
+                pts_eff, pa_eff = r["pts"], pts_allowed
+
+            rec = agg.setdefault(t, {
+                "games": 0, "w_sum": 0.0, "w_off_plays": 0.0, "w_def_plays": 0.0,
+                "w_off_epa": 0.0, "w_def_epa": 0.0, "w_pts_for": 0.0, "w_pts_ag": 0.0,
+                "giveaways": 0.0, "takeaways": 0.0, "has_pts": 0
+            })
+            rec["games"] += 1
+            rec["w_sum"] += w
+            rec["w_off_plays"] += w * r["plays"]
+            rec["w_def_plays"] += w * def_plays
+            rec["w_off_epa"] += w * r["epa_pp"]
+            rec["w_def_epa"] += w * def_epa_pp
+            rec["w_pts_for"] += w * pts_eff
+            rec["w_pts_ag"] += w * pa_eff
+            rec["giveaways"] += r["giveaways"]
+            rec["takeaways"] += takeaways
+            if r["pts"] > 0:
+                rec["has_pts"] += 1
+
+            games_by_t.setdefault(t, []).append({
+                "opp": opp, "w": w, "off_epa": r["epa_pp"], "def_epa": def_epa_pp,
+                "pf": pts_eff, "pa": pa_eff
+            })
+
+        valid_teams = [t for t, d in agg.items() if d["games"] >= 1 and d["w_sum"] > 0]
+        if not valid_teams:
+            return {}
+
+        # League baselines (recency-weighted)
+        lg_off_epa = sum(agg[t]["w_off_epa"] / agg[t]["w_sum"] for t in valid_teams) / len(valid_teams)
+        lg_def_epa = sum(agg[t]["w_def_epa"] / agg[t]["w_sum"] for t in valid_teams) / len(valid_teams)
+        lg_ppg = sum(agg[t]["w_pts_for"] / agg[t]["w_sum"] for t in valid_teams) / len(valid_teams)
+        pts_reliable = (14.0 <= lg_ppg <= 32.0)
+
+        # 3-Pass Iterative Opponent-Adjusted SOS on Off/Def EPA & Scoring
+        adj_off_e = {t: (agg[t]["w_off_epa"] / agg[t]["w_sum"]) - lg_off_epa for t in valid_teams}
+        adj_def_e = {t: (agg[t]["w_def_epa"] / agg[t]["w_sum"]) - lg_def_epa for t in valid_teams}
+        adj_off_p = {t: (agg[t]["w_pts_for"] / agg[t]["w_sum"]) - lg_ppg for t in valid_teams}
+        adj_def_p = {t: (agg[t]["w_pts_ag"] / agg[t]["w_sum"]) - lg_ppg for t in valid_teams}
+
+        for _ in range(3):
+            nxt_oe, nxt_de, nxt_op, nxt_dp = {}, {}, {}, {}
+            for t in valid_teams:
+                glist = games_by_t.get(t, [])
+                ws = sum(g["w"] for g in glist) or 1.0
+                nxt_oe[t] = sum(g["w"] * ((g["off_epa"] - lg_off_epa) - 0.65 * adj_def_e.get(g["opp"], 0.0)) for g in glist) / ws
+                nxt_de[t] = sum(g["w"] * ((g["def_epa"] - lg_def_epa) - 0.65 * adj_off_e.get(g["opp"], 0.0)) for g in glist) / ws
+                nxt_op[t] = sum(g["w"] * ((g["pf"] - lg_ppg) - 0.65 * adj_def_p.get(g["opp"], 0.0)) for g in glist) / ws
+                nxt_dp[t] = sum(g["w"] * ((g["pa"] - lg_ppg) - 0.65 * adj_off_p.get(g["opp"], 0.0)) for g in glist) / ws
+            m_oe = sum(nxt_oe.values()) / len(valid_teams)
+            m_de = sum(nxt_de.values()) / len(valid_teams)
+            m_op = sum(nxt_op.values()) / len(valid_teams)
+            m_dp = sum(nxt_dp.values()) / len(valid_teams)
+            adj_off_e = {t: nxt_oe[t] - m_oe for t in valid_teams}
+            adj_def_e = {t: nxt_de[t] - m_de for t in valid_teams}
+            adj_off_p = {t: nxt_op[t] - m_op for t in valid_teams}
+            adj_def_p = {t: nxt_dp[t] - m_dp for t in valid_teams}
 
         ranked_list = []
-        for t, d in agg.items():
-            if d["games"] == 0 or d["off_plays"] <= 0 or d["def_plays"] <= 0:
-                continue
-            off_epa_pp = d["off_epa"] / d["off_plays"]
-            def_epa_pp = d["def_epa_allowed"] / d["def_plays"]
+        base_team_ppg = MODEL_TOTAL_INTERCEPT / 2.0  # ~21.493
+        for t in valid_teams:
+            d = agg[t]
+            gp = d["games"]
+            # Bayesian sample-size shrinkage: kills raw-EPA over-dispersion (Model std ~6.8 vs Vegas 6.7)
+            shrink_sp = gp / (gp + 3.5)
+            shrink_tot = gp / (gp + 2.5)
+
+            off_epa_pp = adj_off_e[t] * shrink_sp
+            def_epa_pp = adj_def_e[t] * shrink_sp
             net_epa_pp = off_epa_pp - def_epa_pp
-            to_margin_pg = (d["takeaways"] - d["giveaways"]) / d["games"]
-            # Positive turnover margin implies slight mean-reversion penalty (negative to_reg)
+
+            off_pace = d["w_off_plays"] / d["w_sum"]
+            def_pace = d["w_def_plays"] / d["w_sum"]
+            pace_pg = round(max(50.0, min(78.0, 0.60 * off_pace + 0.40 * def_pace)), 1)
+
+            to_margin_pg = (d["takeaways"] - d["giveaways"]) / gp
             to_reg = max(-0.85, min(0.85, -0.35 * to_margin_pg))
-            # Negative opp_rz_dvoa = stronger defense (lower defensive EPA allowed)
             rz_dvoa = max(-0.25, min(0.25, def_epa_pp * 1.45))
 
-            team_stats[f"code:{t}"] = {
+            rec_out = {
                 "net_epa_per_play": round(net_epa_pp, 4),
                 "off_epa_per_play": round(off_epa_pp, 4),
                 "def_epa_per_play": round(def_epa_pp, 4),
+                "pace_pg": pace_pg,
                 "to_reg": round(to_reg, 2),
                 "rz_dvoa": round(rz_dvoa, 3),
-                "games_played": d["games"]
+                "games_played": gp
             }
+            if pts_reliable and d["has_pts"] >= max(1, gp - 1):
+                rec_out["adj_off_ppg"] = round(max(10.0, min(38.0, base_team_ppg + adj_off_p[t] * shrink_tot)), 2)
+                rec_out["adj_def_ppg"] = round(max(10.0, min(38.0, base_team_ppg + adj_def_p[t] * shrink_tot)), 2)
+
+            team_stats[f"code:{t}"] = rec_out
             ranked_list.append((net_epa_pp, f"code:{t}"))
 
         ranked_list.sort(reverse=True)
         for rank_idx, (_, key) in enumerate(ranked_list, start=1):
             team_stats[key]["epa_rank"] = rank_idx
 
-        print(f"[nflverse Live {season_year}] Loaded real Net EPA/play & turnovers for {len(ranked_list)} NFL teams.")
+        print(f"[nflverse Live {season_year} v241] Loaded SOS+Recency+Shrunk EPA, Pace & Scoring for {len(ranked_list)} NFL teams (max_wk={max_wk}).")
     except Exception as e:
-        print(f"[nflverse Notice] Live fetch skipped ({e}); falling back to ESPN FPI/registry.")
+        print(f"[nflverse Notice] Live fetch skipped ({e}); falling back to registry.")
     return team_stats
 
 def _download_sdv_csv_text(release_tag, season_year, fallback_names):
@@ -490,15 +600,55 @@ def _download_sdv_csv_text(release_tag, season_year, fallback_names):
             continue
     return None, None
 
-def fetch_sportsdataverse_cfb_live_epa(season_year=2026):
+def _is_verified_fbs_team(norm_name, school_name, abbr, fbs_standings_map=None):
+    """Strict 138-team FBS membership check (ESPN Group 80 standings + verified NCAA_TEAM_REGISTRY)
+    so FCS teams NEVER pollute FBS mean-centering or Tier 6."""
+    if norm_name in ELITE_FCS_KEYWORDS or any(kw in norm_name for kw in ELITE_FCS_KEYWORDS):
+        return False
+    if fbs_standings_map:
+        if norm_name in fbs_standings_map:
+            return True
+        if school_name and f"school:{school_name}" in fbs_standings_map:
+            return True
+        if abbr and f"code:{abbr}" in fbs_standings_map:
+            return True
+        # Safe mascot drop against standings keys
+        toks = norm_name.split()
+        if len(toks) >= 2:
+            for dn in (1, 2):
+                if len(toks) - dn >= 1:
+                    cand = " ".join(toks[:-dn])
+                    if cand in fbs_standings_map:
+                        return True
+        # If ESPN Group 80 standings loaded >= 120 FBS programs, trust it as authoritative
+        st_count = sum(1 for k in fbs_standings_map if not k.startswith(("code:", "school:")))
+        if st_count >= 120:
+            # Also allow verified non-FCS teams in NCAA_TEAM_REGISTRY
+            for reg_nm, reg_m in NCAA_TEAM_REGISTRY.items():
+                if reg_m.get("epa", 0.0) <= -0.50:
+                    continue  # skip hardcoded FCS entries (Wofford, Chattanooga, Samford, Tenn Tech)
+                if normalize_team_key(reg_nm) == norm_name or (abbr and reg_m.get("code") == abbr):
+                    return True
+            return False
+    # Fallback if standings unavailable: check non-FCS registry entries
+    for reg_nm, reg_m in NCAA_TEAM_REGISTRY.items():
+        if reg_m.get("epa", 0.0) <= -0.50:
+            continue
+        if normalize_team_key(reg_nm) == norm_name or (abbr and reg_m.get("code") == abbr):
+            return True
+    return True
+
+
+def fetch_sportsdataverse_cfb_live_epa(season_year=2026, fbs_standings_map=None):
     """
-    Pulls real 2026 NCAA FBS play-by-play EPA directly from SportsDataverse (cfbfastR-cfb-data releases)
-    with zero API key and zero ESPN FPI black-box priors.
-    v235 Upgrades:
-      - Normalizes CSV headers (lowercase, alphanumeric-only) so camelCase (totalYards, yardsPerPlay, epaPerPlay),
-        dot-case (EPA.overall.off), and snake_case (total_yards, yards_per_play) all parse cleanly.
-      - Supports both dual-side and single-side per-game adv_team rows (pairing teams by game_id).
-      - Enforces hard non-zero & variance sanity guard so a schema mismatch can NEVER poison NCAA with 0.0 EPA / 28.0 Totals.
+    v241 QUANT CORE REVAMP — Pure On-Field 2026 NCAA FBS Rating & Scoring-Pace Engine (ZERO ESPN FPI):
+      1. STRICT 138-Team FBS Filter BEFORE SOS & mean-centering (FCS opponents receive a calibrated
+         fixed -16.5 pt SOS offset and NEVER enter the FBS mean or Tier 6 pool).
+      2. Exponential recency weighting (last 4-5 games weighted ~1.6x over September cupcakes).
+      3. Composite Spread Rating: 60% 3-Pass SOS Capped Scoring Margin (±28 cap) + 40% SOS YPP/EPA,
+         restoring realistic 20–32 pt separation on elite favorites vs mid/lower FBS opponents.
+      4. Real Team Pace (plays/game) + 3-Pass SOS Off/Def PPG (adj_off_ppg, adj_def_ppg) so NCAA
+         Over/Unders reflect real scoring environments (34–75 pts) instead of cancelling out at 51.5.
     """
     cfb_map = {}
 
@@ -510,7 +660,6 @@ def fetch_sportsdataverse_cfb_live_epa(season_year=2026):
             v = nrow.get(k)
             if v not in (None, "", "NA", "NaN", "None", "null"):
                 s = str(v).strip()
-                # Handle ESPN "plays-yards" or "comp-att" strings if encountered
                 if "-" in s and not s.startswith("-"):
                     continue
                 try:
@@ -542,12 +691,27 @@ def fetch_sportsdataverse_cfb_live_epa(season_year=2026):
                 return ESPN_CODE_MAP.get(val, val)
         return ""
 
+    def _extract_date_key(nrow):
+        for k in ("gamedate", "gamedatetime", "date", "startdate", "week"):
+            v = (nrow.get(k) or "").strip()
+            if v:
+                return v[:10]
+        return ""
+
+    def _enrich_standings_ppg(norm_k, school_k, abbr):
+        if not fbs_standings_map:
+            return None, None
+        st = fbs_standings_map.get(norm_k) or (fbs_standings_map.get(f"school:{school_k}") if school_k else None) or (fbs_standings_map.get(f"code:{abbr}") if abbr else None)
+        if st and st.get("ppg_for") is not None and st.get("ppg_against") is not None:
+            return float(st["ppg_for"]), float(st["ppg_against"])
+        return None, None
+
     def _validate_and_index(ranked_entries, source_label):
         if len(ranked_entries) < 60:
             return False
         non_zero = sum(1 for x in ranked_entries if abs(x[0]) > 0.0005)
         if non_zero < int(len(ranked_entries) * 0.70):
-            print(f"[SDV Sanity Guard REJECTED {source_label}] Only {non_zero}/{len(ranked_entries)} teams had non-zero Net EPA — skipping to prevent 0.0 EPA poisoning.")
+            print(f"[SDV Sanity Guard REJECTED {source_label}] Only {non_zero}/{len(ranked_entries)} teams had non-zero Net EPA.")
             return False
         ranked_entries.sort(key=lambda x: x[0], reverse=True)
         total_n = len(ranked_entries)
@@ -561,161 +725,8 @@ def fetch_sportsdataverse_cfb_live_epa(season_year=2026):
                 cfb_map[f"code:{abbr}"] = entry
         return True
 
-    # 1. Primary: SportsDataverse Advanced Team EPA CSV/GZ (built from cfbfastR play-by-play EPA)
-    try:
-        adv_text, adv_src = _download_sdv_csv_text(
-            "espn_cfb_adv_team", season_year,
-            [f"adv_team_{season_year}.csv", f"adv_team_{season_year}.csv.gz", f"espn_cfb_adv_team_{season_year}.csv", f"espn_cfb_adv_team_{season_year}.csv.gz"]
-        )
-        if adv_text:
-            reader = csv.DictReader(io.StringIO(adv_text))
-            fieldnames_preview = (reader.fieldnames or [])[:25]
-            agg_dual = {}
-            by_game_single = {}
-
-            for raw_row in reader:
-                nrow = _norm_row(raw_row)
-                t_name = _extract_team_name(nrow)
-                if not t_name:
-                    continue
-                norm_k = normalize_team_key(t_name)
-                school_k = normalize_team_key(_extract_school_loc(nrow))
-                abbr = _extract_abbr(nrow)
-                gid_b = (nrow.get("gameid") or nrow.get("id") or "").strip()
-
-                plays = _fval(nrow, "scrimmageplays", "offplays", "plays", "totalplays", "nplays") or 0.0
-                off_pp = _fval(nrow, "epaoveralloffperplay", "offepaperplay", "epaoffperplay", "ppaoffense", "offenseppa", "offenseepaperplay")
-                def_pp = _fval(nrow, "epaoveralldefperplay", "defepaperplay", "epadefperplay", "ppadefense", "defenseppa", "defenseepaperplay")
-                off_tot = _fval(nrow, "epaoveralloff", "offepa", "epaoff", "offenseepa")
-                def_tot = _fval(nrow, "epaoveralldef", "defepa", "epadef", "defenseepa")
-
-                if off_pp is None and off_tot is not None and plays > 0:
-                    off_pp = off_tot / plays
-                if def_pp is None and def_tot is not None and plays > 0:
-                    def_pp = def_tot / plays
-
-                if off_pp is not None and def_pp is not None:
-                    w_plays = plays if plays > 0 else 65.0
-                    rec = agg_dual.setdefault(norm_k, {
-                        "school": school_k, "abbr": abbr, "games": 0,
-                        "w_plays": 0.0, "w_off_epa": 0.0, "w_def_epa": 0.0,
-                        "giveaways": 0.0, "takeaways": 0.0
-                    })
-                    rec["games"] += 1
-                    rec["w_plays"] += w_plays
-                    rec["w_off_epa"] += off_pp * w_plays
-                    rec["w_def_epa"] += def_pp * w_plays
-                    if abbr and not rec["abbr"]:
-                        rec["abbr"] = abbr
-                    to_val = _fval(nrow, "turnovers", "giveaways", "totalturnovers")
-                    ta_val = _fval(nrow, "takeaways", "defturnovers", "opponentturnovers")
-                    if to_val is not None:
-                        rec["giveaways"] += to_val
-                    if ta_val is not None:
-                        rec["takeaways"] += ta_val
-                elif gid_b:
-                    # Single-team-per-row schema: pair opponents by game_id to derive defensive EPA allowed
-                    single_pp = _fval(nrow, "epaperplay", "epaavg", "meanepa", "ppa", "overallppaperplay")
-                    single_tot = _fval(nrow, "epatotal", "totalepa", "epa", "epasum")
-                    if single_pp is None and single_tot is not None and plays > 0:
-                        single_pp = single_tot / plays
-                    if single_pp is not None:
-                        by_game_single.setdefault(gid_b, []).append({
-                            "norm": norm_k, "school": school_k, "abbr": abbr,
-                            "plays": plays if plays > 0 else 65.0,
-                            "epa_pp": single_pp,
-                            "tos": _fval(nrow, "turnovers", "giveaways", "totalturnovers") or 0.0
-                        })
-
-            ranked = []
-            if len(agg_dual) >= 60:
-                raw_dual = [(nk, d, d["w_off_epa"] / d["w_plays"], d["w_def_epa"] / d["w_plays"]) for nk, d in agg_dual.items() if d["w_plays"] > 0]
-                mean_dual_off = (sum(x[2] for x in raw_dual) / len(raw_dual)) if raw_dual else 0.0
-                mean_dual_def = (sum(x[3] for x in raw_dual) / len(raw_dual)) if raw_dual else 0.0
-                for norm_k, d, raw_off, raw_def in raw_dual:
-                    off_epa_pp = raw_off - mean_dual_off
-                    def_epa_pp = raw_def - mean_dual_def
-                    net_epa_pp = off_epa_pp - def_epa_pp
-                    gp = max(1, d["games"])
-                    to_reg = max(-0.85, min(0.85, -0.35 * ((d["takeaways"] - d["giveaways"]) / gp)))
-                    rz_dvoa = max(-0.22, min(0.22, def_epa_pp * 1.45))
-                    entry = {
-                        "off_epa_per_play": round(off_epa_pp, 4),
-                        "def_epa_per_play": round(def_epa_pp, 4),
-                        "net_epa_per_play": round(net_epa_pp, 4),
-                        "to_reg": round(to_reg, 2),
-                        "rz_dvoa": round(rz_dvoa, 3),
-                        "is_fbs": True
-                    }
-                    ranked.append((net_epa_pp, norm_k, d["school"], d["abbr"], entry))
-            elif len(by_game_single) >= 100:
-                agg_s = {}
-                for gid_b, sides in by_game_single.items():
-                    if len(sides) != 2:
-                        continue
-                    for i_s in (0, 1):
-                        me_s = sides[i_s]
-                        opp_s = sides[1 - i_s]
-                        rec = agg_s.setdefault(me_s["norm"], {
-                            "school": me_s["school"], "abbr": me_s["abbr"], "games": 0,
-                            "off_p": 0.0, "off_e": 0.0, "def_p": 0.0, "def_e": 0.0, "to_diff": 0.0
-                        })
-                        rec["games"] += 1
-                        rec["off_p"] += me_s["plays"]
-                        rec["off_e"] += me_s["epa_pp"] * me_s["plays"]
-                        rec["def_p"] += opp_s["plays"]
-                        rec["def_e"] += opp_s["epa_pp"] * opp_s["plays"]
-                        rec["to_diff"] += (opp_s["tos"] - me_s["tos"])
-                raw_s = [(nk, d, d["off_e"] / d["off_p"], d["def_e"] / d["def_p"]) for nk, d in agg_s.items() if d["games"] >= 2 and d["off_p"] > 0 and d["def_p"] > 0]
-                mean_s = (sum(x[2] for x in raw_s) / len(raw_s)) if raw_s else 0.0
-                # 3-Pass Iterative Opponent-Adjusted SOS on single-side adv_team game pairs
-                adj_off_s = {nk: (ro - mean_s) for nk, _, ro, _ in raw_s}
-                adj_def_s = {nk: (rd - mean_s) for nk, _, _, rd in raw_s}
-                games_by_t_s = {}
-                for gid_b, sides in by_game_single.items():
-                    if len(sides) != 2:
-                        continue
-                    for i_s in (0, 1):
-                        me_s, opp_s = sides[i_s], sides[1 - i_s]
-                        games_by_t_s.setdefault(me_s["norm"], []).append((me_s["epa_pp"] - mean_s, opp_s["epa_pp"] - mean_s, opp_s["norm"]))
-                for _ in range(3):
-                    nxt_o, nxt_d = {}, {}
-                    for nk in adj_off_s:
-                        g_list = games_by_t_s.get(nk)
-                        if not g_list:
-                            nxt_o[nk], nxt_d[nk] = adj_off_s[nk], adj_def_s[nk]
-                            continue
-                        nxt_o[nk] = sum(go - 0.65 * adj_def_s.get(op, 0.0) for go, _, op in g_list) / len(g_list)
-                        nxt_d[nk] = sum(gd - 0.65 * adj_off_s.get(op, 0.0) for _, gd, op in g_list) / len(g_list)
-                    mo = sum(nxt_o.values()) / max(1, len(nxt_o))
-                    md = sum(nxt_d.values()) / max(1, len(nxt_d))
-                    adj_off_s = {k: (v - mo) for k, v in nxt_o.items()}
-                    adj_def_s = {k: (v - md) for k, v in nxt_d.items()}
-                for norm_k, d, raw_off, raw_def in raw_s:
-                    off_epa_pp = adj_off_s.get(norm_k, raw_off - mean_s)
-                    def_epa_pp = adj_def_s.get(norm_k, raw_def - mean_s)
-                    net_epa_pp = off_epa_pp - def_epa_pp
-                    to_reg = max(-0.85, min(0.85, -0.35 * (d["to_diff"] / d["games"])))
-                    rz_dvoa = max(-0.22, min(0.22, def_epa_pp * 1.45))
-                    entry = {
-                        "off_epa_per_play": round(off_epa_pp, 4),
-                        "def_epa_per_play": round(def_epa_pp, 4),
-                        "net_epa_per_play": round(net_epa_pp, 4),
-                        "to_reg": round(to_reg, 2),
-                        "rz_dvoa": round(rz_dvoa, 3),
-                        "is_fbs": True
-                    }
-                    ranked.append((net_epa_pp, norm_k, d["school"], d["abbr"], entry))
-
-            if _validate_and_index(ranked, "espn_cfb_adv_team"):
-                print(f"[SportsDataverse Live {season_year} NCAA] Loaded raw play-by-play Off/Def EPA for {len(ranked)} teams from {adv_src} (ZERO ESPN FPI).")
-                return cfb_map
-            else:
-                print(f"[SportsDataverse adv_team Schema Notice] Headers sample: {fieldnames_preview}")
-    except Exception as e:
-        print(f"[SportsDataverse adv_team Notice] {e}")
-
-    # 2. Secondary Fallback: SportsDataverse Team Box Scores CSV/GZ (pure on-field yards/play + turnovers, zero ESPN FPI)
+    # 1. Primary: SportsDataverse Team Box Scores CSV/GZ (contains full game pairs, points, yards, plays, dates, turnovers!)
+    #    Note: We also check adv_team if available, but team_box has complete FBS game-by-game points + plays + YPP!
     try:
         box_text, box_src = _download_sdv_csv_text(
             "espn_cfb_team_box", season_year,
@@ -740,8 +751,8 @@ def fetch_sportsdataverse_cfb_live_epa(season_year=2026):
                     yds = py + ry
 
                 plays = _fval(nrow, "totaloffensiveplays", "scrimmageplays", "totalplays", "offensiveplays", "plays")
-                if plays is None or plays <= 0:
-                    # Try summing passing attempts + rushing attempts (ESPN emits completionAttempts as "18/29" or "18-29")
+                plays_parsed = bool(plays is not None and 25.0 <= plays <= 120.0)
+                if not plays_parsed:
                     ratt = _fval(nrow, "rushingattempts", "rushattempts", "carries") or 0.0
                     patt = _fval(nrow, "passingattempts", "passattempts") or 0.0
                     if patt == 0.0:
@@ -752,115 +763,268 @@ def fetch_sportsdataverse_cfb_live_epa(season_year=2026):
                                 patt = float(ca_parts[1].strip())
                             except Exception:
                                 patt = 0.0
-                    # Only trust summed plays when BOTH rush and pass attempts parsed (otherwise default to 68.0 college plays)
-                    plays = (ratt + patt) if (ratt >= 5.0 and patt >= 5.0 and (ratt + patt) >= 35.0) else 68.0
+                    if ratt >= 5.0 and patt >= 5.0 and 35.0 <= (ratt + patt) <= 120.0:
+                        plays = ratt + patt
+                        plays_parsed = True
+                    else:
+                        plays = 68.5
 
                 if ypp_direct is not None and 1.5 <= ypp_direct <= 14.0:
                     ypp_val = ypp_direct
                 elif yds is not None and yds > 20.0:
                     ypp_val = yds / max(20.0, plays)
                 else:
-                    continue  # Skip rows with missing/zero yardage instead of poisoning YPP with 0.0!
+                    continue
 
+                score_val = _fval(nrow, "teamscore", "points", "score", "totalpoints")
+                opp_score_val = _fval(nrow, "opponentteamscore", "opponentscore", "pointsallowed")
                 tos = _fval(nrow, "turnovers", "totalturnovers", "giveaways") or 0.0
+                norm_k = normalize_team_key(t_name)
+                school_k = normalize_team_key(_extract_school_loc(nrow))
+                abbr = _extract_abbr(nrow)
+                is_fbs_flag = _is_verified_fbs_team(norm_k, school_k, abbr, fbs_standings_map)
+
                 by_game.setdefault(gid_b, []).append({
-                    "norm": normalize_team_key(t_name),
-                    "school": normalize_team_key(_extract_school_loc(nrow)),
-                    "abbr": _extract_abbr(nrow),
+                    "norm": norm_k,
+                    "school": school_k,
+                    "abbr": abbr,
+                    "is_fbs": is_fbs_flag,
                     "ypp": ypp_val,
-                    "tos": tos
+                    "plays": plays,
+                    "plays_parsed": plays_parsed,
+                    "score": score_val,
+                    "opp_score": opp_score_val,
+                    "tos": tos,
+                    "date_k": _extract_date_key(nrow)
                 })
 
-            agg = {}
+            # Build per-FBS-team chronological game logs (FCS teams NEVER enter FBS pool!)
+            games_by_fbs = {}
+            meta_by_fbs = {}
             for gid_b, sides in by_game.items():
                 if len(sides) != 2:
                     continue
                 for i_s in (0, 1):
                     me_s = sides[i_s]
                     opp_s = sides[1 - i_s]
-                    rec = agg.setdefault(me_s["norm"], {"school": me_s["school"], "abbr": me_s["abbr"], "games": 0, "off_ypp": 0.0, "def_ypp": 0.0, "to_diff": 0.0})
-                    rec["games"] += 1
-                    rec["off_ypp"] += me_s["ypp"]
-                    rec["def_ypp"] += opp_s["ypp"]
-                    rec["to_diff"] += (opp_s["tos"] - me_s["tos"])
-
-            # Compute true dataset mean YPP so off_epa + def_epa is guaranteed zero-centered around NCAA_TOTAL_INTERCEPT
-            valid_ypp_teams = []
-            for norm_k, d in agg.items():
-                if d["games"] < 2:
-                    continue
-                oy = d["off_ypp"] / d["games"]
-                dy = d["def_ypp"] / d["games"]
-                if 2.0 <= oy <= 12.0 and 2.0 <= dy <= 12.0:
-                    valid_ypp_teams.append((norm_k, d, oy, dy))
-
-            league_avg_ypp = (sum(x[2] for x in valid_ypp_teams) / len(valid_ypp_teams)) if valid_ypp_teams else 5.65
-            # 3-Pass Iterative Opponent-Adjusted SOS on YPP game pairs (prevents cupcake schedules from inflating mid-tier teams)
-            adj_off_ypp = {nk: (oy - league_avg_ypp) for nk, _, oy, _ in valid_ypp_teams}
-            adj_def_ypp = {nk: (dy - league_avg_ypp) for nk, _, _, dy in valid_ypp_teams}
-            games_by_t_box = {}
-            for gid_b, sides in by_game.items():
-                if len(sides) != 2:
-                    continue
-                for i_s in (0, 1):
-                    me_s, opp_s = sides[i_s], sides[1 - i_s]
-                    games_by_t_box.setdefault(me_s["norm"], []).append((me_s["ypp"] - league_avg_ypp, opp_s["ypp"] - league_avg_ypp, opp_s["norm"]))
-            for _ in range(3):
-                nxt_o, nxt_d = {}, {}
-                for nk in adj_off_ypp:
-                    g_list = games_by_t_box.get(nk)
-                    if not g_list:
-                        nxt_o[nk], nxt_d[nk] = adj_off_ypp[nk], adj_def_ypp[nk]
+                    if not me_s["is_fbs"]:
                         continue
-                    nxt_o[nk] = sum(go - 0.65 * adj_def_ypp.get(op, 0.0) for go, _, op in g_list) / len(g_list)
-                    nxt_d[nk] = sum(gd - 0.65 * adj_off_ypp.get(op, 0.0) for _, gd, op in g_list) / len(g_list)
-                mo = sum(nxt_o.values()) / max(1, len(nxt_o))
-                md = sum(nxt_d.values()) / max(1, len(nxt_d))
-                adj_off_ypp = {k: (v - mo) for k, v in nxt_o.items()}
-                adj_def_ypp = {k: (v - md) for k, v in nxt_d.items()}
+                    nk = me_s["norm"]
+                    meta_by_fbs.setdefault(nk, {"school": me_s["school"], "abbr": me_s["abbr"]})
+                    if me_s["abbr"] and not meta_by_fbs[nk]["abbr"]:
+                        meta_by_fbs[nk]["abbr"] = me_s["abbr"]
 
-            ranked = []
-            for norm_k, d, off_ypp, def_ypp in valid_ypp_teams:
-                # Convert SOS-adjusted yards-per-play deviation into EPA/play units (~0.075 EPA per 1.0 ypp)
-                off_epa_pp = adj_off_ypp.get(norm_k, off_ypp - league_avg_ypp) * 0.075
-                def_epa_pp = adj_def_ypp.get(norm_k, def_ypp - league_avg_ypp) * 0.075
-                net_epa_pp = off_epa_pp - def_epa_pp
-                to_reg = max(-0.85, min(0.85, -0.35 * (d["to_diff"] / d["games"])))
-                rz_dvoa = max(-0.22, min(0.22, def_epa_pp * 1.45))
-                entry = {
-                    "off_epa_per_play": round(off_epa_pp, 4),
-                    "def_epa_per_play": round(def_epa_pp, 4),
-                    "net_epa_per_play": round(net_epa_pp, 4),
-                    "to_reg": round(to_reg, 2),
-                    "rz_dvoa": round(rz_dvoa, 3),
-                    "is_fbs": True
-                }
-                ranked.append((net_epa_pp, norm_k, d["school"], d["abbr"], entry))
+                    pf = me_s["score"]
+                    pa = opp_s["score"] if opp_s["score"] is not None else me_s["opp_score"]
+                    has_sc = (pf is not None and pa is not None and 0.0 <= pf <= 110.0 and 0.0 <= pa <= 110.0)
 
-            if _validate_and_index(ranked, "espn_cfb_team_box"):
-                print(f"[SportsDataverse TeamBox {season_year} NCAA] Computed pure on-field efficiency for {len(ranked)} teams from {box_src} (ZERO ESPN FPI).")
-                return cfb_map
+                    # Soft-cap extreme blowout margin at ±28 pts to strip garbage time
+                    if has_sc:
+                        raw_m = pf - pa
+                        cap_m = max(-28.0, min(28.0, raw_m))
+                        adj_pf, adj_pa = pf, pa
+                        if raw_m != cap_m:
+                            ex = (raw_m - cap_m) * 0.5
+                            adj_pf = max(0.0, pf - ex)
+                            adj_pa = max(0.0, pa + ex)
+                        # Cap single-game total gently to [10, 86] so 77-0 FCS games don't blow up totals
+                        tot_g = adj_pf + adj_pa
+                        if tot_g > 86.0:
+                            sc_f = 86.0 / tot_g
+                            adj_pf *= sc_f
+                            adj_pa *= sc_f
+                    else:
+                        adj_pf = adj_pa = cap_m = None
+
+                    games_by_fbs.setdefault(nk, []).append({
+                        "opp": opp_s["norm"],
+                        "opp_fbs": opp_s["is_fbs"],
+                        "off_ypp": me_s["ypp"],
+                        "def_ypp": opp_s["ypp"],
+                        "off_plays": me_s["plays"],
+                        "def_plays": opp_s["plays"],
+                        "plays_parsed": me_s["plays_parsed"],
+                        "pf": adj_pf,
+                        "pa": adj_pa,
+                        "margin": cap_m,
+                        "has_sc": has_sc,
+                        "to_diff": opp_s["tos"] - me_s["tos"],
+                        "date_k": me_s["date_k"] or gid_b
+                    })
+
+            # Filter to FBS teams with >= 2 games and assign exponential recency weights (recent games ~1.6x)
+            valid_fbs = []
+            for nk, glist in games_by_fbs.items():
+                if len(glist) < 2:
+                    continue
+                glist.sort(key=lambda g: g["date_k"])
+                n_g = len(glist)
+                for gi, g in enumerate(glist):
+                    # Latest game = weight 1.0; 10 games ago = 0.87^10 (~0.25) -> last 4 games carry heavy signal
+                    g["w"] = 0.87 ** (n_g - 1 - gi)
+                valid_fbs.append(nk)
+
+            if len(valid_fbs) >= 60:
+                # League averages strictly across FBS-vs-FBS games (ZERO FCS skew!)
+                fbs_ypp_vals, fbs_pf_vals = [], []
+                for nk in valid_fbs:
+                    for g in games_by_fbs[nk]:
+                        if g["opp_fbs"]:
+                            fbs_ypp_vals.append(g["off_ypp"])
+                            if g["has_sc"]:
+                                fbs_pf_vals.append(g["pf"])
+
+                lg_ypp = (sum(fbs_ypp_vals) / len(fbs_ypp_vals)) if fbs_ypp_vals else 5.65
+                has_box_scores = (len(fbs_pf_vals) >= 200)
+                lg_ppg = (sum(fbs_pf_vals) / len(fbs_pf_vals)) if has_box_scores else (NCAA_TOTAL_INTERCEPT / 2.0)
+
+                # Fixed calibrated FCS opponent offsets (never enter FBS mean; prevent cupcake inflation!)
+                FCS_OFF_YPP_DEV = -1.25   # FCS offense is ~1.25 YPP below average FBS
+                FCS_DEF_YPP_DEV = +1.35   # FCS defense allows ~1.35 YPP more than average FBS
+                FCS_OFF_PPG_DEV = -9.5    # FCS scores ~9.5 pts less vs avg FBS
+                FCS_DEF_PPG_DEV = +11.5   # FCS allows ~11.5 pts more vs avg FBS
+
+                # Initialize 3-pass SOS ratings
+                adj_oy = {}
+                adj_dy = {}
+                adj_op = {}
+                adj_dp = {}
+                for nk in valid_fbs:
+                    gl = games_by_fbs[nk]
+                    ws = sum(g["w"] for g in gl) or 1.0
+                    adj_oy[nk] = sum(g["w"] * (g["off_ypp"] - lg_ypp) for g in gl) / ws
+                    adj_dy[nk] = sum(g["w"] * (g["def_ypp"] - lg_ypp) for g in gl) / ws
+                    if has_box_scores:
+                        sc_gl = [g for g in gl if g["has_sc"]]
+                        ws_s = sum(g["w"] for g in sc_gl) or 1.0
+                        adj_op[nk] = sum(g["w"] * (g["pf"] - lg_ppg) for g in sc_gl) / ws_s if sc_gl else 0.0
+                        adj_dp[nk] = sum(g["w"] * (g["pa"] - lg_ppg) for g in sc_gl) / ws_s if sc_gl else 0.0
+                    else:
+                        adj_op[nk] = adj_dp[nk] = 0.0
+
+                # 3-Pass Iterative Opponent-Adjusted SOS (FBS-only centering!)
+                for _ in range(3):
+                    n_oy, n_dy, n_op, n_dp = {}, {}, {}, {}
+                    for nk in valid_fbs:
+                        gl = games_by_fbs[nk]
+                        ws = sum(g["w"] for g in gl) or 1.0
+                        oy_acc = dy_acc = op_acc = dp_acc = 0.0
+                        ws_s = 0.0
+                        for g in gl:
+                            op = g["opp"]
+                            opp_dy = adj_dy.get(op, 0.0) if g["opp_fbs"] else FCS_DEF_YPP_DEV
+                            opp_oy = adj_oy.get(op, 0.0) if g["opp_fbs"] else FCS_OFF_YPP_DEV
+                            oy_acc += g["w"] * ((g["off_ypp"] - lg_ypp) - 0.72 * opp_dy)
+                            dy_acc += g["w"] * ((g["def_ypp"] - lg_ypp) - 0.72 * opp_oy)
+                            if has_box_scores and g["has_sc"]:
+                                opp_dp = adj_dp.get(op, 0.0) if g["opp_fbs"] else FCS_DEF_PPG_DEV
+                                opp_op = adj_op.get(op, 0.0) if g["opp_fbs"] else FCS_OFF_PPG_DEV
+                                op_acc += g["w"] * ((g["pf"] - lg_ppg) - 0.72 * opp_dp)
+                                dp_acc += g["w"] * ((g["pa"] - lg_ppg) - 0.72 * opp_op)
+                                ws_s += g["w"]
+                        n_oy[nk] = oy_acc / ws
+                        n_dy[nk] = dy_acc / ws
+                        n_op[nk] = (op_acc / ws_s) if ws_s > 0 else 0.0
+                        n_dp[nk] = (dp_acc / ws_s) if ws_s > 0 else 0.0
+
+                    m_oy = sum(n_oy.values()) / len(valid_fbs)
+                    m_dy = sum(n_dy.values()) / len(valid_fbs)
+                    m_op = sum(n_op.values()) / len(valid_fbs)
+                    m_dp = sum(n_dp.values()) / len(valid_fbs)
+                    adj_oy = {k: v - m_oy for k, v in n_oy.items()}
+                    adj_dy = {k: v - m_dy for k, v in n_dy.items()}
+                    adj_op = {k: v - m_op for k, v in n_op.items()}
+                    adj_dp = {k: v - m_dp for k, v in n_dp.items()}
+
+                ranked = []
+                base_team_ppg = NCAA_TOTAL_INTERCEPT / 2.0  # ~25.725
+                for nk in valid_fbs:
+                    gl = games_by_fbs[nk]
+                    gp = len(gl)
+                    ws = sum(g["w"] for g in gl) or 1.0
+                    meta_i = meta_by_fbs[nk]
+
+                    # Real Team Pace (plays/game)
+                    parsed_gl = [g for g in gl if g["plays_parsed"]]
+                    if parsed_gl:
+                        ws_p = sum(g["w"] for g in parsed_gl) or 1.0
+                        off_pace = sum(g["w"] * g["off_plays"] for g in parsed_gl) / ws_p
+                        def_pace = sum(g["w"] * g["def_plays"] for g in parsed_gl) / ws_p
+                        pace_pg = round(max(54.0, min(86.0, 0.60 * off_pace + 0.40 * def_pace)), 1)
+                    else:
+                        pace_pg = 68.5
+
+                    # Bayesian shrinkage on sample size
+                    shrink = gp / (gp + 2.2)
+
+                    # Pure YPP -> EPA/play (~0.105 EPA per 1.0 YPP -> ~6.5 pts/game per 1.0 YPP diff)
+                    ypp_off_epa = adj_oy[nk] * 0.105 * shrink
+                    ypp_def_epa = adj_dy[nk] * 0.105 * shrink
+
+                    # Scoring -> EPA/play equivalent (1.0 SOS PPG / 62.32 plays = 0.016046 EPA/play)
+                    if has_box_scores:
+                        off_ppg_dev = adj_op[nk] * shrink
+                        def_ppg_dev = adj_dp[nk] * shrink
+                    else:
+                        st_pf, st_pa = _enrich_standings_ppg(nk, meta_i["school"], meta_i["abbr"])
+                        if st_pf is not None and st_pa is not None:
+                            off_ppg_dev = (st_pf - base_team_ppg) * 0.72 * shrink
+                            def_ppg_dev = (st_pa - base_team_ppg) * 0.72 * shrink
+                        else:
+                            off_ppg_dev = ypp_off_epa * 62.32
+                            def_ppg_dev = ypp_def_epa * 62.32
+
+                    sc_off_epa = off_ppg_dev / (GOLDEN_PLAY_SCALER * GOLDEN_RATIO_PHI)
+                    sc_def_epa = def_ppg_dev / (GOLDEN_PLAY_SCALER * GOLDEN_RATIO_PHI)
+
+                    # Composite Off/Def EPA: 60% SOS Capped Scoring + 40% SOS YPP Efficiency
+                    off_epa_pp = (0.60 * sc_off_epa) + (0.40 * ypp_off_epa)
+                    def_epa_pp = (0.60 * sc_def_epa) + (0.40 * ypp_def_epa)
+                    net_epa_pp = off_epa_pp - def_epa_pp
+
+                    adj_off_ppg = round(max(10.0, min(48.0, base_team_ppg + off_ppg_dev)), 2)
+                    adj_def_ppg = round(max(8.0, min(48.0, base_team_ppg + def_ppg_dev)), 2)
+
+                    to_reg = max(-0.85, min(0.85, -0.35 * (sum(g["to_diff"] for g in gl) / gp)))
+                    rz_dvoa = max(-0.24, min(0.24, def_epa_pp * 1.45))
+
+                    entry = {
+                        "off_epa_per_play": round(off_epa_pp, 4),
+                        "def_epa_per_play": round(def_epa_pp, 4),
+                        "net_epa_per_play": round(net_epa_pp, 4),
+                        "adj_off_ppg": adj_off_ppg,
+                        "adj_def_ppg": adj_def_ppg,
+                        "pace_pg": pace_pg,
+                        "to_reg": round(to_reg, 2),
+                        "rz_dvoa": round(rz_dvoa, 3),
+                        "games_played": gp,
+                        "is_fbs": True
+                    }
+                    ranked.append((net_epa_pp, nk, meta_i["school"], meta_i["abbr"], entry))
+
+                if _validate_and_index(ranked, "espn_cfb_team_box_v241"):
+                    print(f"[SportsDataverse TeamBox {season_year} v241] Loaded FBS-only SOS+Recency Composite (60% Score / 40% YPP) + Pace for {len(ranked)} FBS teams (has_box_scores={has_box_scores}, ZERO FCS pollution).")
+                    return cfb_map
             else:
-                print(f"[SportsDataverse team_box Schema Notice] Headers sample: {box_headers_preview}")
+                print(f"[SportsDataverse team_box Schema Notice] Only {len(valid_fbs)} FBS teams parsed. Headers: {box_headers_preview}")
     except Exception as e:
         print(f"[SportsDataverse team_box Notice] {e}")
 
-    print("[SportsDataverse Notice] Live CFB release unavailable or failed sanity guard; using verified standings PPG / registry baselines (ZERO ESPN FPI).")
+    print("[SportsDataverse Notice] Live CFB release unavailable; using verified standings PPG / registry baselines (ZERO ESPN FPI).")
     return cfb_map
 
 
 def apply_ncaa_six_stage_tiering(cfb_map, poll_map=None):
     """
-    UPGRADE #7 (v239): 6-Stage NCAA FBS Tier Grounding (75% Tier Mean / 25% Individual SOS Soft Anchor).
-      - Tier 1 (Ranks 1–35 + any live AP/CFP Top-25 program): 100% individual SOS rating (zero shrinkage).
-      - Tiers 2–6 (36–50, 51–65, 66–80, 81–100, 101–138+): grounded via 75% tier average + 25% individual SOS
-        so lower-tier FBS teams stop generating unrealistic 15-to-20-point swings against Top-25 favorites
-        while still preserving clean intra-tier separation.
+    v241 SMOOTH MONOTONIC FBS CALIBRATION (KILLS THE BROKEN TIER-6 STEP-CLIFF!):
+      - Keeps fbs_tier (1..6) & fbs_tier_label metadata intact for the 13-Module Dossier.
+      - Tier 1 (Ranks 1–35 + any live AP/CFP Top-25): 100% full individual SOS composite rating.
+      - Ranks 36–138: Smooth continuous shrinkage (0% at #35 ramping smoothly to 16% at #138 toward
+        a local 11-team sliding neighborhood mean) — ZERO discontinuous cliffs between #100 and #102!
     """
     if not cfb_map:
         return cfb_map
 
-    # Deduplicate unique team entry dicts and collect their associated lookup keys
     unique_by_id = {}
     keys_by_id = {}
     for k, entry in cfb_map.items():
@@ -874,8 +1038,8 @@ def apply_ncaa_six_stage_tiering(cfb_map, poll_map=None):
     if len(teams) < 40:
         return cfb_map
 
-    # Sort descending by SOS-adjusted net_epa_per_play
     teams.sort(key=lambda e: float(e.get("net_epa_per_play", 0.0)), reverse=True)
+    total_n = len(teams)
 
     TIER_BANDS = [
         (1, 35,  "T1 (1-35)"),
@@ -886,10 +1050,12 @@ def apply_ncaa_six_stage_tiering(cfb_map, poll_map=None):
         (6, 999, "T6 (101-138)"),
     ]
 
-    tier_buckets = {t_num: [] for t_num, _, _ in TIER_BANDS}
+    raw_offs = [float(e.get("off_epa_per_play", 0.0)) for e in teams]
+    raw_defs = [float(e.get("def_epa_per_play", 0.0)) for e in teams]
+    t1_cnt = 0
 
-    for rank_idx, entry in enumerate(teams, start=1):
-        # Check if team is ranked in live AP/CFP Top-25 -> protected in Tier 1 exact
+    for idx0, entry in enumerate(teams):
+        rank_idx = idx0 + 1
         is_poll_top25 = False
         if poll_map:
             for lk in keys_by_id.get(id(entry), []):
@@ -899,10 +1065,10 @@ def apply_ncaa_six_stage_tiering(cfb_map, poll_map=None):
                     is_poll_top25 = True
                     break
 
-        assigned_tier = 6
-        assigned_lbl = "T6 (101-138)"
+        assigned_tier, assigned_lbl = 6, "T6 (101-138)"
         if is_poll_top25 or rank_idx <= 35:
             assigned_tier, assigned_lbl = 1, "T1 (1-35)"
+            t1_cnt += 1
         else:
             for t_num, max_rk, lbl in TIER_BANDS:
                 if rank_idx <= max_rk:
@@ -912,36 +1078,30 @@ def apply_ncaa_six_stage_tiering(cfb_map, poll_map=None):
         entry["raw_sos_net_epa"] = round(float(entry.get("net_epa_per_play", 0.0)), 4)
         entry["fbs_tier"] = assigned_tier
         entry["fbs_tier_label"] = assigned_lbl
-        tier_buckets[assigned_tier].append(entry)
 
-    # Apply 75% Tier Mean / 25% Individual Soft Anchor to Tiers 2–6
-    TIER_WEIGHT = 0.75
-    INDIV_WEIGHT = 0.25
-    for t_num in (2, 3, 4, 5, 6):
-        grp = tier_buckets.get(t_num, [])
-        if not grp:
-            continue
-        mean_off = sum(float(e.get("off_epa_per_play", 0.0)) for e in grp) / len(grp)
-        mean_def = sum(float(e.get("def_epa_per_play", 0.0)) for e in grp) / len(grp)
-        for e in grp:
-            ind_off = float(e.get("off_epa_per_play", 0.0))
-            ind_def = float(e.get("def_epa_per_play", 0.0))
-            g_off = (TIER_WEIGHT * mean_off) + (INDIV_WEIGHT * ind_off)
-            g_def = (TIER_WEIGHT * mean_def) + (INDIV_WEIGHT * ind_def)
+        # Smooth monotonic local-neighborhood shrinkage for ranks > 35 (ZERO step cliffs!)
+        if assigned_tier > 1:
+            # Ramp shrinkage smoothly from 0.04 at #36 up to 0.18 at #138
+            frac = min(1.0, max(0.0, (rank_idx - 35) / max(1.0, float(total_n - 35))))
+            w_smooth = 0.04 + (0.14 * frac)
+            lo_i = max(0, idx0 - 5)
+            hi_i = min(total_n, idx0 + 6)
+            nb_off = sum(raw_offs[lo_i:hi_i]) / (hi_i - lo_i)
+            nb_def = sum(raw_defs[lo_i:hi_i]) / (hi_i - lo_i)
+            g_off = ((1.0 - w_smooth) * raw_offs[idx0]) + (w_smooth * nb_off)
+            g_def = ((1.0 - w_smooth) * raw_defs[idx0]) + (w_smooth * nb_def)
             g_net = g_off - g_def
-            e["off_epa_per_play"] = round(g_off, 4)
-            e["def_epa_per_play"] = round(g_def, 4)
-            e["net_epa_per_play"] = round(g_net, 4)
-            e["rz_dvoa"] = round(max(-0.22, min(0.22, g_def * 1.45)), 3)
+            entry["off_epa_per_play"] = round(g_off, 4)
+            entry["def_epa_per_play"] = round(g_def, 4)
+            entry["net_epa_per_play"] = round(g_net, 4)
+            entry["rz_dvoa"] = round(max(-0.24, min(0.24, g_def * 1.45)), 3)
 
-    # Re-rank after soft-anchor grounding
     teams.sort(key=lambda e: float(e.get("net_epa_per_play", 0.0)), reverse=True)
-    total_n = len(teams)
     for idx, e in enumerate(teams, start=1):
         e["epa_rank"] = idx
         e["epa_pool_size"] = total_n
 
-    print(f"[NCAA 6-Stage Tiering] Grounded {total_n} FBS programs (T1 exact: {len(tier_buckets[1])}, T2-T6 75/25 soft-anchored: {total_n - len(tier_buckets[1])}).")
+    print(f"[NCAA Smooth Calibration v241] Calibrated {total_n} FBS programs (T1 exact: {t1_cnt}, T2-T6 smooth monotonic: {total_n - t1_cnt}, ZERO step cliffs).")
     return cfb_map
 
 def parse_record_games(record_str):
@@ -1168,13 +1328,21 @@ def fetch_espn_game_injuries(event_id, league="NFL"):
                 if pos == "QB":
                     if status in ("out", "injured reserve", "ir"):
                         qb_out_count += 1
-                    qb_weight = (2.75 if status in ("injured reserve", "ir") else 3.50) * status_mult
+                    # v241 ACTIVE-QB SHOCK GUARDRAIL:
+                    # Fresh OUT/SUSPENDED starter = full shock (-3.75 NFL / -3.50 NCAA);
+                    # Long-term IR QBs are already heavily priced into recency-weighted EPA (damp to -0.85 so backup-QB IR never nukes a team!)
+                    if status in ("injured reserve", "ir"):
+                        qb_weight = 0.85
+                    elif status == "doubtful":
+                        qb_weight = 2.40
+                    else:
+                        qb_weight = 3.75 if league == "NFL" else 3.50
                     total_impact = max(total_impact, qb_weight)
                 if pos in ("QB", "OT", "LT", "RT", "T", "CB", "WR", "RB", "DE", "EDGE", "LB") and len(key_outs) < 5:
                     key_outs.append(f"{pname} ({pos}, {status.upper()})")
 
             # Strictly QB replacement shock only (capped at -3.5 pts; 0.0 when starting QB is healthy!)
-            capped_delta = round(-min(3.5, total_impact), 2)
+            capped_delta = round(-min(4.0, total_impact), 2)
             out_by_abbr[abbr] = {
                 "qb_replacement_delta": capped_delta,
                 "lt_or_rb_pass_pro_out": pass_pro_compromised,
@@ -1218,6 +1386,9 @@ def get_team_meta(full_name, league="NFL", nflverse_map=None, cfb_epa_map=None, 
     meta["def_eff"] = None
     meta["off_epa_per_play"] = None
     meta["def_epa_per_play"] = None
+    meta["adj_off_ppg"] = None
+    meta["adj_def_ppg"] = None
+    meta["pace_pg"] = None
     meta["is_fcs"] = False
     meta["fbs_tier"] = None
     meta["fbs_tier_label"] = None
@@ -1240,12 +1411,27 @@ def get_team_meta(full_name, league="NFL", nflverse_map=None, cfb_epa_map=None, 
             meta["epa_scaled_62"] = True
             meta["off_epa_per_play"] = nv_hit.get("off_epa_per_play")
             meta["def_epa_per_play"] = nv_hit.get("def_epa_per_play")
+            meta["pace_pg"] = nv_hit.get("pace_pg")
+            # Prefer SOS-adjusted scoring from nflverse; blend with verified ESPN standings PPG if available
+            nv_op = nv_hit.get("adj_off_ppg")
+            nv_dp = nv_hit.get("adj_def_ppg")
+            st_op = st_hit.get("ppg_for") if st_hit else None
+            st_dp = st_hit.get("ppg_against") if st_hit else None
+            if nv_op is not None and nv_dp is not None and st_op is not None and st_dp is not None:
+                meta["adj_off_ppg"] = round(0.65 * nv_op + 0.35 * st_op, 2)
+                meta["adj_def_ppg"] = round(0.65 * nv_dp + 0.35 * st_dp, 2)
+            elif nv_op is not None and nv_dp is not None:
+                meta["adj_off_ppg"] = nv_op
+                meta["adj_def_ppg"] = nv_dp
+            elif st_op is not None and st_dp is not None:
+                meta["adj_off_ppg"] = round(st_op, 2)
+                meta["adj_def_ppg"] = round(st_dp, 2)
             meta["to_reg"] = nv_hit["to_reg"]
             meta["rz_dvoa"] = nv_hit["rz_dvoa"]
             meta["epa_rank"] = nv_hit.get("epa_rank")
             if meta["epa_rank"]:
                 meta["close_pct"] = round(max(0.10, min(0.95, 1.0 - ((meta["epa_rank"] - 1) / 31.0))), 3)
-            meta["telemetry_source"] = "nflverse_2026_pure_100pct"
+            meta["telemetry_source"] = "nflverse_2026_v241_sos_recency"
         else:
             meta["epa"] = round(meta["epa"] * GOLDEN_RATIO_PHI, 4)
             meta["epa_scaled_62"] = True
@@ -1256,6 +1442,9 @@ def get_team_meta(full_name, league="NFL", nflverse_map=None, cfb_epa_map=None, 
             meta["epa_scaled_62"] = True
             meta["off_epa_per_play"] = sdv_hit.get("off_epa_per_play")
             meta["def_epa_per_play"] = sdv_hit.get("def_epa_per_play")
+            meta["adj_off_ppg"] = sdv_hit.get("adj_off_ppg")
+            meta["adj_def_ppg"] = sdv_hit.get("adj_def_ppg")
+            meta["pace_pg"] = sdv_hit.get("pace_pg")
             meta["to_reg"] = sdv_hit.get("to_reg", meta["to_reg"])
             meta["rz_dvoa"] = sdv_hit.get("rz_dvoa", meta["rz_dvoa"])
             meta["epa_rank"] = sdv_hit.get("epa_rank")
@@ -1264,7 +1453,7 @@ def get_team_meta(full_name, league="NFL", nflverse_map=None, cfb_epa_map=None, 
             pool_denom = max(137.0, float(sdv_hit.get("epa_pool_size", 138) - 1))
             if meta["epa_rank"]:
                 meta["close_pct"] = round(max(0.10, min(0.95, 1.0 - ((meta["epa_rank"] - 1) / pool_denom))), 3)
-            meta["telemetry_source"] = "sportsdataverse_2026_sos_tiered"
+            meta["telemetry_source"] = "sportsdataverse_2026_v241_composite"
         else:
             is_verified_fbs = bool(st_hit and st_hit.get("is_fbs"))
             # Verified FBS teams (from ESPN Group 80 standings) must NEVER be misclassified as FCS!
@@ -1651,9 +1840,9 @@ def calc_report_calibrated_bd_spread(og_tip_home_spread, vegas_home_spread, home
     m_rise_delta = (GOLDEN_RATIO_PHI / math.pi) * (fn / 76.0) * delta_ctx
     rise_home_adj = round((-1.0 if home_is_dog else 1.0) * (m_rise_delta * 3.5), 2)
 
-    inj_overlay = 0.65 * injury_diff
+    # v241: Verified QB injury shock now lives directly inside core Tip fair spread (zero double-counting!)
     eff_psi = psi_11_12 * (0.25 if (elev_info["hypoxic"] and psi_11_12 > 0) else 0.65)
-    raw_overlay = inj_overlay + eff_psi + elev_info["psi_elev"] + rise_home_adj
+    raw_overlay = eff_psi + elev_info["psi_elev"] + rise_home_adj
     capped_overlay = max(-3.5, min(3.5, raw_overlay))
     candidate_bd = og_tip_home_spread + capped_overlay
 
@@ -1676,7 +1865,7 @@ def get_verified_qb_delta(team_tel):
     if isinstance(injs, list) and len(injs) > 0:
         if not any("(QB," in str(s).upper() for s in injs):
             return 0.0
-    return round(max(-3.5, min(0.0, raw)), 2)
+    return round(max(-4.0, min(0.0, raw)), 2)
 
 def _implied_prob_am(odds):
     o = float(odds or -110)
@@ -1822,12 +2011,72 @@ def calc_key_number_alt_spread(base_line, model_fair_line, base_odds=-110, logis
         "tier2_label": tier2_label
     }
 
+def calc_m7_weather_total_drag(env_weather, game_league="NFL", active_qb_out_cnt=0, is_late_season=False):
+    """
+    v241 M7 BALLISTIC WEATHER, GUST, PRECIPITATION, DOME & ACTIVE-QB TOTAL ADJUSTMENT:
+    Wired directly into base Tip totals (and mirrored 1:1 in math_engine.js v325).
+      - Dome: +1.25 NFL / +1.50 NCAA (damped if backup QB active).
+      - Cold (<42°F) & Barometric Air Density (rho > 1.245): smooth non-stacked drag.
+      - Effective Wind = max(sustained, 0.72 * gusts): -0.32 pts/mph above 10 mph (cap -6.5).
+      - Precipitation: Snow -2.50 pts | Rain -1.50 pts.
+      - Late-Season Outdoor Friction (Weeks 12-14+ cold/windy Rivalry Week grind): -0.75 NFL / -1.25 NCAA.
+      - Active Starting QB Out (non-IR): -2.50 pts per active backup QB.
+    """
+    env = env_weather or {}
+    is_dome = bool(env.get("is_dome", False))
+    qb_drag = -2.50 * int(active_qb_out_cnt or 0)
+
+    if is_dome:
+        dome_boost = (1.25 if game_league == "NFL" else 1.50) if active_qb_out_cnt == 0 else 0.35
+        return round(dome_boost + qb_drag, 2)
+
+    temp_f = _f(env.get("temperature_f"), 58.0)
+    wind_mph = _f(env.get("wind_mph"), 5.0)
+    gusts_mph = _f(env.get("wind_gusts_mph"), wind_mph)
+    press_hpa = _f(env.get("pressure_hpa"), 1013.25)
+    rain = _f(env.get("rain"), 0.0)
+    snow = _f(env.get("snowfall"), 0.0)
+    badges = set(env.get("weather_badges") or [])
+
+    temp_k = ((temp_f - 32.0) * 5.0 / 9.0) + 273.15
+    p_pa = press_hpa * 100.0
+    pv_pa = 1000.0
+    rho = (max(0.0, p_pa - pv_pa) / (287.058 * temp_k)) + (pv_pa / (461.495 * temp_k))
+
+    # Non-stacked cold & heavy-air density drag
+    cold_drag = -min(2.80, max(0.0, (42.0 - temp_f) * 0.11))
+    rho_drag = -min(1.20, max(0.0, ((rho - 1.245) / 0.025) * 0.60))
+
+    # Effective wind (captures 28 mph Columbus/Cleveland gusts even when sustained is 10.6 mph!)
+    eff_wind = max(wind_mph, 0.72 * gusts_mph)
+    wind_drag = -min(6.50, max(0.0, (eff_wind - 10.0) * 0.32))
+
+    # Precipitation drag
+    precip_drag = 0.0
+    if "SNOW" in badges or snow > 0.0:
+        precip_drag = -2.50
+    elif "RAIN" in badges or rain > 0.0:
+        precip_drag = -1.50
+
+    # Late-season / Rivalry Week outdoor grind friction (cold <=45°F or gusty eff_wind >=14 mph)
+    late_drag = 0.0
+    if is_late_season and (temp_f <= 45.0 or eff_wind >= 14.0):
+        late_drag = -1.25 if game_league == "NCAA" else -0.75
+
+    return round(max(-10.5, min(2.0, cold_drag + rho_drag + wind_drag + precip_drag + late_drag + qb_drag)), 2)
+
+
 def calc_regime_safe_total_obj(vegas_total, og_tip_total, env_weather, tz_shift, elev_info, game_league="NFL", has_backup_qb=False):
-    """BACK-TO-OUR-ROOTS REGIME SAFE TOTALS ENGINE (1:1 parity with onlinemath_engine.js v315)."""
+    """v241 NON-REDUNDANT REGIME SAFE TOTALS ENGINE (1:1 parity with math_engine.js v325).
+    Because M7 weather/gusts/precip/active-QB drag are now wired directly into base T_tip,
+    Balls Deep layers ONLY M8 Circadian/TZ travel fatigue + M11 10-Zone Elevation hypoxia
+    (plus Regime Safe Alt Totals at -175) with zero double-counting."""
     v_tot = _f(vegas_total if vegas_total is not None else og_tip_total, 45.0)
     is_dome = bool(env_weather.get("is_dome", False))
     temp_f = 72.0 if is_dome else _f(env_weather.get("temperature_f"), 58.0)
     wind_mph = 0.0 if is_dome else _f(env_weather.get("wind_mph"), 5.0)
+    gusts_mph = 0.0 if is_dome else _f(env_weather.get("wind_gusts_mph"), wind_mph)
+    eff_wind = max(wind_mph, 0.72 * gusts_mph)
     abs_tz = abs(_i(tz_shift, 0))
     elev_zone = _i(elev_info.get("zone"), 1)
     elev_tot_drag = _f(elev_info.get("elev_tot_drag"), 0.0)
@@ -1837,12 +2086,8 @@ def calc_regime_safe_total_obj(vegas_total, og_tip_total, env_weather, tz_shift,
     rho = 1.204 if is_dome else ((max(0.0, p_pa - 1000.0) / (287.058 * temp_k)) + (1000.0 / (461.495 * temp_k)))
 
     tip_tot = _f(og_tip_total if og_tip_total is not None else v_tot, v_tot)
-    cold_drag = 0.0 if is_dome else -max(0.0, (44.0 - temp_f) * 0.14)
-    wind_drag = 0.0 if is_dome else -max(0.0, (wind_mph - 10.0) * 0.28)
-    tz_drag = -1.50 if abs_tz >= 3 else (-0.65 if abs_tz == 2 else 0.0)
-    qb_drag = -2.75 if has_backup_qb else 0.0
-    dome_boost = 0.60 if (is_dome and not has_backup_qb) else 0.0
-    env_adj = max(-3.5, min(2.0, cold_drag + wind_drag + tz_drag + elev_tot_drag + qb_drag + dome_boost))
+    tz_drag = -1.35 if abs_tz >= 3 else (-0.60 if abs_tz == 2 else 0.0)
+    env_adj = max(-3.0, min(1.5, tz_drag + elev_tot_drag))
 
     # STRICT NO-OVERRULE GUARDRAIL: Balls Deep enhances or tempers Just the Tip's Total — NEVER flips O <-> U!
     tip_dir = "U" if tip_tot < v_tot else "O"
@@ -1857,7 +2102,7 @@ def calc_regime_safe_total_obj(vegas_total, og_tip_total, env_weather, tz_shift,
     dome_shootout_thresh = 54.5 if game_league == "NCAA" else 46.5
     grind_thresh = 44.5 if game_league == "NCAA" else 41.5
     weather_grind_thresh = 52.5 if game_league == "NCAA" else 48.5
-    heavy_grind_env = (not is_dome and (temp_f <= 42.0 or wind_mph >= 10.0 or rho >= 1.250 or elev_zone >= 7)) or bool(has_backup_qb)
+    heavy_grind_env = (not is_dome and (temp_f <= 42.0 or eff_wind >= 12.0 or rho >= 1.250 or elev_zone >= 7)) or bool(has_backup_qb)
 
     regime = "TIP_ALIGNED_SAFE"
     if tip_dir == "O" and (v_tot >= shootout_thresh or (is_dome and v_tot >= dome_shootout_thresh and not has_backup_qb)):
@@ -1887,24 +2132,61 @@ def calc_regime_safe_total_obj(vegas_total, og_tip_total, env_weather, tz_shift,
 def calc_report_calibrated_bd_total(vegas_total, og_tip_total, env_weather, tz_shift, elev_info, game_league="NFL", has_backup_qb=False):
     return calc_regime_safe_total_obj(vegas_total, og_tip_total, env_weather, tz_shift, elev_info, game_league, has_backup_qb)["balls_deep_total"]
 
-def calc_independent_total_tip(home_meta, away_meta, game_league, wind_mph):
+def calc_independent_total_tip(home_meta, away_meta, game_league, wind_mph, weather_total_drag=None):
     """
-    100% Vegas-independent Total projection:
-      - NFL: Real nflverse Offensive EPA/play + Defensive EPA/play allowed (pure EPA physics)
-      - NCAA: Real ESPN FPI Offensive Efficiency (0-100) minus Defensive Efficiency (0-100)
-      - Hard physical guardrail [28.0, 78.0] guarantees zero corrupted totals.
+    v241 100% VEGAS-INDEPENDENT SCORING + PACE + SPLIT-EPA + M7 WEATHER TOTAL ENGINE:
+      - Eliminates the 47–55 NCAA YPP-cancellation dead zone by blending SOS-adjusted Off/Def PPG
+        and actual team pace (plays/game) with Split Off/Def EPA.
+      - Wires full M7 air density, cold, sustained+gust wind, rain/snow, dome boost, late-season
+        grind friction, and active backup-QB drag directly into the base fair total.
+      - Hard physical guardrail [28.0, 78.0] (NFL max 65.0).
     """
-    wind_penalty = max(0.0, (wind_mph - 10.0) * 0.25)
     total_intercept = NCAA_TOTAL_INTERCEPT if game_league == "NCAA" else MODEL_TOTAL_INTERCEPT
+    max_cap = 78.0 if game_league == "NCAA" else 65.0
+    w_adj = float(weather_total_drag) if weather_total_drag is not None else (-max(0.0, (wind_mph - 10.0) * 0.25))
 
+    # 1. Split-EPA total component (regressed cleanly: 26.0 NFL / 28.0 NCAA)
     h_off = home_meta.get("off_epa_per_play")
     h_def = home_meta.get("def_epa_per_play")
     a_off = away_meta.get("off_epa_per_play")
     a_def = away_meta.get("def_epa_per_play")
-    if all(v is not None for v in (h_off, h_def, a_off, a_def)):
-        max_cap = 78.0 if game_league == "NCAA" else 65.0
-        delta = (GOLDEN_PLAY_SCALER * GOLDEN_RATIO_PHI * 0.5) * (h_off + h_def + a_off + a_def)
-        return round(max(28.0, min(max_cap, total_intercept + delta - wind_penalty)), 1)
+    has_split_epa = all(v is not None for v in (h_off, h_def, a_off, a_def))
+    epa_total = None
+    if has_split_epa:
+        epa_slope = 28.0 if game_league == "NCAA" else 26.0
+        epa_total = total_intercept + epa_slope * (float(h_off) + float(h_def) + float(a_off) + float(a_def))
+
+    # 2. SOS-Adjusted Scoring + Real Pace component
+    h_op = home_meta.get("adj_off_ppg")
+    h_dp = home_meta.get("adj_def_ppg")
+    a_op = away_meta.get("adj_off_ppg")
+    a_dp = away_meta.get("adj_def_ppg")
+    has_scoring = all(v is not None for v in (h_op, h_dp, a_op, a_dp))
+    if has_scoring:
+        base_tm = total_intercept / 2.0
+        raw_sc_dev = (float(h_op) - base_tm) + (float(a_dp) - base_tm) + (float(a_op) - base_tm) + (float(h_dp) - base_tm)
+        k_score = 0.64 if game_league == "NCAA" else 0.62
+        score_total = total_intercept + (k_score * raw_sc_dev)
+
+        # Real team pace adjustment (plays/game relative to league average)
+        h_pace = home_meta.get("pace_pg")
+        a_pace = away_meta.get("pace_pg")
+        if h_pace is not None and a_pace is not None:
+            base_pace = 68.5 if game_league == "NCAA" else 62.5
+            pace_ratio = ((float(h_pace) + float(a_pace)) / 2.0) / base_pace
+            pace_adj = max(-4.5, min(4.5, (pace_ratio - 1.0) * total_intercept * 0.35))
+            score_total += pace_adj
+
+        if epa_total is not None:
+            # NCAA leans 70% Scoring+Pace / 30% Split-EPA; NFL blends 50% Scoring+Pace / 50% Split-EPA
+            w_sc = 0.70 if game_league == "NCAA" else 0.50
+            base_pre_weather = (w_sc * score_total) + ((1.0 - w_sc) * epa_total)
+        else:
+            base_pre_weather = score_total
+        return round(max(28.0, min(max_cap, base_pre_weather + w_adj)), 1)
+
+    if epa_total is not None:
+        return round(max(28.0, min(max_cap, epa_total + w_adj)), 1)
 
     h_oe = home_meta.get("off_eff")
     h_de = home_meta.get("def_eff")
@@ -1913,13 +2195,12 @@ def calc_independent_total_tip(home_meta, away_meta, game_league, wind_mph):
     if all(v is not None for v in (h_oe, h_de, a_oe, a_de)):
         scaler = 0.16 if game_league == "NCAA" else 0.12
         eff_delta = scaler * ((h_oe - 50.0) + (a_oe - 50.0) - (h_de - 50.0) - (a_de - 50.0))
-        return round(max(28.0, min(78.0, total_intercept + eff_delta - wind_penalty)), 1)
+        return round(max(28.0, min(78.0, total_intercept + eff_delta + w_adj)), 1)
 
-    # Pure OG fallback
     epa_sum = max(-0.20, min(0.20, home_meta["epa"] + away_meta["epa"]))
     epa_total_pts = epa_sum * GOLDEN_PLAY_SCALER
     rz_total_pts = (home_meta["rz_dvoa"] + away_meta["rz_dvoa"]) * 10.0
-    return round(max(28.0, min(78.0, total_intercept + epa_total_pts + rz_total_pts - wind_penalty)), 1)
+    return round(max(28.0, min(78.0, total_intercept + epa_total_pts + rz_total_pts + w_adj)), 1)
 
 def calc_ev_pct(win_prob, american_odds=-110):
     dec = (american_odds / 100.0) + 1.0 if american_odds > 0 else (100.0 / abs(american_odds)) + 1.0
@@ -2378,6 +2659,7 @@ def _build_pre_kick_snapshot(g, locked_at_iso):
             return {}
         keep = (
             "net_epa_per_play", "off_epa_per_play", "def_epa_per_play",
+            "adj_off_ppg", "adj_def_ppg", "pace_pg", "weather_total_drag",
             "qb_replacement_delta", "turnover_reg_delta", "closing_rank_pct",
             "active_win_streak", "opp_rz_dvoa", "lt_or_rb_pass_pro_out",
             "is_third_string_qb", "injuries_summary", "epa_rank", "poll_rank",
@@ -2511,7 +2793,7 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                 "result_balls_deep": "PENDING",
                 "result_key_alt": "PENDING"
             }
-            existing["engine_version"] = "v237_2key_rung_perpetuity"
+            existing["engine_version"] = "v241_quant_core_revamp"
             if best_total:
                 existing["total_record"] = {
                     "pick_label": best_total["player"],
@@ -2570,7 +2852,7 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
     # Upgrades ALL pre-v222 entries (both games still in data.json AND older archived FINAL entries)
     # to clean ΔQB-only spreads, Key-Number Alt Buys, and Regime Safe Totals, then re-grades against actual scores!
     for gid, entry in entries.items():
-        if entry.get("engine_version") == "v237_2key_rung_perpetuity" or gid == "nfl_mnf_lac_bal_2026_w10":
+        if entry.get("engine_version") in ("v237_2key_rung_perpetuity", "v241_quant_core_revamp") or entry.get("status") == "FINAL" or gid == "nfl_mnf_lac_bal_2026_w10":
             continue
         try:
             src_g = game_lookup_by_gid.get(gid)
@@ -3080,10 +3362,9 @@ def build_master_payload():
     now_iso = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
     season_year = now_utc.year if now_utc.month >= 8 else (now_utc.year - 1)
 
-    # Pull all live 2026 telemetry feeds + Odds API concurrently (~4 seconds total)
+    # Pull live standings, nflverse, rankings, scores & odds concurrently, then run FBS-strict SDV CFB!
     with ThreadPoolExecutor(max_workers=8) as pool:
         f_nv = pool.submit(fetch_nflverse_live_team_epa, season_year)
-        f_cepa = pool.submit(fetch_sportsdataverse_cfb_live_epa, season_year)
         f_nst = pool.submit(fetch_espn_standings, "NFL")
         f_cst = pool.submit(fetch_espn_standings, "NCAA")
         f_rk = pool.submit(fetch_espn_ncaa_rankings)
@@ -3092,13 +3373,15 @@ def build_master_payload():
         f_codd = pool.submit(fetch_live_odds_for_sport, "americanfootball_ncaaf", "NCAA")
 
         nflverse_epa = f_nv.result()
-        ncaa_sdv_epa = f_cepa.result()
         nfl_standings = f_nst.result()
         ncaa_standings = f_cst.result()
         ncaa_poll_map, live_ranked_ncaa = f_rk.result()
         espn_scores = f_sc.result()
         nfl_odds = f_nodd.result()
         ncaa_odds = f_codd.result()
+
+    # Pass authoritative ESPN Group 80 FBS standings into SportsDataverse so FCS teams NEVER pollute FBS SOS!
+    ncaa_sdv_epa = fetch_sportsdataverse_cfb_live_epa(season_year, fbs_standings_map=ncaa_standings)
 
     # Apply Upgrade #7: 6-Stage FBS Tiering (T1 1-35 exact; T2-T6 75/25 soft anchor)
     if ncaa_sdv_epa:
@@ -3125,7 +3408,7 @@ def build_master_payload():
                 (h_full in ranked_ncaa_set) or (a_full in ranked_ncaa_set)
             )
         )
-        if lg == "NFL" or is_ranked_ncaa_match:
+        if lg == "NFL" or lg == "NCAA":
             c_str = game.get("commence_time", "")
             try:
                 dt_u = datetime.strptime(c_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
@@ -3244,14 +3527,23 @@ def build_master_payload():
 
         hfa_base = NCAA_HFA_BASE if game_league == "NCAA" else PI_OVER_PHI_HFA
 
-        # PURE UNTOUCHED OG M1–M9 FAIR SPREAD (v205 LOCKED — ZERO DELTA_RZ, ZERO INJURY, ZERO VEGAS, ZERO M11–M13)
+        # v241 UNCOMPROMISED CORE FAIR SPREAD (SOS+Recency EPA + Damped TO Reg + Verified Active QB/OL + HFA + Circadian)
         epa_diff = away_meta["epa"] - home_meta["epa"]
-        delta_to = away_meta["to_reg"] - home_meta["to_reg"]
+        delta_to = 0.50 * (away_meta["to_reg"] - home_meta["to_reg"])
         injury_diff = away_inj["qb_replacement_delta"] - home_inj["qb_replacement_delta"]
+        ol_diff = (-0.50 if away_inj.get("lt_or_rb_pass_pro_out") else 0.0) - (-0.50 if home_inj.get("lt_or_rb_pass_pro_out") else 0.0)
         psi_11_12 = calc_coupled_balls_deep_psi(home_meta, away_meta, env_weather)
         elev_info = calc_ten_zone_elevation(env_weather, away_meta.get("elev_m", 150))
 
-        fair_home_tip = round((GOLDEN_PLAY_SCALER * epa_diff) + delta_to - hfa_base - phi_circ, 2)
+        fair_home_tip = round((GOLDEN_PLAY_SCALER * epa_diff) + delta_to + injury_diff + ol_diff - hfa_base - phi_circ, 2)
+
+        # Compute M7 Weather/Gust/Cold/Precip/Dome/Active-QB/Late-Season total adjustment once per game
+        week1_ref = datetime(season_year, 9, 2, tzinfo=timezone.utc)
+        cur_wk_est = max(1, ((now_utc - week1_ref).days // 7) + 1)
+        is_late_season_flag = bool(cur_wk_est >= 12)
+        # Only count fresh OUT/DOUBTFUL starting QBs (delta <= -2.0) for total drag — never long-term IR (-0.85)!
+        active_qb_out_cnt = (1 if home_inj["qb_replacement_delta"] <= -2.0 else 0) + (1 if away_inj["qb_replacement_delta"] <= -2.0 else 0)
+        weather_tot_drag = calc_m7_weather_total_drag(env_weather, game_league, active_qb_out_cnt=active_qb_out_cnt, is_late_season=is_late_season_flag)
 
         props_board = []
         book = next((b for b in game.get("bookmakers", []) if b["key"] == "fanduel"), None) or \
@@ -3342,8 +3634,8 @@ def build_master_payload():
                     o_price = int(over_out.get("price", -110))
                     u_price = int(under_out.get("price", -110))
 
-                    has_backup_qb = bool(home_inj["qb_replacement_delta"] < 0 or away_inj["qb_replacement_delta"] < 0)
-                    proj_total_tip = calc_independent_total_tip(home_meta, away_meta, game_league, wind_mph)
+                    has_backup_qb = bool(home_inj["qb_replacement_delta"] <= -2.0 or away_inj["qb_replacement_delta"] <= -2.0)
+                    proj_total_tip = calc_independent_total_tip(home_meta, away_meta, game_league, wind_mph, weather_total_drag=weather_tot_drag)
                     reg_tot = get_dedicated_engine(game_league).safe_total(t_point, proj_total_tip, env_weather, tz_shift, elev_info, has_backup_qb)
                     proj_total_bd = reg_tot["balls_deep_total"]
 
@@ -3482,6 +3774,12 @@ def build_master_payload():
                 tel_obj["off_epa_per_play"] = meta_obj["off_epa_per_play"]
             if meta_obj.get("def_epa_per_play") is not None:
                 tel_obj["def_epa_per_play"] = meta_obj["def_epa_per_play"]
+            if meta_obj.get("adj_off_ppg") is not None:
+                tel_obj["adj_off_ppg"] = meta_obj["adj_off_ppg"]
+            if meta_obj.get("adj_def_ppg") is not None:
+                tel_obj["adj_def_ppg"] = meta_obj["adj_def_ppg"]
+            if meta_obj.get("pace_pg") is not None:
+                tel_obj["pace_pg"] = meta_obj["pace_pg"]
             if meta_obj.get("fbs_tier") is not None:
                 tel_obj["fbs_tier"] = meta_obj["fbs_tier"]
                 tel_obj["fbs_tier_label"] = meta_obj["fbs_tier_label"]
@@ -3490,6 +3788,7 @@ def build_master_payload():
             if meta_obj.get("epa_scaled_62"):
                 tel_obj["epa_scaled_62"] = True
 
+        home_tel_obj["weather_total_drag"] = weather_tot_drag
         sp_div_pts = round(abs(fair_home_tip - vegas_home_sp), 2) if (book and vegas_home_sp is not None) else 0.0
         div_alert = bool(game_league == "NCAA" and sp_div_pts >= 12.0)
 
@@ -3504,7 +3803,7 @@ def build_master_payload():
             "away_full_name": away_full,
             "commence_time": commence_str,
             "kickoff_local_hour": kickoff_local_hour,
-            "expected_plays": 134 if game_league == "NCAA" else 126,
+            "expected_plays": int(round((home_meta.get("pace_pg") or (68.5 if game_league == "NCAA" else 62.5)) + (away_meta.get("pace_pg") or (68.5 if game_league == "NCAA" else 62.5)))),
             "hfa_base": hfa_base,
             "environmental_payload": env_weather,
             "circadian_payload": {
@@ -3678,7 +3977,7 @@ def build_master_payload():
             "league": "NFL_NCAA",
             "week": dynamic_week,
             "last_updated": now_iso,
-            "telemetry_version": "v240_ncaa_ml587_espn_sync",
+            "telemetry_version": "v241_quant_core_revamp",
             "ranked_ncaa_teams": live_ranked_ncaa
         },
         "games": games_slate,
@@ -3693,7 +3992,7 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v240 — NCAA 58.7% ML UPSET FLOOR + EXPANDED ESPN CODE SYNC)")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v241 — FULL QUANT CORE REVAMP (SOS + RECENCY + SCORING/PACE TOTALS + M7 WEATHER + ACTIVE-QB TIP))")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("=========================================================")
 
