@@ -1,5 +1,5 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v238 — PRICED MONEYLINE H2H + OUTRIGHT ML AUTO-GRADER + 2-KEY-RUNG PERPETUITY)
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v239 — 6-STAGE NCAA TIERS + SOS + NCAA INJURIES + ML GUARDRAILS + PRE-KICK SNAPSHOT + WEATHER BADGES)
 Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
   1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
   2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
@@ -188,7 +188,7 @@ NCAA_TEAM_REGISTRY = {
     "UMass Minutemen":            {"code": "MASS", "lat": 42.3774, "lon": -72.5361,  "elev_m": 58,   "is_dome": False, "tz": -5, "epa": -0.180, "to_reg": 0.2,  "close_pct": 0.250, "streak": 0, "rz_dvoa": 0.14},
     "Liberty Flames":             {"code": "LIB",  "lat": 37.3544, "lon": -79.1753,  "elev_m": 286,  "is_dome": False, "tz": -5, "epa": 0.055,  "to_reg": -0.1, "close_pct": 0.680, "streak": 1, "rz_dvoa": -0.05},
     "James Madison Dukes":        {"code": "JMU",  "lat": 38.4354, "lon": -78.8732,  "elev_m": 412,  "is_dome": False, "tz": -5, "epa": 0.075,  "to_reg": -0.2, "close_pct": 0.740, "streak": 2, "rz_dvoa": -0.08},
-    "North Dakota State Bison":   {"code": "NDSU", "lat": 46.9033, "lon": -96.8017,  "elev_m": 275,  "is_dome": True,  "tz": -6, "epa": -0.220, "to_reg": 0.0,  "close_pct": 0.750, "streak": 3, "rz_dvoa": -0.04},
+    "North Dakota State Bison":   {"code": "NDSU", "lat": 46.9033, "lon": -96.8017,  "elev_m": 275,  "is_dome": True,  "tz": -6, "epa": 0.055,  "to_reg": -0.1, "close_pct": 0.720, "streak": 2, "rz_dvoa": -0.05},
     "Wofford Terriers":           {"code": "WOF",  "lat": 34.9616, "lon": -81.9333,  "elev_m": 245,  "is_dome": False, "tz": -5, "epa": -0.600, "to_reg": 0.2,  "close_pct": 0.300, "streak": 0, "rz_dvoa": 0.15},
     "Chattanooga Mocs":           {"code": "UTC",  "lat": 35.0365, "lon": -85.3156,  "elev_m": 206,  "is_dome": False, "tz": -5, "epa": -0.580, "to_reg": 0.2,  "close_pct": 0.350, "streak": 0, "rz_dvoa": 0.14},
     "Samford Bulldogs":           {"code": "SAM",  "lat": 33.4658, "lon": -86.7950,  "elev_m": 215,  "is_dome": False, "tz": -6, "epa": -0.600, "to_reg": 0.2,  "close_pct": 0.300, "streak": 0, "rz_dvoa": 0.15},
@@ -236,12 +236,13 @@ NCAA_TEAM_REGISTRY = {
     "Southern Mississippi Golden Eagles": {'code': 'USM', 'lat': 31.3289, 'lon': -89.3318, 'elev_m': 55, 'is_dome': False, 'tz': -6, 'epa': -0.06, 'to_reg': 0.1, 'close_pct': 0.36, 'streak': 0, 'rz_dvoa': 0.06},
     "UL Monroe Warhawks": {'code': 'ULM', 'lat': 32.5308, 'lon': -92.0672, 'elev_m': 24, 'is_dome': False, 'tz': -6, 'epa': -0.02, 'to_reg': 0.1, 'close_pct': 0.45, 'streak': 0, 'rz_dvoa': 0.02},
     "Louisiana Ragin Cajuns": {'code': 'ULL', 'lat': 30.2155, 'lon': -92.0419, 'elev_m': 11, 'is_dome': False, 'tz': -6, 'epa': 0.05, 'to_reg': -0.1, 'close_pct': 0.64, 'streak': 1, 'rz_dvoa': -0.04},
-    "Sam Houston State Bearkats": {'code': 'SHSU', 'lat': 30.7135, 'lon': -95.5455, 'elev_m': 100, 'is_dome': False, 'tz': -6, 'epa': 0.03, 'to_reg': 0.0, 'close_pct': 0.56, 'streak': 1, 'rz_dvoa': -0.03}
+    "Sam Houston State Bearkats": {'code': 'SHSU', 'lat': 30.7135, 'lon': -95.5455, 'elev_m': 100, 'is_dome': False, 'tz': -6, 'epa': 0.03, 'to_reg': 0.0, 'close_pct': 0.56, 'streak': 1, 'rz_dvoa': -0.03},
+    "Sacramento State Hornets": {'code': 'SAC', 'lat': 38.5553, 'lon': -121.4241, 'elev_m': 10, 'is_dome': False, 'tz': -8, 'epa': -0.06, 'to_reg': 0.1, 'close_pct': 0.40, 'streak': 0, 'rz_dvoa': 0.05}
 }
 
 # Known elite FCS programs (when playing FBS opponents, closer to -12 FPI than generic -23 FPI)
 ELITE_FCS_KEYWORDS = {
-    "north dakota state", "south dakota state", "montana state", "montana grizzlies",
+    "south dakota state", "montana state", "montana grizzlies",
     "south dakota coyotes", "villanova", "idaho vandals", "uc davis", "tarleton", "mercer"
 }
 
@@ -291,7 +292,9 @@ TEAM_NAME_ALIASES = {
     "sam houston state bearkats": "sam houston state bearkats",
     "southern miss golden eagles": "southern mississippi golden eagles",
     "southern mississippi golden eagles": "southern mississippi golden eagles",
-    "ut martin skyhawks": "tennessee martin skyhawks"
+    "ut martin skyhawks": "tennessee martin skyhawks",
+    "sacramento state hornets": "sacramento state hornets",
+    "sac state hornets": "sacramento state hornets"
 }
 
 def normalize_team_key(name):
@@ -657,9 +660,32 @@ def fetch_sportsdataverse_cfb_live_epa(season_year=2026):
                         rec["to_diff"] += (opp_s["tos"] - me_s["tos"])
                 raw_s = [(nk, d, d["off_e"] / d["off_p"], d["def_e"] / d["def_p"]) for nk, d in agg_s.items() if d["games"] >= 2 and d["off_p"] > 0 and d["def_p"] > 0]
                 mean_s = (sum(x[2] for x in raw_s) / len(raw_s)) if raw_s else 0.0
+                # 3-Pass Iterative Opponent-Adjusted SOS on single-side adv_team game pairs
+                adj_off_s = {nk: (ro - mean_s) for nk, _, ro, _ in raw_s}
+                adj_def_s = {nk: (rd - mean_s) for nk, _, _, rd in raw_s}
+                games_by_t_s = {}
+                for gid_b, sides in by_game_single.items():
+                    if len(sides) != 2:
+                        continue
+                    for i_s in (0, 1):
+                        me_s, opp_s = sides[i_s], sides[1 - i_s]
+                        games_by_t_s.setdefault(me_s["norm"], []).append((me_s["epa_pp"] - mean_s, opp_s["epa_pp"] - mean_s, opp_s["norm"]))
+                for _ in range(3):
+                    nxt_o, nxt_d = {}, {}
+                    for nk in adj_off_s:
+                        g_list = games_by_t_s.get(nk)
+                        if not g_list:
+                            nxt_o[nk], nxt_d[nk] = adj_off_s[nk], adj_def_s[nk]
+                            continue
+                        nxt_o[nk] = sum(go - 0.65 * adj_def_s.get(op, 0.0) for go, _, op in g_list) / len(g_list)
+                        nxt_d[nk] = sum(gd - 0.65 * adj_off_s.get(op, 0.0) for _, gd, op in g_list) / len(g_list)
+                    mo = sum(nxt_o.values()) / max(1, len(nxt_o))
+                    md = sum(nxt_d.values()) / max(1, len(nxt_d))
+                    adj_off_s = {k: (v - mo) for k, v in nxt_o.items()}
+                    adj_def_s = {k: (v - md) for k, v in nxt_d.items()}
                 for norm_k, d, raw_off, raw_def in raw_s:
-                    off_epa_pp = raw_off - mean_s
-                    def_epa_pp = raw_def - mean_s
+                    off_epa_pp = adj_off_s.get(norm_k, raw_off - mean_s)
+                    def_epa_pp = adj_def_s.get(norm_k, raw_def - mean_s)
                     net_epa_pp = off_epa_pp - def_epa_pp
                     to_reg = max(-0.85, min(0.85, -0.35 * (d["to_diff"] / d["games"])))
                     rz_dvoa = max(-0.22, min(0.22, def_epa_pp * 1.45))
@@ -761,11 +787,35 @@ def fetch_sportsdataverse_cfb_live_epa(season_year=2026):
                     valid_ypp_teams.append((norm_k, d, oy, dy))
 
             league_avg_ypp = (sum(x[2] for x in valid_ypp_teams) / len(valid_ypp_teams)) if valid_ypp_teams else 5.65
+            # 3-Pass Iterative Opponent-Adjusted SOS on YPP game pairs (prevents cupcake schedules from inflating mid-tier teams)
+            adj_off_ypp = {nk: (oy - league_avg_ypp) for nk, _, oy, _ in valid_ypp_teams}
+            adj_def_ypp = {nk: (dy - league_avg_ypp) for nk, _, _, dy in valid_ypp_teams}
+            games_by_t_box = {}
+            for gid_b, sides in by_game.items():
+                if len(sides) != 2:
+                    continue
+                for i_s in (0, 1):
+                    me_s, opp_s = sides[i_s], sides[1 - i_s]
+                    games_by_t_box.setdefault(me_s["norm"], []).append((me_s["ypp"] - league_avg_ypp, opp_s["ypp"] - league_avg_ypp, opp_s["norm"]))
+            for _ in range(3):
+                nxt_o, nxt_d = {}, {}
+                for nk in adj_off_ypp:
+                    g_list = games_by_t_box.get(nk)
+                    if not g_list:
+                        nxt_o[nk], nxt_d[nk] = adj_off_ypp[nk], adj_def_ypp[nk]
+                        continue
+                    nxt_o[nk] = sum(go - 0.65 * adj_def_ypp.get(op, 0.0) for go, _, op in g_list) / len(g_list)
+                    nxt_d[nk] = sum(gd - 0.65 * adj_off_ypp.get(op, 0.0) for _, gd, op in g_list) / len(g_list)
+                mo = sum(nxt_o.values()) / max(1, len(nxt_o))
+                md = sum(nxt_d.values()) / max(1, len(nxt_d))
+                adj_off_ypp = {k: (v - mo) for k, v in nxt_o.items()}
+                adj_def_ypp = {k: (v - md) for k, v in nxt_d.items()}
+
             ranked = []
             for norm_k, d, off_ypp, def_ypp in valid_ypp_teams:
-                # Convert yards-per-play deviation from true league mean into EPA/play units (~0.075 EPA per 1.0 ypp)
-                off_epa_pp = (off_ypp - league_avg_ypp) * 0.075
-                def_epa_pp = (def_ypp - league_avg_ypp) * 0.075
+                # Convert SOS-adjusted yards-per-play deviation into EPA/play units (~0.075 EPA per 1.0 ypp)
+                off_epa_pp = adj_off_ypp.get(norm_k, off_ypp - league_avg_ypp) * 0.075
+                def_epa_pp = adj_def_ypp.get(norm_k, def_ypp - league_avg_ypp) * 0.075
                 net_epa_pp = off_epa_pp - def_epa_pp
                 to_reg = max(-0.85, min(0.85, -0.35 * (d["to_diff"] / d["games"])))
                 rz_dvoa = max(-0.22, min(0.22, def_epa_pp * 1.45))
@@ -788,6 +838,102 @@ def fetch_sportsdataverse_cfb_live_epa(season_year=2026):
         print(f"[SportsDataverse team_box Notice] {e}")
 
     print("[SportsDataverse Notice] Live CFB release unavailable or failed sanity guard; using verified standings PPG / registry baselines (ZERO ESPN FPI).")
+    return cfb_map
+
+
+def apply_ncaa_six_stage_tiering(cfb_map, poll_map=None):
+    """
+    UPGRADE #7 (v239): 6-Stage NCAA FBS Tier Grounding (75% Tier Mean / 25% Individual SOS Soft Anchor).
+      - Tier 1 (Ranks 1–35 + any live AP/CFP Top-25 program): 100% individual SOS rating (zero shrinkage).
+      - Tiers 2–6 (36–50, 51–65, 66–80, 81–100, 101–138+): grounded via 75% tier average + 25% individual SOS
+        so lower-tier FBS teams stop generating unrealistic 15-to-20-point swings against Top-25 favorites
+        while still preserving clean intra-tier separation.
+    """
+    if not cfb_map:
+        return cfb_map
+
+    # Deduplicate unique team entry dicts and collect their associated lookup keys
+    unique_by_id = {}
+    keys_by_id = {}
+    for k, entry in cfb_map.items():
+        if not isinstance(entry, dict):
+            continue
+        eid = id(entry)
+        unique_by_id[eid] = entry
+        keys_by_id.setdefault(eid, []).append(k)
+
+    teams = list(unique_by_id.values())
+    if len(teams) < 40:
+        return cfb_map
+
+    # Sort descending by SOS-adjusted net_epa_per_play
+    teams.sort(key=lambda e: float(e.get("net_epa_per_play", 0.0)), reverse=True)
+
+    TIER_BANDS = [
+        (1, 35,  "T1 (1-35)"),
+        (2, 50,  "T2 (36-50)"),
+        (3, 65,  "T3 (51-65)"),
+        (4, 80,  "T4 (66-80)"),
+        (5, 100, "T5 (81-100)"),
+        (6, 999, "T6 (101-138)"),
+    ]
+
+    tier_buckets = {t_num: [] for t_num, _, _ in TIER_BANDS}
+
+    for rank_idx, entry in enumerate(teams, start=1):
+        # Check if team is ranked in live AP/CFP Top-25 -> protected in Tier 1 exact
+        is_poll_top25 = False
+        if poll_map:
+            for lk in keys_by_id.get(id(entry), []):
+                clean_lk = lk[7:] if lk.startswith("school:") else lk
+                prk = poll_map.get(lk) or poll_map.get(clean_lk)
+                if prk and int(prk) <= 25:
+                    is_poll_top25 = True
+                    break
+
+        assigned_tier = 6
+        assigned_lbl = "T6 (101-138)"
+        if is_poll_top25 or rank_idx <= 35:
+            assigned_tier, assigned_lbl = 1, "T1 (1-35)"
+        else:
+            for t_num, max_rk, lbl in TIER_BANDS:
+                if rank_idx <= max_rk:
+                    assigned_tier, assigned_lbl = t_num, lbl
+                    break
+
+        entry["raw_sos_net_epa"] = round(float(entry.get("net_epa_per_play", 0.0)), 4)
+        entry["fbs_tier"] = assigned_tier
+        entry["fbs_tier_label"] = assigned_lbl
+        tier_buckets[assigned_tier].append(entry)
+
+    # Apply 75% Tier Mean / 25% Individual Soft Anchor to Tiers 2–6
+    TIER_WEIGHT = 0.75
+    INDIV_WEIGHT = 0.25
+    for t_num in (2, 3, 4, 5, 6):
+        grp = tier_buckets.get(t_num, [])
+        if not grp:
+            continue
+        mean_off = sum(float(e.get("off_epa_per_play", 0.0)) for e in grp) / len(grp)
+        mean_def = sum(float(e.get("def_epa_per_play", 0.0)) for e in grp) / len(grp)
+        for e in grp:
+            ind_off = float(e.get("off_epa_per_play", 0.0))
+            ind_def = float(e.get("def_epa_per_play", 0.0))
+            g_off = (TIER_WEIGHT * mean_off) + (INDIV_WEIGHT * ind_off)
+            g_def = (TIER_WEIGHT * mean_def) + (INDIV_WEIGHT * ind_def)
+            g_net = g_off - g_def
+            e["off_epa_per_play"] = round(g_off, 4)
+            e["def_epa_per_play"] = round(g_def, 4)
+            e["net_epa_per_play"] = round(g_net, 4)
+            e["rz_dvoa"] = round(max(-0.22, min(0.22, g_def * 1.45)), 3)
+
+    # Re-rank after soft-anchor grounding
+    teams.sort(key=lambda e: float(e.get("net_epa_per_play", 0.0)), reverse=True)
+    total_n = len(teams)
+    for idx, e in enumerate(teams, start=1):
+        e["epa_rank"] = idx
+        e["epa_pool_size"] = total_n
+
+    print(f"[NCAA 6-Stage Tiering] Grounded {total_n} FBS programs (T1 exact: {len(tier_buckets[1])}, T2-T6 75/25 soft-anchored: {total_n - len(tier_buckets[1])}).")
     return cfb_map
 
 def parse_record_games(record_str):
@@ -1065,6 +1211,8 @@ def get_team_meta(full_name, league="NFL", nflverse_map=None, cfb_epa_map=None, 
     meta["off_epa_per_play"] = None
     meta["def_epa_per_play"] = None
     meta["is_fcs"] = False
+    meta["fbs_tier"] = None
+    meta["fbs_tier_label"] = None
     meta["telemetry_source"] = "registry_fallback"
 
     # 2. Overlay Live Standings ONLY for verified full-season win streak / NFL win_pct (NEVER broken CFB PPG!)
@@ -1103,10 +1251,12 @@ def get_team_meta(full_name, league="NFL", nflverse_map=None, cfb_epa_map=None, 
             meta["to_reg"] = sdv_hit.get("to_reg", meta["to_reg"])
             meta["rz_dvoa"] = sdv_hit.get("rz_dvoa", meta["rz_dvoa"])
             meta["epa_rank"] = sdv_hit.get("epa_rank")
-            pool_denom = max(135.0, float(sdv_hit.get("epa_pool_size", 136) - 1))
+            meta["fbs_tier"] = sdv_hit.get("fbs_tier")
+            meta["fbs_tier_label"] = sdv_hit.get("fbs_tier_label")
+            pool_denom = max(137.0, float(sdv_hit.get("epa_pool_size", 138) - 1))
             if meta["epa_rank"]:
                 meta["close_pct"] = round(max(0.10, min(0.95, 1.0 - ((meta["epa_rank"] - 1) / pool_denom))), 3)
-            meta["telemetry_source"] = "sportsdataverse_2026_pure_epa"
+            meta["telemetry_source"] = "sportsdataverse_2026_sos_tiered"
         else:
             is_verified_fbs = bool(st_hit and st_hit.get("is_fbs"))
             # Verified FBS teams (from ESPN Group 80 standings) must NEVER be misclassified as FCS!
@@ -1161,6 +1311,55 @@ def calc_haversine_miles(lat1, lon1, lat2, lon2):
     a = math.sin(dphi / 2.0)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2.0)**2
     return round(2.0 * r_miles * math.atan2(math.sqrt(a), math.sqrt(1.0 - a)), 1)
 
+SNOW_WMO_CODES = {71, 73, 75, 77, 85, 86}
+RAIN_WMO_CODES = {51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99}
+
+def derive_weather_badges(temp_f, wind_mph, wind_gusts_mph=0.0, rain=0.0, snowfall=0.0, precipitation=0.0, weather_code=0, is_dome=False):
+    if is_dome:
+        return []
+    badges = []
+    w_code = int(weather_code or 0)
+    t_f = float(temp_f if temp_f is not None else 58.0)
+    w_mph = float(wind_mph or 0.0)
+    g_mph = float(wind_gusts_mph or 0.0)
+    r_val = float(rain or 0.0)
+    s_val = float(snowfall or 0.0)
+    p_val = float(precipitation or 0.0)
+
+    if w_code in SNOW_WMO_CODES or s_val > 0.0:
+        badges.append("SNOW")
+    if w_code in RAIN_WMO_CODES or r_val > 0.0 or (p_val > 0.0 and "SNOW" not in badges):
+        badges.append("RAIN")
+    if w_mph >= 12.0 or g_mph >= 20.0:
+        badges.append("WIND")
+    if t_f <= 32.0:
+        badges.append("FREEZE")
+    return badges
+
+def _format_open_meteo_current(cur, elev_m=0, is_dome=False):
+    temp_f = float(cur.get("temperature_2m", 54.0) if cur.get("temperature_2m") is not None else 54.0)
+    wind_mph = float(cur.get("wind_speed_10m", 6.5) if cur.get("wind_speed_10m") is not None else 6.5)
+    gusts_mph = float(cur.get("wind_gusts_10m", wind_mph) if cur.get("wind_gusts_10m") is not None else wind_mph)
+    press_hpa = float(cur.get("surface_pressure", 1013.25) if cur.get("surface_pressure") is not None else 1013.25)
+    precip = float(cur.get("precipitation", 0.0) or 0.0)
+    rain = float(cur.get("rain", 0.0) or 0.0)
+    snow = float(cur.get("snowfall", 0.0) or 0.0)
+    w_code = int(cur.get("weather_code", 0) or 0)
+    badges = derive_weather_badges(temp_f, wind_mph, gusts_mph, rain, snow, precip, w_code, is_dome=is_dome)
+    return {
+        "temperature_f": round(temp_f, 1),
+        "wind_mph": round(wind_mph, 1),
+        "wind_gusts_mph": round(gusts_mph, 1),
+        "pressure_hpa": round(press_hpa, 2),
+        "precipitation": round(precip, 2),
+        "rain": round(rain, 2),
+        "snowfall": round(snow, 2),
+        "weather_code": w_code,
+        "weather_badges": badges,
+        "is_dome": is_dome,
+        "elevation_m": elev_m
+    }
+
 def prefetch_all_stadium_weather(metas_list):
     """Batches all unique outdoor stadium coordinates into multi-location Open-Meteo requests (~2s total)."""
     coords = []
@@ -1182,7 +1381,7 @@ def prefetch_all_stadium_weather(metas_list):
         lons_str = ",".join(str(c[1]) for c in chunk)
         url = (
             f"https://api.open-meteo.com/v1/forecast?latitude={lats_str}&longitude={lons_str}"
-            f"&current=temperature_2m,wind_speed_10m,surface_pressure"
+            f"&current=temperature_2m,wind_speed_10m,wind_gusts_10m,surface_pressure,precipitation,rain,snowfall,weather_code"
             f"&temperature_unit=fahrenheit&wind_speed_unit=mph"
         )
         try:
@@ -1195,13 +1394,7 @@ def prefetch_all_stadium_weather(metas_list):
                         break
                     cur = item.get("current", {}) if isinstance(item, dict) else {}
                     _, _, ck = chunk[idx]
-                    WEATHER_CACHE[ck] = {
-                        "temperature_f": cur.get("temperature_2m", 54.0),
-                        "wind_mph": cur.get("wind_speed_10m", 6.5),
-                        "pressure_hpa": cur.get("surface_pressure", 1013.25),
-                        "is_dome": False,
-                        "elevation_m": 0
-                    }
+                    WEATHER_CACHE[ck] = _format_open_meteo_current(cur, elev_m=0, is_dome=False)
         except Exception as e:
             print(f"[Open-Meteo Batch Notice] {e}")
 
@@ -1214,7 +1407,13 @@ def fetch_live_stadium_weather(home_meta):
     weather_payload = {
         "temperature_f": 72.0 if is_dome else 54.0,
         "wind_mph": 0.0 if is_dome else 6.5,
+        "wind_gusts_mph": 0.0 if is_dome else 6.5,
         "pressure_hpa": 1013.25,
+        "precipitation": 0.0,
+        "rain": 0.0,
+        "snowfall": 0.0,
+        "weather_code": 0,
+        "weather_badges": [],
         "is_dome": is_dome,
         "elevation_m": elev_m
     }
@@ -1232,15 +1431,13 @@ def fetch_live_stadium_weather(home_meta):
     try:
         url = (
             f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
-            f"&current=temperature_2m,wind_speed_10m,surface_pressure"
+            f"&current=temperature_2m,wind_speed_10m,wind_gusts_10m,surface_pressure,precipitation,rain,snowfall,weather_code"
             f"&temperature_unit=fahrenheit&wind_speed_unit=mph"
         )
         resp = requests.get(url, headers=HEADERS, timeout=5)
         if resp.status_code == 200:
             data = resp.json().get("current", {})
-            weather_payload["temperature_f"] = data.get("temperature_2m", 54.0)
-            weather_payload["wind_mph"] = data.get("wind_speed_10m", 6.5)
-            weather_payload["pressure_hpa"] = data.get("surface_pressure", 1013.25)
+            weather_payload = _format_open_meteo_current(data, elev_m=elev_m, is_dome=False)
             WEATHER_CACHE[cache_key] = dict(weather_payload)
     except Exception:
         pass
@@ -2035,6 +2232,8 @@ def deduplicate_ledger_entries(entries):
                 best_e["home_full_name"] = alt_e["home_full_name"]
             if not best_e.get("away_full_name") and alt_e.get("away_full_name"):
                 best_e["away_full_name"] = alt_e["away_full_name"]
+            if not best_e.get("pre_kick_snapshot") and alt_e.get("pre_kick_snapshot"):
+                best_e["pre_kick_snapshot"] = alt_e["pre_kick_snapshot"]
             if _is_corrupted_live_entry(best_e) and not _is_corrupted_live_entry(alt_e) and alt_e.get("spread_record"):
                 best_e["spread_record"] = dict(alt_e["spread_record"])
                 best_e["spread_record"]["result_tip"] = "PENDING"
@@ -2141,6 +2340,62 @@ def scrub_live_poisoned_entries(entries, now_utc):
     return scrubbed
 
 
+def _build_pre_kick_snapshot(g, locked_at_iso):
+    """Freezes a compact (~0.7 KB) pre-kickoff snapshot of raw weather, travel, EPA, injury,
+    and market inputs so clicking any completed Ledger receipt replays all 13 modules live."""
+    props = g.get("props_board") or []
+    home_code = g.get("home_team", "")
+    away_code = g.get("away_team", "")
+    vegas_home_sp = None
+    vegas_tot = None
+    home_ml = None
+    away_ml = None
+    for p in props:
+        mt = p.get("market_type")
+        if mt == "spread":
+            if str(p.get("player", "")).startswith(f"{home_code} "):
+                vegas_home_sp = p.get("base_line")
+            elif str(p.get("player", "")).startswith(f"{away_code} ") and vegas_home_sp is None:
+                vegas_home_sp = -float(p.get("base_line", 0.0))
+        elif mt == "total" and vegas_tot is None:
+            vegas_tot = p.get("base_line")
+        elif mt == "moneyline":
+            if p.get("is_away_player"):
+                away_ml = p.get("base_odds_over")
+            else:
+                home_ml = p.get("base_odds_over")
+
+    def _compact_tel(t):
+        if not isinstance(t, dict):
+            return {}
+        keep = (
+            "net_epa_per_play", "off_epa_per_play", "def_epa_per_play",
+            "qb_replacement_delta", "turnover_reg_delta", "closing_rank_pct",
+            "active_win_streak", "opp_rz_dvoa", "lt_or_rb_pass_pro_out",
+            "is_third_string_qb", "injuries_summary", "epa_rank", "poll_rank",
+            "fbs_tier", "fbs_tier_label", "is_fcs", "epa_scaled_62", "telemetry_source"
+        )
+        return {k: t[k] for k in keep if k in t and t[k] is not None}
+
+    return {
+        "locked_at_utc": locked_at_iso,
+        "kickoff_local_hour": g.get("kickoff_local_hour", 13),
+        "hfa_base": g.get("hfa_base", PI_OVER_PHI_HFA),
+        "expected_plays": g.get("expected_plays", 126),
+        "vegas_home_spread": vegas_home_sp,
+        "vegas_total_line": vegas_tot,
+        "home_ml_odds": home_ml,
+        "away_ml_odds": away_ml,
+        "spread_divergence_pts": g.get("spread_divergence_pts"),
+        "divergence_alert": bool(g.get("divergence_alert", False)),
+        "environmental_payload": dict(g.get("environmental_payload") or {}),
+        "circadian_payload": dict(g.get("circadian_payload") or {}),
+        "team_telemetry": {
+            "home": _compact_tel((g.get("team_telemetry") or {}).get("home")),
+            "away": _compact_tel((g.get("team_telemetry") or {}).get("away"))
+        }
+    }
+
 def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by_gid=None, old_games=None):
     entries = scrub_live_poisoned_entries(deduplicate_ledger_entries(ledger.get("entries", {})), now_utc)
     porkys_by_gid = porkys_by_gid or {}
@@ -2209,6 +2464,8 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                 existing["is_locked"] = True
                 if existing.get("status") == "PRE_GAME":
                     existing["status"] = "IN_PLAY"
+                if not existing.get("pre_kick_snapshot"):
+                    existing["pre_kick_snapshot"] = _build_pre_kick_snapshot(g, now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"))
                 entries[gid] = existing
                 continue
 
@@ -2288,6 +2545,7 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                 }
 
         if not existing.get("is_locked", False):
+            existing["pre_kick_snapshot"] = _build_pre_kick_snapshot(g, now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"))
             if gid in porkys_by_gid:
                 existing["porkys_record"] = porkys_by_gid[gid]
             elif "porkys_record" in existing:
@@ -2822,40 +3080,54 @@ def build_master_payload():
         nfl_odds = f_nodd.result()
         ncaa_odds = f_codd.result()
 
+    # Apply Upgrade #7: 6-Stage FBS Tiering (T1 1-35 exact; T2-T6 75/25 soft anchor)
+    if ncaa_sdv_epa:
+        apply_ncaa_six_stage_tiering(ncaa_sdv_epa, ncaa_poll_map)
+
     combined_odds = nfl_odds + ncaa_odds
     combined_odds.sort(key=lambda g: g.get("commence_time", ""))
 
-    # Prefetch all outdoor stadium weather in 2 batched calls + upcoming NFL injuries concurrently
+    # Prefetch all outdoor stadium weather in 2 batched calls + upcoming NFL & Top-25 NCAA injuries concurrently
     home_metas_for_weather = []
-    nfl_injury_event_ids = []
+    injury_event_tasks = []
+    ranked_ncaa_set = set(live_ranked_ncaa or [])
     for game in combined_odds:
         lg = game.get("_league", "NFL")
         h_full = game.get("home_team", "")
         a_full = game.get("away_team", "")
         hm = get_team_meta(h_full, lg, nflverse_epa if lg == "NFL" else None, None if lg == "NFL" else ncaa_sdv_epa, nfl_standings if lg == "NFL" else ncaa_standings, None if lg == "NFL" else ncaa_poll_map)
         home_metas_for_weather.append(hm)
-        if lg == "NFL":
-            am = get_team_meta(a_full, "NFL", nflverse_epa, None, nfl_standings, None)
+        am = get_team_meta(a_full, lg, nflverse_epa if lg == "NFL" else None, None if lg == "NFL" else ncaa_sdv_epa, nfl_standings if lg == "NFL" else ncaa_standings, None if lg == "NFL" else ncaa_poll_map)
+        is_ranked_ncaa_match = (
+            lg == "NCAA" and (
+                (hm.get("poll_rank") and hm["poll_rank"] <= 25) or
+                (am.get("poll_rank") and am["poll_rank"] <= 25) or
+                (h_full in ranked_ncaa_set) or (a_full in ranked_ncaa_set)
+            )
+        )
+        if lg == "NFL" or is_ranked_ncaa_match:
             c_str = game.get("commence_time", "")
             try:
                 dt_u = datetime.strptime(c_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
                 if -timedelta(hours=4) <= (dt_u - now_utc) <= timedelta(days=8):
-                    ev = espn_scores.get(f"NFL_{am['code']}_{hm['code']}")
+                    ev = espn_scores.get(f"{lg}_{am['code']}_{hm['code']}")
+                    if not ev:
+                        ev = espn_scores.get(f"{lg}:name:{normalize_team_key(a_full)}__{normalize_team_key(h_full)}")
                     if ev and ev.get("event_id"):
-                        nfl_injury_event_ids.append((f"{am['code']}_{hm['code']}", ev["event_id"]))
+                        injury_event_tasks.append((f"{lg}_{am['code']}_{hm['code']}", ev["event_id"], lg))
             except Exception:
                 pass
 
     prefetch_all_stadium_weather(home_metas_for_weather)
-    prefetched_nfl_injuries = {}
-    if nfl_injury_event_ids:
-        with ThreadPoolExecutor(max_workers=8) as inj_pool:
-            fut_map = {k: inj_pool.submit(fetch_espn_game_injuries, eid, "NFL") for k, eid in nfl_injury_event_ids}
+    prefetched_injuries = {}
+    if injury_event_tasks:
+        with ThreadPoolExecutor(max_workers=10) as inj_pool:
+            fut_map = {k: inj_pool.submit(fetch_espn_game_injuries, eid, lg) for k, eid, lg in injury_event_tasks}
             for k, fut in fut_map.items():
                 try:
-                    prefetched_nfl_injuries[k] = fut.result()
+                    prefetched_injuries[k] = fut.result()
                 except Exception:
-                    prefetched_nfl_injuries[k] = {}
+                    prefetched_injuries[k] = {}
 
     old_payload = load_existing_payload()
     old_games = old_payload.get("games", []) if isinstance(old_payload.get("games"), list) else []
@@ -2931,11 +3203,11 @@ def build_master_payload():
                 print(f"[LIVE ODDS BLOCKED] Skipped un-locked in-progress game {game_id} to prevent halftime spread poisoning")
             continue
 
-        # Pull live NFL injury reports for upcoming week's games via ESPN event summary
+        # Pull live NFL & Top-25 NCAA injury reports for upcoming week's games via ESPN event summary
         home_inj = {"qb_replacement_delta": 0.0, "lt_or_rb_pass_pro_out": False, "is_third_string_qb": False, "injuries_summary": []}
         away_inj = {"qb_replacement_delta": 0.0, "lt_or_rb_pass_pro_out": False, "is_third_string_qb": False, "injuries_summary": []}
-        if game_league == "NFL" and is_upcoming_soon:
-            inj_map = prefetched_nfl_injuries.get(f"{away_code}_{home_code}", {})
+        if is_upcoming_soon:
+            inj_map = prefetched_injuries.get(f"{game_league}_{away_code}_{home_code}", {})
             if home_code in inj_map:
                 home_inj = inj_map[home_code]
             if away_code in inj_map:
@@ -3119,8 +3391,11 @@ def build_master_payload():
                         ml_ev_tip = calc_ev_pct(ml_prob_tip, ml_px)
                         ml_ev_bd = calc_ev_pct(ml_prob_bd, ml_px)
                         is_dog = bool(ml_px > 0)
-                        is_upset = bool(is_dog and ml_prob_tip > 0.50)
-                        ml_badge = "SMASH" if ml_ev_tip >= SMASH_EV_THRESHOLD else ("PASS" if ml_ev_tip <= -19.0 else "TOO_CLOSE")
+                        # UPGRADE #2 ML CREDIBILITY GUARDRAILS:
+                        # Prevent mega-underdog cupcakes (e.g. +1500 @ 9% win prob) from getting stamped SMASH or UPSET ALERT
+                        ml_credible = bool(ml_prob_tip >= 0.48 and ml_px <= 300)
+                        is_upset = bool(is_dog and ml_prob_tip > 0.50 and ml_px <= 300)
+                        ml_badge = "SMASH" if (ml_ev_tip >= SMASH_EV_THRESHOLD and ml_credible) else ("PASS" if ml_ev_tip <= -19.0 else "TOO_CLOSE")
                         ml_pfx = "@" if is_away_ml else "vs"
                         props_board.append({
                             "player": f"{ml_code} ML ({'+' if ml_px > 0 else ''}{ml_px}) ({ml_code} {ml_pfx} {ml_opp})",
@@ -3128,6 +3403,7 @@ def build_master_payload():
                             "team": ml_code,
                             "is_away_player": is_away_ml,
                             "is_underdog": is_dog,
+                            "ml_credible": ml_credible,
                             "is_upset_pick": is_upset,
                             "model_win_prob": round(ml_prob_tip, 4),
                             "projected_mean_mu": model_tip_sp,
@@ -3184,12 +3460,20 @@ def build_master_payload():
                 tel_obj["off_epa_per_play"] = meta_obj["off_epa_per_play"]
             if meta_obj.get("def_epa_per_play") is not None:
                 tel_obj["def_epa_per_play"] = meta_obj["def_epa_per_play"]
+            if meta_obj.get("fbs_tier") is not None:
+                tel_obj["fbs_tier"] = meta_obj["fbs_tier"]
+                tel_obj["fbs_tier_label"] = meta_obj["fbs_tier_label"]
             if meta_obj.get("is_fcs"):
                 tel_obj["is_fcs"] = True
             if meta_obj.get("epa_scaled_62"):
                 tel_obj["epa_scaled_62"] = True
 
+        sp_div_pts = round(abs(fair_home_tip - vegas_home_sp), 2) if (book and vegas_home_sp is not None) else 0.0
+        div_alert = bool(game_league == "NCAA" and sp_div_pts >= 12.0)
+
         games_slate.append({
+            "spread_divergence_pts": sp_div_pts,
+            "divergence_alert": div_alert,
             "game_id": game_id,
             "league": game_league,
             "home_team": home_code,
@@ -3261,7 +3545,8 @@ def build_master_payload():
     best_per_game = []
     for g in current_week_eligible:
         cands = []
-        g_spreads = [p for p in g["props_board"] if p["market_type"] == "spread" and abs(p["base_line"]) <= 28.5 and abs(int(p.get("base_odds_over", -110))) < 220]
+        is_extreme_ncaa_outlier = bool(g.get("league") == "NCAA" and float(g.get("spread_divergence_pts") or 0.0) >= 14.0)
+        g_spreads = [] if is_extreme_ncaa_outlier else [p for p in g["props_board"] if p["market_type"] == "spread" and abs(p["base_line"]) <= 28.5 and abs(int(p.get("base_odds_over", -110))) < 220]
         g_totals = [p for p in g["props_board"] if p["market_type"] == "total" and abs(int(p.get("base_odds_over", -110))) < 220]
         if g_spreads:
             cands.append(max(g_spreads, key=lambda x: x["ev_pct"]))
@@ -3371,7 +3656,7 @@ def build_master_payload():
             "league": "NFL_NCAA",
             "week": dynamic_week,
             "last_updated": now_iso,
-            "telemetry_version": "v238_moneyline_h2h_perpetuity",
+            "telemetry_version": "v239_ncaa_tiers_snapshot_weather_ml",
             "ranked_ncaa_teams": live_ranked_ncaa
         },
         "games": games_slate,
@@ -3386,7 +3671,7 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v238 — PRICED MONEYLINE H2H + 2-KEY-RUNG PERPETUITY + WONG TEASER)")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v239 — 6-STAGE NCAA TIERS + ML GUARDRAILS + PRE-KICK SNAPSHOT + WEATHER BADGES)")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("=========================================================")
 
