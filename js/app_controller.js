@@ -1,6 +1,6 @@
 /**
- * DIXPIX QUANTITATIVE ENGINE — MASTER UI & RESEARCH CONTROLLER (v262 — PRICED MONEYLINE H2H + OUTRIGHT ML VAULT + PICKFINDER UI)
- * Synced 1:1 with math_engine.js (v323) & scraper.py (v238)
+ * DIXPIX QUANTITATIVE ENGINE — MASTER UI & RESEARCH CONTROLLER (v263 — 1-TILE MATCHUP CARDS + KICKOFF DEFAULT + ML GUARDRAILS + FILTERABLE LEDGER + 13-MODULE DOSSIER + WEATHER BADGES + DUAL-SLIDER DAVINCI)
+ * Synced 1:1 with math_engine.js (v324) & scraper.py (v239)
  *  - Pure OG M1–M9 Firewall in Just the Tip | Full M11–M13 Physics, 2-Key-Rung Alts, Always-On Wong Teasers & Regime Safe Totals in Balls Deep / DaVinci
  *  - PickFinder-Style Scannable Picks Feed + Split Research Inspector (Weather & Ballistic Physics Moat)
  *  - Flagship 5-Pack (Ménage à Trois) & Porky's Safe Floor Fades + Weather Lab + 13 Modules (Home-Team Frame) + FAGquestions + 6 Ledger Vaults + Slide-Over Bet Slip
@@ -11,15 +11,21 @@ const AppState = {
     lastDataHash: "",
     activeView: "picks",              // "picks" | "fivepack" | "weather" | "ledger" | "modules" | "faq"
     activeMode: "tip",                // "tip" | "balls_deep" | "davinci"
-    intensitySlider: 0.0,             // -3.236 (-2φ) to +3.236 (+2φ)
+    intensitySlider: 0.0,             // Legacy compatibility (0.0 default)
+    daVinciScripts: {},               // { [gameId]: { spreadDelta: 0.0, totalDelta: 0.0 } }
     filters: { nfl: true, ncaa: true },
     leagueFilter: "ALL",              // "ALL" | "NFL" | "NCAA"
-    marketFilter: "ALL",              // "ALL" | "spread" | "total"
+    marketFilter: "ALL",              // "ALL" | "spread" | "total" | "moneyline"
     smashOnly: false,
     weatherOnly: false,
     searchQuery: "",
-    sortOrder: "ev",                  // "ev" | "prob" | "weather" | "kickoff"
+    sortOrder: "kickoff",             // Default chronological kickoff order (Upgrade #2)
     selectedPropKey: null,
+    ledgerWeekFilter: "ALL",          // Global Ledger Week filter (Upgrade #3)
+    ledgerOutcomeFilter: "ALL",       // "ALL" | "HIT" | "BLUE_BALLS" | "MISS"
+    ledgerMarketFilter: "ALL",        // "ALL" | "SPREAD" | "TOTAL" | "ML"
+    ledgerSearchQuery: "",
+    activeDossier: null,              // { kind: "live" | "ledger", id: string }
     fivePackView: "main_stage",       // "main_stage" | "porkys"
     weatherLabView: "cards",          // "cards" | "table"
     modulesSubView: "compendium",     // "compendium" | "telemetry"
@@ -163,6 +169,9 @@ function renderGameGuardrailChipsHTML(gameRecord) {
         const favTeam = injPts < 0 ? gameRecord.homeTeam : gameRecord.awayTeam;
         chips.push(`<span class="badge b-pass">🚑 INJURY WIRE (${favTeam} +${Math.abs(injPts).toFixed(1)} pts)</span>`);
     }
+    if (gameRecord.divergenceAlert) {
+        chips.push(`<span class="badge b-gold">⚠️ MARKET DIVERGENCE (${Number(gameRecord.spreadDivergencePts || 0).toFixed(1)} pts)</span>`);
+    }
     if (chips.length === 0) return "";
     return `<div class="chip-group" style="gap:5px;">${chips.join("")}</div>`;
 }
@@ -303,7 +312,13 @@ function computeWeatherImpact(envPayload, m7, elevObj) {
     if (zone >= 7) score = Math.max(score, 8.2 + (zone - 7) * 0.55);
     score = Number(Math.min(10.0, Math.max(1.0, score)).toFixed(1));
 
-    const isEdge = (zone >= 7 || windMph >= 12 || tempF <= 40 || Math.abs(fgShift) >= 2.2);
+    const rawBadges = Array.isArray(envPayload && envPayload.weather_badges) ? envPayload.weather_badges : [];
+    const badges = [...rawBadges];
+    if (!isDome) {
+        if (windMph >= 12 && !badges.includes("WIND")) badges.push("WIND");
+        if (tempF <= 32 && !badges.includes("FREEZE")) badges.push("FREEZE");
+    }
+    const isEdge = (zone >= 7 || windMph >= 12 || tempF <= 40 || Math.abs(fgShift) >= 2.2 || badges.includes("SNOW") || badges.includes("RAIN") || badges.includes("FREEZE"));
     let summary = "";
     if (zone >= 7) {
         summary = `Zone ${zone} ${elevObj.direction} (${elevFt.toLocaleString()} ft, Δ${elevObj.deltaFeet > 0 ? "+" : ""}${elevObj.deltaFeet} ft) triggers mountain air & 4Q hypoxic stamina drag.`;
@@ -317,7 +332,7 @@ function computeWeatherImpact(envPayload, m7, elevObj) {
         summary = `Mild outdoor conditions (${tempF}°F · ${windMph} mph · ρ ${rho}); efficiency & matchup physics lead.`;
     }
 
-    return { score, isEdge, summary };
+    return { score, isEdge, summary, badges };
 }
 
 function renderWeatherPillHTML(gameRecord) {
@@ -325,13 +340,29 @@ function renderWeatherPillHTML(gameRecord) {
     const env = gameRecord.envPayload || {};
     const em = gameRecord.elevActive || gameRecord.elevMatrix || { zoneNumber: 1, venueElevFeet: 0 };
     if (env.is_dome) return `<span class="weather-pill">🏟️ Dome 72°F</span>`;
+
+    const pills = [];
+    const badges = (gameRecord.weatherImpact && Array.isArray(gameRecord.weatherImpact.badges))
+        ? gameRecord.weatherImpact.badges
+        : (Array.isArray(env.weather_badges) ? env.weather_badges : []);
+
     if (em.zoneNumber >= 7) {
-        return `<span class="weather-pill edge">🏔️ ${(em.venueElevFeet || 0).toLocaleString()}ft Z${em.zoneNumber}</span>`;
+        pills.push(`<span class="weather-pill edge">🏔️ ${(em.venueElevFeet || 0).toLocaleString()}ft Z${em.zoneNumber}</span>`);
     }
+    if (badges.includes("SNOW")) pills.push(`<span class="weather-pill snow">❄️ Snow</span>`);
+    if (badges.includes("RAIN")) pills.push(`<span class="weather-pill rain">🌧️ Rain</span>`);
+    if (badges.includes("FREEZE")) pills.push(`<span class="weather-pill freeze">🥶 ${Math.round(env.temperature_f || 32)}°F</span>`);
+
     const tempDisp = env.temperature_f !== undefined ? `${Math.round(env.temperature_f)}°F` : "--°F";
     const windDisp = `${Math.round(gameRecord.windMph || 0)}mph`;
-    const edgeCls = gameRecord.weatherImpact && gameRecord.weatherImpact.isEdge ? "edge" : "";
-    return `<span class="weather-pill ${edgeCls}">🌬️ ${tempDisp} · ${windDisp}</span>`;
+    const gusts = Number(env.wind_gusts_mph || 0);
+    if (badges.includes("WIND")) {
+        pills.push(`<span class="weather-pill wind">💨 ${windDisp}${gusts >= 20 ? ` (G${Math.round(gusts)})` : ""}</span>`);
+    } else if (pills.length === 0) {
+        const edgeCls = gameRecord.weatherImpact && gameRecord.weatherImpact.isEdge ? "edge" : "";
+        pills.push(`<span class="weather-pill ${edgeCls}">🌬️ ${tempDisp} · ${windDisp}</span>`);
+    }
+    return pills.join(" ");
 }
 
 function renderLockSpanHTML(text = "🔒 Balls Deep") {
@@ -350,33 +381,17 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function bindUIControls() {
-    const slider = document.getElementById("davinci-intensity-slider");
-    if (slider) {
-        slider.addEventListener("input", (e) => {
-            const val = parseFloat(e.target.value) || 0.0;
-            const readout = document.getElementById("davinci-readout");
-            if (readout) readout.textContent = val > 0 ? `+${val.toFixed(1)}` : val.toFixed(1);
-            AppState.intensitySlider = val;
+    const sortSel = document.getElementById("sort-select");
+    if (sortSel) sortSel.value = AppState.sortOrder;
+}
 
-            if (AppState.activeMode !== "davinci") return;
-            if (sliderDragTimer) return;
-            sliderDragTimer = setTimeout(() => {
-                sliderDragTimer = null;
-                requestAnimationFrame(() => recalculateAndRenderAll({ isSliderDrag: true }));
-            }, 50);
-        });
-
-        slider.addEventListener("change", (e) => {
-            if (sliderDragTimer) {
-                clearTimeout(sliderDragTimer);
-                sliderDragTimer = null;
-            }
-            AppState.intensitySlider = parseFloat(e.target.value) || 0.0;
-            if (AppState.activeMode === "davinci") {
-                recalculateAndRenderAll({ isSliderDrag: false });
-            }
-        });
-    }
+function updateDaVinciCustomCountBadge() {
+    const badge = document.getElementById("davinci-custom-count");
+    if (!badge) return;
+    const cnt = Object.values(AppState.daVinciScripts).filter(
+        s => s && (Math.abs(s.spreadDelta || 0) >= 0.05 || Math.abs(s.totalDelta || 0) >= 0.05)
+    ).length;
+    badge.textContent = `${cnt} Custom Script${cnt === 1 ? "" : "s"}`;
 }
 
 function syncModeButtonsUI() {
@@ -389,6 +404,7 @@ function syncModeButtonsUI() {
     if (bBd) bBd.className = `mode-btn ${m === "balls_deep" ? "active-bd" : ""}`;
     if (bDv) bDv.className = `mode-btn ${m === "davinci" ? "active-dv" : ""}`;
     if (dvBar) dvBar.classList.toggle("open", m === "davinci");
+    updateDaVinciCustomCountBadge();
 }
 
 // ==========================================
@@ -422,12 +438,33 @@ window.unlockBallsDeepMode = function(event) {
     window.setEngineMode("balls_deep");
 };
 
-window.resetDavinciSlider = function() {
-    const slider = document.getElementById("davinci-intensity-slider");
-    const readout = document.getElementById("davinci-readout");
-    if (slider) slider.value = 0;
-    if (readout) readout.textContent = "0.0";
+window.updateDaVinciGameScript = function(gameId, field, rawVal) {
+    if (!gameId) return;
+    const val = parseFloat(rawVal) || 0.0;
+    if (!AppState.daVinciScripts[gameId]) {
+        AppState.daVinciScripts[gameId] = { spreadDelta: 0.0, totalDelta: 0.0 };
+    }
+    AppState.daVinciScripts[gameId][field] = val;
+    updateDaVinciCustomCountBadge();
+    if (sliderDragTimer) return;
+    sliderDragTimer = setTimeout(() => {
+        sliderDragTimer = null;
+        requestAnimationFrame(() => recalculateAndRenderAll({ isSliderDrag: true }));
+    }, 35);
+};
+
+window.resetDaVinciGameScript = function(gameId) {
+    if (gameId && AppState.daVinciScripts[gameId]) {
+        delete AppState.daVinciScripts[gameId];
+    }
+    updateDaVinciCustomCountBadge();
+    recalculateAndRenderAll({ isSliderDrag: false });
+};
+
+window.resetAllDaVinciScripts = function() {
+    AppState.daVinciScripts = {};
     AppState.intensitySlider = 0.0;
+    updateDaVinciCustomCountBadge();
     recalculateAndRenderAll({ isSliderDrag: false });
 };
 
@@ -506,9 +543,22 @@ window.toggleSlipDrawer = function(open) {
     if (bd) bd.classList.toggle("open", Boolean(open));
 };
 
+window.closeModuleDossier = function() {
+    AppState.activeDossier = null;
+    const drawer = document.getElementById("dossier-drawer");
+    const slip = document.getElementById("slip-drawer");
+    const wrap = document.getElementById("inspector-wrap");
+    const bd = document.getElementById("drawer-backdrop");
+    if (drawer) drawer.classList.remove("open");
+    if (bd && (!slip || !slip.classList.contains("open")) && (!wrap || !wrap.classList.contains("mobile-open"))) {
+        bd.classList.remove("open");
+    }
+};
+
 window.closeAllOverlays = function() {
     window.toggleSlipDrawer(false);
     window.closeMobileInspector();
+    window.closeModuleDossier();
 };
 
 window.setFivePackView = function(view) {
@@ -861,14 +911,37 @@ function recalculateAndRenderAll(opts = {}) {
                 psi11_12,
                 baseTelemetryTotal,
                 weatherImpact,
-                mlWinnerTeam: (m9.fairHomeSpread <= 0) ? cleanHome : cleanAway,
+                spreadDivergencePts: Number(game.spread_divergence_pts || 0),
+                divergenceAlert: Boolean(game.divergence_alert),
+                homeTel,
+                awayTel,
+                daVinciScript: (() => {
+                    const rawSc = (mode === "davinci" && AppState.daVinciScripts[game.game_id]) || { spreadDelta: 0, totalDelta: 0 };
+                    const baseSp = m9Bd.fairHomeSpread;
+                    const baseTot = baseTelemetryTotal;
+                    if (typeof calcDaVinciGameScript === "function") {
+                        return calcDaVinciGameScript(baseSp, baseTot, rawSc.spreadDelta, rawSc.totalDelta, gameLeague);
+                    }
+                    return { isCustom: false, spreadDelta: 0, totalDelta: 0, simHomeSpread: baseSp, simTotal: baseTot, simHomePts: 21, simAwayPts: 21, simHomeMlPct: 50, simAwayMlPct: 50 };
+                })(),
+                mlWinnerTeam: (() => {
+                    const rawSc = (mode === "davinci" && AppState.daVinciScripts[game.game_id]) || null;
+                    const effHomeSp = (rawSc && (rawSc.spreadDelta || 0) !== 0) ? (m9Bd.fairHomeSpread + rawSc.spreadDelta) : m9.fairHomeSpread;
+                    return (effHomeSp <= 0) ? cleanHome : cleanAway;
+                })(),
                 mlTipWinnerTeam: (m9Base.fairHomeSpread <= 0) ? cleanHome : cleanAway,
                 mlWinnerProbPct: (() => {
+                    const rawSc = (mode === "davinci" && AppState.daVinciScripts[game.game_id]) || null;
+                    const effHomeSp = (rawSc && (rawSc.spreadDelta || 0) !== 0) ? (m9Bd.fairHomeSpread + rawSc.spreadDelta) : m9.fairHomeSpread;
                     const lgE = (typeof getLeagueEngine === "function") ? getLeagueEngine(gameLeague) : null;
                     const pFn = (gap) => (lgE && gameLeague === "NCAA") ? lgE.winProb(gap) : calcPointGapWinProb(gap);
-                    return Number((pFn(Math.abs(m9.fairHomeSpread)) * 100.0).toFixed(1));
+                    return Number((pFn(Math.abs(effHomeSp)) * 100.0).toFixed(1));
                 })(),
-                mlIsUpset: Boolean((m9.fairHomeSpread <= 0 && vegasHomeSpread > 0) || (m9.fairHomeSpread > 0 && vegasHomeSpread < 0)),
+                mlIsUpset: (() => {
+                    const rawSc = (mode === "davinci" && AppState.daVinciScripts[game.game_id]) || null;
+                    const effHomeSp = (rawSc && (rawSc.spreadDelta || 0) !== 0) ? (m9Bd.fairHomeSpread + rawSc.spreadDelta) : m9.fairHomeSpread;
+                    return Boolean((effHomeSp <= 0 && vegasHomeSpread > 0) || (effHomeSp > 0 && vegasHomeSpread < 0));
+                })(),
                 mlHomeOdds: (() => {
                     const m = Array.isArray(game.props_board) && game.props_board.find(x => x.market_type === "moneyline" && !x.is_away_player);
                     return m ? Number(m.base_odds_over) : null;
@@ -920,10 +993,13 @@ function recalculateAndRenderAll(opts = {}) {
                     if (prop.market_type === "spread") {
                         baseProjectedLine = isHomeSpread ? m9Base.fairHomeSpread : Number((-m9Base.fairHomeSpread).toFixed(2));
                         bdProjectedLine = isHomeSpread ? m9Bd.fairHomeSpread : Number((-m9Bd.fairHomeSpread).toFixed(2));
+                        const dvSpDelta = (mode === "davinci" && gameRecord.daVinciScript && gameRecord.daVinciScript.isCustom)
+                            ? (isHomeSpread ? gameRecord.daVinciScript.spreadDelta : -gameRecord.daVinciScript.spreadDelta)
+                            : 0.0;
                         finalCalculatedLine = (mode === "balls_deep")
                             ? bdProjectedLine
                             : ((mode === "davinci")
-                                ? (isHomeSpread ? m9.fairHomeSpread : Number((-m9.fairHomeSpread).toFixed(2)))
+                                ? Number((bdProjectedLine + dvSpDelta).toFixed(2))
                                 : baseProjectedLine);
 
                         const lgEng = (typeof getLeagueEngine === "function") ? getLeagueEngine(gameLeague) : null;
@@ -986,7 +1062,8 @@ function recalculateAndRenderAll(opts = {}) {
                             finalCalculatedLine = bdProjectedLine;
                             activeModelProb = bdModelProb;
                         } else if (mode === "davinci") {
-                            finalCalculatedLine = Number((bdProjectedLine + (bdDirSign * totalArc)).toFixed(1));
+                            const dvTotDelta = (gameRecord.daVinciScript && gameRecord.daVinciScript.isCustom) ? gameRecord.daVinciScript.totalDelta : 0.0;
+                            finalCalculatedLine = Number(Math.max(17.5, Math.min(99.5, bdProjectedLine + dvTotDelta)).toFixed(1));
                             activeModelProb = Math.max(0.50, totProbFn(Math.abs(finalCalculatedLine - vegasLine)));
                         } else {
                             finalCalculatedLine = baseProjectedLine;
@@ -1029,10 +1106,13 @@ function recalculateAndRenderAll(opts = {}) {
                         const isHomeMl = !isAwayPlayer;
                         baseProjectedLine = isHomeMl ? m9Base.fairHomeSpread : Number((-m9Base.fairHomeSpread).toFixed(2));
                         bdProjectedLine = isHomeMl ? m9Bd.fairHomeSpread : Number((-m9Bd.fairHomeSpread).toFixed(2));
+                        const dvMlDelta = (mode === "davinci" && gameRecord.daVinciScript && gameRecord.daVinciScript.isCustom)
+                            ? (isHomeMl ? gameRecord.daVinciScript.spreadDelta : -gameRecord.daVinciScript.spreadDelta)
+                            : 0.0;
                         finalCalculatedLine = (mode === "balls_deep")
                             ? bdProjectedLine
                             : ((mode === "davinci")
-                                ? (isHomeMl ? m9.fairHomeSpread : Number((-m9.fairHomeSpread).toFixed(2)))
+                                ? Number((bdProjectedLine + dvMlDelta).toFixed(2))
                                 : baseProjectedLine);
 
                         const lgMlEng = (typeof getLeagueEngine === "function") ? getLeagueEngine(gameLeague) : null;
@@ -1097,8 +1177,10 @@ function recalculateAndRenderAll(opts = {}) {
                     let tipDisplayLabel = cleanLabelCodes(prop.player);
                     let activeDisplayLabel = cleanLabelCodes(prop.player);
                     let lineDisplay = fmtSigned(vegasLine);
-                    const isUnderdogMl = Boolean(prop.market_type === "moneyline" && (prop.is_underdog || Number(prop.base_odds_over || -110) > 0));
-                    const isUpsetMlPick = Boolean(prop.market_type === "moneyline" && isUnderdogMl && activeModelProb > 0.50);
+                    const mlOddsVal = Number(prop.base_odds_over || -110);
+                    const isUnderdogMl = Boolean(prop.market_type === "moneyline" && (prop.is_underdog || mlOddsVal > 0));
+                    const mlCredible = Boolean(prop.market_type !== "moneyline" || (activeModelProb >= 0.48 && mlOddsVal <= 300));
+                    const isUpsetMlPick = Boolean(prop.market_type === "moneyline" && isUnderdogMl && activeModelProb > 0.50 && mlOddsVal <= 300);
 
                     if (prop.market_type === "spread") {
                         shortTitle = `${pickTeamCode} ${fmtSigned(vegasLine)}`;
@@ -1132,8 +1214,11 @@ function recalculateAndRenderAll(opts = {}) {
 
                     const tipEvPct = Number(m2Tip.evPercentage.toFixed(2));
                     const activeEvPct = Number(m2Active.evPercentage.toFixed(2));
-                    const tipBadge = gatekeeper.blocked ? "PASS" : getTierFromEv(tipEvPct);
-                    const activeBadge = gatekeeper.blocked ? "PASS" : getTierFromEv(activeEvPct);
+                    const rawTipTier = getTierFromEv(tipEvPct);
+                    const rawActiveTier = getTierFromEv(activeEvPct);
+                    const tipCredible = (prop.market_type !== "moneyline") || (tipModelProb >= 0.48 && mlOddsVal <= 300);
+                    const tipBadge = gatekeeper.blocked ? "PASS" : ((rawTipTier === "SMASH" && !tipCredible) ? "TOO_CLOSE" : rawTipTier);
+                    const activeBadge = gatekeeper.blocked ? "PASS" : ((rawActiveTier === "SMASH" && !mlCredible) ? "TOO_CLOSE" : rawActiveTier);
 
                     AppState.processedProps.push({
                         propKey,
@@ -1316,24 +1401,27 @@ function recalculateAndRenderAll(opts = {}) {
 }
 
 // ==========================================
-// VIEW 1A: PICKFINDER-STYLE SCANNABLE PICKS FEED
+// VIEW 1A: 1-TILE-PER-GAME MATCHUP CARDS (ALL MARKETS) + SINGLE-MARKET LEADERBOARD
 // ==========================================
+function getConfidenceScore(p) {
+    if (!p) return -999;
+    return Number((p.evPct * Math.pow(Math.max(0.05, p.activeModelProbRaw || 0.5), 1.5)).toFixed(3));
+}
+
 function getVisibleFeedProps() {
     const activeGames = AppState.processedGames.filter(g => !isGameCompletedFinal(g));
     const activeGameIds = new Set(activeGames.map(g => g.gameId));
     const pool = [];
 
-    // Keep feed scannable & clean: 1 highest-EV spread side per game (fav or dog) + 1 total per game
     activeGames.forEach(g => {
         const gSpreads = AppState.processedProps
             .filter(p => p.gameId === g.gameId && p.marketType === "spread")
             .sort((a, b) => b.tipEvPct - a.tipEvPct);
         const gTotals = AppState.processedProps
             .filter(p => p.gameId === g.gameId && p.marketType === "total");
-
         const gMls = AppState.processedProps
             .filter(p => p.gameId === g.gameId && p.marketType === "moneyline")
-            .sort((a, b) => b.evPct - a.evPct);
+            .sort((a, b) => b.activeModelPct - a.activeModelPct);
 
         if (gSpreads[0]) pool.push(gSpreads[0]);
         if (gTotals[0]) pool.push(gTotals[0]);
@@ -1341,11 +1429,8 @@ function getVisibleFeedProps() {
             if (AppState.marketFilter === "moneyline") {
                 gMls.forEach(m => pool.push(m));
             } else {
-                // On All Markets, show the single highest-EV ML side (or projected outright winner)
-                const bestMl = (gMls[0].evPct > 0)
-                    ? gMls[0]
-                    : [...gMls].sort((a, b) => b.activeModelPct - a.activeModelPct)[0];
-                if (bestMl) pool.push(bestMl);
+                // Upgrade #2: Always surface the projected outright winner (>=50% win prob), never an 8% cupcake!
+                pool.push(gMls[0]);
             }
         }
         AppState.processedProps
@@ -1372,12 +1457,90 @@ function sortFeedProps(list) {
         arr.sort((a, b) => b.activeModelPct - a.activeModelPct);
     } else if (AppState.sortOrder === "weather") {
         arr.sort((a, b) => ((b.gameRecord && b.gameRecord.weatherImpact.score) || 0) - ((a.gameRecord && a.gameRecord.weatherImpact.score) || 0));
-    } else if (AppState.sortOrder === "kickoff") {
-        arr.sort((a, b) => (a.commenceMs || 0) - (b.commenceMs || 0));
+    } else if (AppState.sortOrder === "ev") {
+        arr.sort((a, b) => getConfidenceScore(b) - getConfidenceScore(a));
     } else {
-        arr.sort((a, b) => b.evPct - a.evPct);
+        // Default: Chronological Kickoff Order (Live in-play games pinned first, then earliest kickoff, tie-break confidence edge)
+        arr.sort((a, b) => {
+            const aLive = Boolean(getEspnScoreMatch(a.league, a.matchup) && getEspnScoreMatch(a.league, a.matchup).state === "in") ? 0 : 1;
+            const bLive = Boolean(getEspnScoreMatch(b.league, b.matchup) && getEspnScoreMatch(b.league, b.matchup).state === "in") ? 0 : 1;
+            if (aLive !== bLive) return aLive - bLive;
+            const timeDiff = (a.commenceMs || 0) - (b.commenceMs || 0);
+            if (timeDiff !== 0) return timeDiff;
+            return getConfidenceScore(b) - getConfidenceScore(a);
+        });
     }
     return arr;
+}
+
+function buildMarketCellHTML(p, labelTag) {
+    if (!p) {
+        return `<div class="market-cell" style="opacity:0.45; cursor:default;"><div class="mc-top"><span>${labelTag}</span></div><div class="mc-line" style="color:var(--text-3);">N/A</div><div class="mc-foot"><span style="color:var(--text-3);">--</span></div></div>`;
+    }
+    const isSel = (p.propKey === AppState.selectedPropKey);
+    const inSlip = AppState.selectedParlayLegs.has(p.propKey);
+    const col = getTierColor(p.tierBadge);
+    const isMl = (p.marketType === "moneyline");
+    const projTxt = isMl
+        ? `${p.activeModelPct.toFixed(0)}% Win`
+        : `Proj ${p.marketType === "spread" ? fmtSigned(p.projectedMean, 1) : Number(p.projectedMean).toFixed(1)}`;
+    const cellTitle = isMl
+        ? `${p.pickTeamCode} ${p.baseOdds > 0 ? "+" : ""}${p.baseOdds}`
+        : (p.marketType === "spread" ? p.shortTitle : p.lineDisplay);
+
+    return `
+        <div class="market-cell ${isSel ? "selected" : ""}" onclick="window.selectPick('${p.propKey}', true)">
+            <div class="mc-top">
+                <span>${labelTag}</span>
+                ${renderTierBadgeHTML(p.tierBadge)}
+            </div>
+            <div class="mc-line">${cellTitle}</div>
+            <div class="mc-foot">
+                <span style="color:${col}; font-weight:700;">${projTxt} · ${p.evPct > 0 ? "+" : ""}${p.evPct.toFixed(0)}%</span>
+                <button type="button" class="mini-add-btn ${inSlip ? "in-slip" : ""}" title="${inSlip ? "Remove from Slip" : "Add to Slip"}" onclick="window.toggleParlayLeg('${p.propKey}', event)">${inSlip ? "✓" : "+"}</button>
+            </div>
+        </div>
+    `;
+}
+
+function buildUnifiedMatchupCardHTML(gameBundle) {
+    const { g, spreadProp, totalProp, mlProp } = gameBundle;
+    const espnMatch = getEspnScoreMatch(g.league, g.matchup);
+    const isLive = Boolean(espnMatch && espnMatch.state === "in");
+    const hasSelected = [spreadProp, totalProp, mlProp].some(p => p && p.propKey === AppState.selectedPropKey);
+    const slotProp = [spreadProp, totalProp].find(p => p && p.flagshipSlot);
+    const slotBadge = slotProp
+        ? `<span class="badge ${slotProp.flagshipSlot.includes("MÉNAGE") ? "b-gold" : "b-cyan"}">${slotProp.flagshipSlot.replace("MÉNAGE À TROIS", "MÉNAGE").replace("5-PACK ", "")}</span>`
+        : "";
+    const upsetBadge = (mlProp && mlProp.isUpsetMlPick)
+        ? (AppState.activeMode === "tip" ? `<span class="badge b-gold">🔒 DOG UPSET</span>` : `<span class="badge b-gold">🐶 UPSET ALERT</span>`)
+        : "";
+    const customBadge = (AppState.activeMode === "davinci" && g.daVinciScript && g.daVinciScript.isCustom)
+        ? `<span class="badge b-gold">🎨 CUSTOM</span>`
+        : "";
+
+    return `
+        <div class="matchup-card ${hasSelected ? "selected" : ""} ${isLive ? "is-live" : ""}">
+            <div class="matchup-head">
+                <div class="matchup-title-row">
+                    <span class="mono" style="font-size:11px; color:var(--text-3);">${g.league}</span>
+                    <span>${g.matchup}</span>
+                    <span class="mono" style="font-size:11px; color:var(--text-2); font-weight:600;">
+                        ${isLive ? `<strong style="color:var(--gold);">🔴 ${espnMatch.shortDetail || "LIVE"} · ${espnMatch.scoreStr}</strong>` : g.kickoffShort}
+                    </span>
+                    ${slotBadge}${upsetBadge}${customBadge}
+                </div>
+                <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
+                    ${renderWeatherPillHTML(g)}
+                </div>
+            </div>
+            <div class="market-strip">
+                ${buildMarketCellHTML(spreadProp, "SPREAD")}
+                ${buildMarketCellHTML(totalProp, "TOTAL")}
+                ${buildMarketCellHTML(mlProp, "MONEYLINE")}
+            </div>
+        </div>
+    `;
 }
 
 function buildPickRowHTML(p) {
@@ -1457,6 +1620,61 @@ function renderPicksFeed() {
         return;
     }
 
+    // Upgrade #1: Unified 1-Tile-Per-Game Matchup Cards when viewing "All Markets"
+    if (AppState.marketFilter === "ALL") {
+        const byGame = new Map();
+        visible.forEach(p => {
+            if (!byGame.has(p.gameId)) {
+                byGame.set(p.gameId, { g: p.gameRecord, spreadProp: null, totalProp: null, mlProp: null, bestScore: -999, maxProb: 0 });
+            }
+            const b = byGame.get(p.gameId);
+            if (p.marketType === "spread" && !b.spreadProp) b.spreadProp = p;
+            else if (p.marketType === "total" && !b.totalProp) b.totalProp = p;
+            else if (p.marketType === "moneyline" && !b.mlProp) b.mlProp = p;
+            b.bestScore = Math.max(b.bestScore, getConfidenceScore(p));
+            b.maxProb = Math.max(b.maxProb, p.activeModelPct || 0);
+        });
+
+        const sortBundles = (list) => {
+            const arr = [...list];
+            if (AppState.sortOrder === "prob") arr.sort((a, b) => b.maxProb - a.maxProb);
+            else if (AppState.sortOrder === "weather") arr.sort((a, b) => ((b.g.weatherImpact && b.g.weatherImpact.score) || 0) - ((a.g.weatherImpact && a.g.weatherImpact.score) || 0));
+            else if (AppState.sortOrder === "ev") arr.sort((a, b) => b.bestScore - a.bestScore);
+            else {
+                arr.sort((a, b) => {
+                    const aLive = Boolean(getEspnScoreMatch(a.g.league, a.g.matchup) && getEspnScoreMatch(a.g.league, a.g.matchup).state === "in") ? 0 : 1;
+                    const bLive = Boolean(getEspnScoreMatch(b.g.league, b.g.matchup) && getEspnScoreMatch(b.g.league, b.g.matchup).state === "in") ? 0 : 1;
+                    if (aLive !== bLive) return aLive - bLive;
+                    const aMs = a.g.commenceTime ? (new Date(a.g.commenceTime).getTime() || 0) : 0;
+                    const bMs = b.g.commenceTime ? (new Date(b.g.commenceTime).getTime() || 0) : 0;
+                    if (aMs !== bMs) return aMs - bMs;
+                    return b.bestScore - a.bestScore;
+                });
+            }
+            return arr;
+        };
+
+        const allBundles = Array.from(byGame.values());
+        const currBundles = sortBundles(allBundles.filter(b => b.g.isCurrentWeek));
+        const lookBundles = sortBundles(allBundles.filter(b => !b.g.isCurrentWeek));
+
+        let html = currBundles.map(buildUnifiedMatchupCardHTML).join("");
+        if (lookBundles.length > 0) {
+            const cutoffDt = new Date(AppState.mnfCutoffMs);
+            const cutoffLabel = isNaN(cutoffDt.getTime()) ? "Post-MNF" : cutoffDt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+            html += `
+                <div class="lookahead-divider">
+                    <span style="color:var(--gold); font-weight:800;">🔭 POST-MNF LOOKAHEAD SLATE (${cutoffLabel})</span>
+                    <span style="color:var(--text-2);">${lookBundles.length} Early Matchups · Excluded from this week's 5-Pack</span>
+                </div>
+                ${lookBundles.map(buildUnifiedMatchupCardHTML).join("")}
+            `;
+        }
+        container.innerHTML = html;
+        return;
+    }
+
+    // Single-Market Leaderboard (Spreads / Totals / Moneyline)
     const currentWeekPicks = sortFeedProps(visible.filter(p => p.isCurrentWeek));
     const lookaheadPicks = sortFeedProps(visible.filter(p => !p.isCurrentWeek));
 
@@ -1618,6 +1836,37 @@ function renderPickInspector() {
                     `).join("")}
                 </div>
             </div>
+
+            <!-- UPGRADE #8: DUAL-SLIDER DAVINCI GAME-SCRIPT SIMULATOR (ACTIVE ONLY IN DAVINCI MODE) -->
+            ${AppState.activeMode === "davinci" ? (() => {
+                const sc = g.daVinciScript || { isCustom: false, spreadDelta: 0, totalDelta: 0, simHomeSpread: g.m9Bd.fairHomeSpread, simTotal: g.baseTelemetryTotal, simHomePts: 22, simAwayPts: 21, simHomeMlPct: 50, simAwayMlPct: 50 };
+                return `
+                    <div class="dv-script-box">
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                            <span class="mono" style="font-size:11px; font-weight:800; color:var(--gold);">🎨 DAVINCI GAME-SCRIPT SIMULATOR</span>
+                            ${sc.isCustom ? `<button type="button" class="chip" style="padding:2px 8px; font-size:10.5px;" onclick="window.resetDaVinciGameScript('${g.gameId}')">Reset Game</button>` : `<span class="mono" style="font-size:10px; color:var(--text-3);">Model Baseline</span>`}
+                        </div>
+                        <div class="dv-score-banner">
+                            <span>Script: ${g.awayTeam} ${sc.simAwayPts} – ${g.homeTeam} ${sc.simHomePts}</span>
+                            <span style="color:var(--cyan);">${g.homeTeam} ${fmtSigned(sc.simHomeSpread, 1)} · O/U ${sc.simTotal}</span>
+                        </div>
+                        <div class="dv-slider-row">
+                            <div class="dv-slider-meta">
+                                <span>Margin Shift (${g.homeTeam} Spread)</span>
+                                <strong style="color:var(--gold);">${sc.spreadDelta > 0 ? "+" : ""}${sc.spreadDelta.toFixed(1)} pts</strong>
+                            </div>
+                            <input type="range" class="dv-range" min="-30" max="30" step="0.5" value="${sc.spreadDelta}" oninput="window.updateDaVinciGameScript('${g.gameId}', 'spreadDelta', this.value)" />
+                        </div>
+                        <div class="dv-slider-row">
+                            <div class="dv-slider-meta">
+                                <span>Total / Pace Shift</span>
+                                <strong style="color:var(--cyan);">${sc.totalDelta > 0 ? "+" : ""}${sc.totalDelta.toFixed(1)} pts</strong>
+                            </div>
+                            <input type="range" class="dv-range" min="-20" max="20" step="0.5" value="${sc.totalDelta}" oninput="window.updateDaVinciGameScript('${g.gameId}', 'totalDelta', this.value)" />
+                        </div>
+                    </div>
+                `;
+            })() : ""}
 
             <!-- BALLS DEEP EXECUTION PANEL (STRICT PAYWALL IN JUST THE TIP MODE) -->
             ${locked ? `
@@ -2014,8 +2263,8 @@ function renderCompendiumBoard() {
     tbody.innerHTML = games.map(g => {
         if (isLocked) {
             return `
-                <tr>
-                    <td><strong>${g.matchup}</strong><br><small style="color:var(--text-3);">${g.league}</small></td>
+                <tr class="clickable-row" title="Click to open M1–M9 Dossier" onclick="window.openModuleDossier('live', '${g.gameId}')">
+                    <td><strong>${g.matchup}</strong> <span style="color:var(--cyan); font-size:10px;">↗</span><br><small style="color:var(--text-3);">${g.league}</small></td>
                     <td colspan="7" style="cursor:pointer;" onclick="window.unlockBallsDeepMode(event)">
                         ${renderLockSpanHTML("🔒 Unlock Balls Deep to view M7–M13 Home-Team Compendium & Unified P_agg →")}
                     </td>
@@ -2055,8 +2304,8 @@ function renderCompendiumBoard() {
             ? `<br><small style="color:var(--purple);">✈️ Delay: ${g.m8.delayTotalDragPts} tot</small>` : "";
 
         return `
-            <tr>
-                <td><strong>${g.matchup}</strong><br><small style="color:var(--text-3);">${g.league} · Home: ${g.homeTeam}</small></td>
+            <tr class="clickable-row" title="Click to open full 13-Module Dossier" onclick="window.openModuleDossier('live', '${g.gameId}')">
+                <td><strong>${g.matchup}</strong> <span style="color:var(--cyan); font-size:10px;">↗</span><br><small style="color:var(--text-3);">${g.league} · Home: ${g.homeTeam}</small></td>
                 <td>${g.m7.airDensityRho} kg/m³</td>
                 <td style="color:${g.m8.circadianStrainIndex > 0.8 ? "var(--red)" : "var(--text-1)"};">${g.m8.circadianStrainIndex}${delayTag}</td>
                 <td style="color:var(--cyan); font-weight:700;">Z${em.zoneNumber} ${em.direction.slice(0, 4)} (${em.psiElevPts} pts)<br><small style="color:var(--text-2);">&Phi;_bio: ${g.m11.phiBioScore}</small></td>
@@ -2110,8 +2359,8 @@ function renderTelemetryInspector() {
                     const qbTag = g.thirdStringQbAlert ? `<br><small style="color:var(--cyan);">🔄 3rd-QB: ${g.thirdStringTeam} TT Under</small>` : "";
 
                     return `
-                        <tr>
-                            <td><strong>${g.matchup}</strong>${qbTag}</td>
+                        <tr class="clickable-row" title="Click to open full 13-Module Dossier" onclick="window.openModuleDossier('live', '${g.gameId}')">
+                            <td><strong>${g.matchup}</strong> <span style="color:var(--cyan); font-size:10px;">↗</span>${qbTag}</td>
                             <td style="color:var(--cyan); font-weight:700;">${modeDisplay}</td>
                             <td>CSI: ${g.m8.circadianStrainIndex} (&Phi;: ${g.m8.phiCircadianPenalty})</td>
                             <td style="color:${rzColor}; font-weight:700;">${rzVal > 0 ? "+" : ""}${rzVal} pts</td>
@@ -2195,6 +2444,211 @@ function renderFaqAccordion() {
         `;
     }).join("");
 }
+
+
+// ==========================================
+// UPGRADE #3: UNIFIED LEDGER FILTER HANDLERS
+// ==========================================
+window.setLedgerWeekFilter = function(wk) {
+    AppState.ledgerWeekFilter = wk || "ALL";
+    renderHistoricalLedger();
+};
+window.setLedgerOutcomeFilter = function(out) {
+    AppState.ledgerOutcomeFilter = out || "ALL";
+    renderHistoricalLedger();
+};
+window.setLedgerMarketFilter = function(mk) {
+    AppState.ledgerMarketFilter = mk || "ALL";
+    renderHistoricalLedger();
+};
+window.setLedgerSearchQuery = function(q) {
+    AppState.ledgerSearchQuery = String(q || "").trim().toLowerCase();
+    renderHistoricalLedger();
+};
+
+// ==========================================
+// UPGRADES #4 & #5: UNIFIED 13-MODULE GAME DOSSIER & PRE-KICK RECEIPT DRAWER
+// ==========================================
+function build13ModuleDossierFromInputs(meta) {
+    const locked = (AppState.activeMode === "tip");
+    const env = meta.envPayload || {};
+    const circ = meta.circPayload || {};
+    const homeTel = meta.homeTel || {};
+    const awayTel = meta.awayTel || {};
+    const lg = meta.league || "NFL";
+    const m7 = calcBarometricBallistics(env);
+    const m8 = calcCircadianStrain(circ, meta.kickoffLocalHour || 13);
+    const elev = calcTenZoneElevationMatrix(env, circ, locked ? "tip" : "balls_deep", 0.0);
+    const m11 = calcBiophysicalMassLoad(env, homeTel, 95.0, 0.62, locked ? "tip" : "balls_deep", 0.0);
+    const m12 = calcTurnoverEPAMatrix({ home: homeTel, away: awayTel }, lg, locked ? "tip" : "balls_deep", 0.0);
+    const psiCoupled = locked ? 0 : Number(Math.max(-2.85, Math.min(2.85, -calcCoupledInteractionPsi(m11.phiBioScore, m12.netTurnoverEPA, 0.0))).toFixed(3));
+    const synthGame = {
+        league: lg, home_team: meta.homeTeam, away_team: meta.awayTeam,
+        hfa_base: meta.hfaBase || (lg === "NCAA" ? 2.6180339887 : 1.9416110252),
+        kickoff_local_hour: meta.kickoffLocalHour || 13,
+        team_telemetry: { home: homeTel, away: awayTel }
+    };
+    const vHome = (meta.vegasHomeSpread !== null && meta.vegasHomeSpread !== undefined) ? Number(meta.vegasHomeSpread) : 0.0;
+    const m9Tip = calcFullGameFairMargin(synthGame, m8.phiCircadianPenalty, 0, "tip", vHome, 0, elev, 0.0);
+    const m9Bd = calcFullGameFairMargin(synthGame, m8.phiCircadianPenalty, psiCoupled, "balls_deep", vHome, elev.psiElevPts, elev, 0.0);
+    const m13 = m9Bd.m13Details || { mRiseMultiplier: 1.0, mRiseSignedHomeDelta: 0.0, dogHavocRatio: 1.0, m11OverrideApplied: false, coachSyncBlocked: false };
+
+    const fibRes = calcMasterFibonacciAggregate({
+        m1: (vHome - m9Tip.fairHomeSpread) * 0.08,
+        m5: -(m9Tip.epaContribution || 0) * 0.05,
+        m7: (1.225 - m7.airDensityRho) * 2.0,
+        m6: (m9Tip.deltaRzFin || 0) * -0.08,
+        m10: 0,
+        m12: (m12.netTurnoverEPA || 0) * 0.12,
+        m2: 0, m3: 0,
+        m11: (m11.phiBioScore - elev.psiElevPts) * 0.25,
+        m4: 0,
+        m8: (m8.circadianStrainIndex || 0) * 0.12
+    }, 13, 0.618, m13.mRiseMultiplier);
+
+    const hTier = homeTel.fbs_tier_label ? ` (${homeTel.fbs_tier_label})` : "";
+    const aTier = awayTel.fbs_tier_label ? ` (${awayTel.fbs_tier_label})` : "";
+    const probCol = fibRes.liveAdjustedProb >= 52.4 ? "var(--emerald)" : "var(--red)";
+
+    return `
+        <div class="stat-trio">
+            <div class="stat-box">
+                <div class="stat-k">Home Fair (Tip)</div>
+                <div class="stat-v">${meta.homeTeam} ${fmtSigned(m9Tip.fairHomeSpread, 1)}</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-k">Home Fair (BD)</div>
+                <div class="stat-v" style="color:${locked ? "var(--gold)" : "var(--cyan)"};">${locked ? renderLockSpanHTML("🔒 BD") : `${meta.homeTeam} ${fmtSigned(m9Bd.fairHomeSpread, 1)}`}</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-k">Home P_agg</div>
+                <div class="stat-v" style="color:${locked ? "var(--gold)" : probCol};">${locked ? renderLockSpanHTML("🔒 BD") : `${fibRes.liveAdjustedProb.toFixed(1)}%`}</div>
+            </div>
+        </div>
+
+        <div class="dossier-tier-card">
+            <div class="dossier-tier-head"><span>TIER 1 — CORE EFFICIENCY (WEIGHT 34)</span><span>M1 · M5 · M7</span></div>
+            <div class="dossier-mod-row"><span class="dossier-mod-k">M1 Vegas Closing</span><span class="dossier-mod-v">${meta.homeTeam} ${fmtSigned(vHome, 1)} · O/U ${meta.vegasTotalLine || "--"}</span></div>
+            <div class="dossier-mod-row"><span class="dossier-mod-k">M5 Trench / Pass-Pro</span><span class="dossier-mod-v">${(homeTel.lt_or_rb_pass_pro_out || awayTel.lt_or_rb_pass_pro_out) ? "⚠️ Compromised OL" : "✅ Healthy Pass-Pro"}</span></div>
+            <div class="dossier-mod-row"><span class="dossier-mod-k">M7 Air Density (&rho;)</span><span class="dossier-mod-v">${env.is_dome ? "Dome 72°F · 1.204" : `${Math.round(env.temperature_f || 58)}°F · ${Math.round(env.wind_mph || 0)}mph · ${m7.airDensityRho}`}</span></div>
+            <div class="dossier-mod-row"><span class="dossier-mod-k">M7 Ballistics (&Delta;FG / &Delta;Y)</span><span class="dossier-mod-v">${locked ? renderLockSpanHTML() : `${fmtSigned(m7.fgRangeShiftYards, 1)} yds / ${fmtSigned(m7.passGameModifierYards, 1)} yds`}</span></div>
+        </div>
+
+        <div class="dossier-tier-card">
+            <div class="dossier-tier-head"><span>TIER 2 — HIGH LEVERAGE (WEIGHT 21)</span><span>M6 · M10 · M12</span></div>
+            <div class="dossier-mod-row"><span class="dossier-mod-k">M6 / M9 Red-Zone (&Delta;RZ)</span><span class="dossier-mod-v">${fmtSigned(m9Tip.deltaRzFin, 2)} pts</span></div>
+            <div class="dossier-mod-row"><span class="dossier-mod-k">M10 Combinatorics Fit</span><span class="dossier-mod-v">30% Boost &amp; Round Robin Eligible</span></div>
+            <div class="dossier-mod-row"><span class="dossier-mod-k">M12 Net Turnover EPA</span><span class="dossier-mod-v" style="color:${locked ? "var(--gold)" : (m12.netTurnoverEPA >= 0 ? "var(--emerald)" : "var(--red)")};">${locked ? renderLockSpanHTML() : `${fmtSigned(m12.netTurnoverEPA, 3)} (Ψ ${fmtSigned(psiCoupled, 2)})`}</span></div>
+        </div>
+
+        <div class="dossier-tier-card">
+            <div class="dossier-tier-head"><span>TIER 3 — SIZING &amp; ALTITUDE (WEIGHT 13)</span><span>M2 · M3 · M11</span></div>
+            <div class="dossier-mod-row"><span class="dossier-mod-k">M2 Quarter-Kelly Cap</span><span class="dossier-mod-v">4.0% Hard Single-Bet Ceiling</span></div>
+            <div class="dossier-mod-row"><span class="dossier-mod-k">M3 2-Key &amp; Wong Engine</span><span class="dossier-mod-v">${locked ? renderLockSpanHTML() : "Active 2-Key Perpetuity + 6/7pt Wong"}</span></div>
+            <div class="dossier-mod-row"><span class="dossier-mod-k">M11 10-Zone Elevation</span><span class="dossier-mod-v">${locked ? renderLockSpanHTML() : `Z${elev.zoneNumber} ${elev.direction} (${elev.deltaFeet > 0 ? "+" : ""}${elev.deltaFeet} ft · Ψ ${elev.psiElevPts} pts)`}</span></div>
+            <div class="dossier-mod-row"><span class="dossier-mod-k">M11 Gravity / &Phi;_bio</span><span class="dossier-mod-v">${locked ? renderLockSpanHTML() : `${m11.localGravityG} m/s² · &Phi; ${m11.phiBioScore}`}</span></div>
+        </div>
+
+        <div class="dossier-tier-card">
+            <div class="dossier-tier-head"><span>TIER 4, M9 HUB &amp; M13 SACRED GEO</span><span>M4 · M8 · M9 · M13</span></div>
+            <div class="dossier-mod-row"><span class="dossier-mod-k">M4 TOP Starvation Check</span><span class="dossier-mod-v">${Math.abs(vHome) >= 10 ? "⚠️ Active on ≥+10 Dog" : "✅ Clear"}</span></div>
+            <div class="dossier-mod-row"><span class="dossier-mod-k">M8 Road Travel CSI</span><span class="dossier-mod-v">${Math.round(circ.away_travel_miles || 0)} mi · TZ ${circ.away_tz_shift || 0} · CSI ${m8.circadianStrainIndex}</span></div>
+            <div class="dossier-mod-row"><span class="dossier-mod-k">M9 Team EPA &amp; Tiers</span><span class="dossier-mod-v">${meta.awayTeam}${aTier}: ${Number(awayTel.net_epa_per_play || 0).toFixed(3)} | ${meta.homeTeam}${hTier}: ${Number(homeTel.net_epa_per_play || 0).toFixed(3)}</span></div>
+            <div class="dossier-mod-row"><span class="dossier-mod-k">M9 Verified QB Wire</span><span class="dossier-mod-v">${Math.abs(m9Tip.injurySpreadDiff || 0) > 0 ? `ΔQB ${fmtSigned(m9Tip.injurySpreadDiff, 2)} pts` : "No Starting QB Out"}</span></div>
+            <div class="dossier-mod-row"><span class="dossier-mod-k">M13 Sacred Geo (M_rise)</span><span class="dossier-mod-v">${locked ? renderLockSpanHTML() : `${m13.mRiseMultiplier.toFixed(4)}x (Home ${fmtSigned(m13.mRiseSignedHomeDelta, 4)})`}</span></div>
+            <div class="dossier-mod-row"><span class="dossier-mod-k">Home Master &Omega;_fib</span><span class="dossier-mod-v" style="color:${locked ? "var(--gold)" : probCol};">${locked ? renderLockSpanHTML() : `${fmtSigned(fibRes.omegaFibScore, 4)} → ${fibRes.liveAdjustedProb.toFixed(1)}%`}</span></div>
+        </div>
+    `;
+}
+
+window.openModuleDossier = function(kind, id, event) {
+    if (event) { event.preventDefault(); event.stopPropagation(); }
+    const drawer = document.getElementById("dossier-drawer");
+    const bd = document.getElementById("drawer-backdrop");
+    const titleEl = document.getElementById("dossier-drawer-title");
+    const subEl = document.getElementById("dossier-drawer-sub");
+    const bodyEl = document.getElementById("dossier-drawer-body");
+    const footEl = document.getElementById("dossier-drawer-foot");
+    if (!drawer || !bodyEl) return;
+
+    AppState.activeDossier = { kind, id };
+    window.toggleSlipDrawer(false);
+    window.closeMobileInspector();
+
+    if (kind === "live") {
+        const g = AppState.processedGames.find(x => x.gameId === id);
+        if (!g) return;
+        if (titleEl) titleEl.textContent = `${g.matchup} — 13-Module Dossier`;
+        if (subEl) subEl.textContent = `${g.league} · ${g.kickoffShort} · HOME-TEAM P_AGG FRAME`;
+        bodyEl.innerHTML = build13ModuleDossierFromInputs({
+            league: g.league, homeTeam: g.homeTeam, awayTeam: g.awayTeam,
+            vegasHomeSpread: g.vegasHomeSpread, vegasTotalLine: g.vegasTotalLine,
+            kickoffLocalHour: 13, hfaBase: g.league === "NCAA" ? 2.6180339887 : 1.9416110252,
+            envPayload: g.envPayload, circPayload: g.circPayload,
+            homeTel: g.homeTel, awayTel: g.awayTel
+        });
+        const topSpread = AppState.processedProps.find(p => p.gameId === g.gameId && p.marketType === "spread");
+        if (footEl) {
+            footEl.innerHTML = `
+                <div style="display:flex; gap:8px;">
+                    ${topSpread ? `<button type="button" class="primary-btn cyan" style="flex:2;" onclick="window.closeModuleDossier(); window.setAppView('picks'); window.selectPick('${topSpread.propKey}', true);">Open in Research Inspector</button>` : ""}
+                    <button type="button" class="chip" style="flex:1; justify-content:center;" onclick="window.closeModuleDossier()">Close</button>
+                </div>
+            `;
+        }
+    } else {
+        const ledgerObj = (AppState.rawPayload && AppState.rawPayload.historical_ledger) || {};
+        const rawEntries = ledgerObj.entries || {};
+        const entriesMap = Object.assign({}, rawEntries, PERMANENT_LEDGER_ARCHIVE);
+        const entry = entriesMap[id];
+        if (!entry) return;
+        const cleanMatchup = cleanLabelCodes(entry.matchup || "");
+        const snap = entry.pre_kick_snapshot || null;
+        if (titleEl) titleEl.textContent = `${cleanMatchup} — Pre-Kick Receipt`;
+        if (subEl) subEl.textContent = `${entry.league || "NFL"} · FINAL: ${entry.final_score || "GRADED"}${snap && snap.locked_at_utc ? ` · LOCKED ${snap.locked_at_utc}` : ""}`;
+
+        const sr = entry.spread_record;
+        const tr = entry.total_record;
+        const mr = entry.ml_record;
+        const summaryBadges = `
+            <div class="dossier-tier-card" style="border-color:var(--emerald-bd);">
+                <div class="dossier-tier-head" style="color:var(--emerald);"><span>LOCKED CLOSING RECEIPT &amp; FINAL GRADE</span><span>${entry.final_score || "FINAL"}</span></div>
+                ${sr ? `<div class="dossier-mod-row"><span class="dossier-mod-k">Spread: ${cleanLabelCodes(sr.pick_label || "")}</span><span class="dossier-mod-v">Proj ${sr.tip_proj} · ${sr.result_tip || "GRADED"}</span></div>` : ""}
+                ${tr ? `<div class="dossier-mod-row"><span class="dossier-mod-k">Total: ${cleanLabelCodes(tr.pick_label || "")}</span><span class="dossier-mod-v">Proj ${tr.tip_proj} · ${tr.result_tip || "GRADED"}</span></div>` : ""}
+                ${mr ? `<div class="dossier-mod-row"><span class="dossier-mod-k">ML Winner: ${cleanTeamCode(mr.pick_team || "")} ML</span><span class="dossier-mod-v">${Number(mr.tip_win_pct || 50).toFixed(1)}% · ${mr.result_tip || "GRADED"}</span></div>` : ""}
+            </div>
+        `;
+
+        if (snap) {
+            bodyEl.innerHTML = summaryBadges + build13ModuleDossierFromInputs({
+                league: entry.league || "NFL",
+                homeTeam: cleanTeamCode(entry.home_team || ""),
+                awayTeam: cleanTeamCode(entry.away_team || ""),
+                vegasHomeSpread: snap.vegas_home_spread,
+                vegasTotalLine: snap.vegas_total_line,
+                kickoffLocalHour: snap.kickoff_local_hour || 13,
+                hfaBase: snap.hfa_base,
+                envPayload: snap.environmental_payload || {},
+                circPayload: snap.circadian_payload || {},
+                homeTel: (snap.team_telemetry && snap.team_telemetry.home) || {},
+                awayTel: (snap.team_telemetry && snap.team_telemetry.away) || {}
+            });
+        } else {
+            bodyEl.innerHTML = summaryBadges + `
+                <div class="empty-state" style="padding:22px 14px;">
+                    <div style="font-weight:800; color:var(--gold); margin-bottom:6px;">Archived Before Full 13-Module Snapshot Rollout</div>
+                    <div>Full pre-kick weather, EPA, injury, and 13-module receipt replay automatically activates on all newly locked games starting with scraper v239.</div>
+                </div>
+            `;
+        }
+        if (footEl) {
+            footEl.innerHTML = `<button type="button" class="primary-btn cyan" onclick="window.closeModuleDossier()">Close Receipt</button>`;
+        }
+    }
+
+    drawer.classList.add("open");
+    if (bd) bd.classList.add("open");
+};
 
 // ==========================================
 // PERMANENT ARCHIVE + ZERO-TOKEN ESPN SCOREBOARD SYNC & 6 CLICKABLE LEDGER VAULTS
@@ -2515,8 +2969,8 @@ function renderHistoricalLedger() {
     const activeSlateMatchups = new Set(AppState.processedGames.map(g => `${g.league}_${g.matchup}_${g.weekLabel || "Week 11"}`));
     const recordedPorkysMatchups = new Set();
 
-    const buildStandardRow = (weekLabel, cleanMatchup, statusLabel, type, slot, pickLabel, ledgerTier, vegasLine, baseOdds, tipColor, fmtTipProj, tipWinPct, tipEvPct, bdColor, fmtBdProj, bdWinPct, bdEvPct, safeFloorLabel, safeFloorWinPct, bdAltLabel, bdAltEvPct, gradedTip, missByPts) => `
-        <tr>
+    const buildStandardRow = (archId, weekLabel, cleanMatchup, statusLabel, type, slot, pickLabel, ledgerTier, vegasLine, baseOdds, tipColor, fmtTipProj, tipWinPct, tipEvPct, bdColor, fmtBdProj, bdWinPct, bdEvPct, safeFloorLabel, safeFloorWinPct, bdAltLabel, bdAltEvPct, gradedTip, missByPts) => `
+        <tr class="clickable-row" title="Click to replay Pre-Kick 13-Module Receipt" onclick="window.openModuleDossier('ledger', '${archId}', event)">
             <td><span style="color:var(--gold); font-size:10px; font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br><span style="font-size:11px;">${statusLabel}</span></td>
             <td>${type}${slot ? `<br><span class="badge ${slot.includes("MÉNAGE") ? "b-gold" : "b-cyan"}" style="margin-top:3px;">${slot}</span>` : ""}</td>
             <td><strong>${pickLabel}</strong> ${renderTierBadgeHTML(ledgerTier)}</td>
@@ -2748,7 +3202,7 @@ function renderHistoricalLedger() {
                     ? (showBallsDeep ? `<span class="badge b-gold">🐶 DOG UPSET</span>` : renderLockSpanHTML("🔒 Dog Upset"))
                     : `<span class="badge b-muted">FAV</span>`;
                 vaultRows.ml_winners.push(`
-                    <tr>
+                    <tr class="clickable-row" title="Click to replay Pre-Kick 13-Module Receipt" onclick="window.openModuleDossier('ledger', '${archId}', event)">
                         <td><span style="color:var(--gold); font-size:10px; font-weight:800;">${weekLabel}</span><br><strong>${cleanMatchup}</strong><br>${statusLabel}</td>
                         <td>${upsetPill}</td>
                         <td><strong>${mlTeam} ML</strong></td>
@@ -2844,7 +3298,7 @@ function renderHistoricalLedger() {
                 const fmtTipProj = isSpread ? fmtSigned(tipProj, 1) : tipProj.toFixed(1);
                 const fmtBdProj = isSpread ? fmtSigned(bdProj, 1) : bdProj.toFixed(1);
                 const rowHTML = buildStandardRow(
-                    weekLabel, cleanMatchup, statusLabel, type, slot, pickLabel, ledgerTier,
+                    archId, weekLabel, cleanMatchup, statusLabel, type, slot, pickLabel, ledgerTier,
                     vegasLine, baseOdds, tipColor, fmtTipProj, tipWinPct, tipEvPct,
                     bdColor, fmtBdProj, bdWinPct, bdEvPct, safeFloorLabel, safeFloorWinPct,
                     bdAltLabel, bdAltEvPct, gradedTip, missByPts
@@ -2927,7 +3381,7 @@ function renderHistoricalLedger() {
                 gradedTip = res.outcome; missBy = res.missBy;
             }
             upcomingRowsHTML += buildStandardRow(
-                weekLabel, g.matchup, statusLabel, isSpread ? "SPREAD" : "TOTAL", p.flagshipSlot,
+                g.gameId, weekLabel, g.matchup, statusLabel, isSpread ? "SPREAD" : "TOTAL", p.flagshipSlot,
                 p.shortTitle, ledgerTier, p.baseLine, p.baseOdds, getTierColor(ledgerTier),
                 fmtTip, p.tipModelPct.toFixed(1), p.tipEvPct.toFixed(1),
                 getTierColor(getTierFromEv(p.bdEvPct)), fmtBd, p.bdModelPct.toFixed(1), p.bdEvPct.toFixed(1),
@@ -3024,7 +3478,62 @@ function renderHistoricalLedger() {
         `;
     }
 
+    const allLedgerWeeks = Array.from(new Set(
+        Object.values(entriesMap).map(e => inferFootballWeekLabel(e, "Week 11")).filter(Boolean)
+    )).sort((a, b) => (parseInt(b.replace(/\D/g, ""), 10) || 0) - (parseInt(a.replace(/\D/g, ""), 10) || 0));
+
+    const filterRowHTML = (rawStr) => {
+        if (!rawStr) return false;
+        const txt = rawStr.toLowerCase();
+        if (AppState.ledgerWeekFilter !== "ALL" && !txt.includes(AppState.ledgerWeekFilter.toLowerCase())) return false;
+        if (AppState.ledgerOutcomeFilter === "HIT" && !txt.includes("✅ hit") && !txt.includes("✅ win") && !txt.includes("💣 dodged")) return false;
+        if (AppState.ledgerOutcomeFilter === "BLUE_BALLS" && !txt.includes("🔵 bb")) return false;
+        if (AppState.ledgerOutcomeFilter === "MISS" && !txt.includes("❌ miss") && !txt.includes("❌ loss")) return false;
+        if (AppState.ledgerMarketFilter === "SPREAD" && !txt.includes("spread")) return false;
+        if (AppState.ledgerMarketFilter === "TOTAL" && !txt.includes("total")) return false;
+        if (AppState.ledgerMarketFilter === "ML" && !txt.includes(" ml")) return false;
+        if (AppState.ledgerSearchQuery && !txt.includes(AppState.ledgerSearchQuery)) return false;
+        return true;
+    };
+
+    if (activeVaultHTML && (AppState.ledgerWeekFilter !== "ALL" || AppState.ledgerOutcomeFilter !== "ALL" || AppState.ledgerMarketFilter !== "ALL" || AppState.ledgerSearchQuery)) {
+        // Re-filter activeVaultHTML rows cleanly
+        const bodyMatch = activeVaultHTML.match(/<tbody>([\s\S]*?)<\/tbody>/);
+        if (bodyMatch) {
+            const trs = bodyMatch[1].match(/<tr[\s\S]*?<\/tr>/g) || [];
+            const kept = trs.filter(filterRowHTML);
+            const replacement = kept.length > 0
+                ? kept.join("")
+                : `<tr><td colspan="7" style="text-align:center; color:var(--text-2); padding:18px;">No graded receipts match the active Ledger filters.</td></tr>`;
+            activeVaultHTML = activeVaultHTML.replace(bodyMatch[1], replacement);
+        }
+    }
+
+    const ledgerFilterBarHTML = `
+        <div class="ledger-filter-bar">
+            <div class="chip-group">
+                <select class="search-select" onchange="window.setLedgerWeekFilter(this.value)">
+                    <option value="ALL" ${AppState.ledgerWeekFilter === "ALL" ? "selected" : ""}>Overall (All Weeks)</option>
+                    ${allLedgerWeeks.map(wk => `<option value="${wk}" ${AppState.ledgerWeekFilter === wk ? "selected" : ""}>${wk}</option>`).join("")}
+                </select>
+                <span class="chip-divider"></span>
+                <button type="button" class="chip ${AppState.ledgerOutcomeFilter === "ALL" ? "active" : ""}" onclick="window.setLedgerOutcomeFilter('ALL')">All Outcomes</button>
+                <button type="button" class="chip ${AppState.ledgerOutcomeFilter === "HIT" ? "active-smash" : ""}" onclick="window.setLedgerOutcomeFilter('HIT')">✅ Hits</button>
+                <button type="button" class="chip ${AppState.ledgerOutcomeFilter === "BLUE_BALLS" ? "active-weather" : ""}" onclick="window.setLedgerOutcomeFilter('BLUE_BALLS')">🔵 Blue Balls</button>
+                <button type="button" class="chip ${AppState.ledgerOutcomeFilter === "MISS" ? "active-red" : ""}" onclick="window.setLedgerOutcomeFilter('MISS')">❌ Misses</button>
+            </div>
+            <div class="chip-group">
+                <button type="button" class="chip ${AppState.ledgerMarketFilter === "ALL" ? "active" : ""}" onclick="window.setLedgerMarketFilter('ALL')">All Markets</button>
+                <button type="button" class="chip ${AppState.ledgerMarketFilter === "SPREAD" ? "active" : ""}" onclick="window.setLedgerMarketFilter('SPREAD')">Spread</button>
+                <button type="button" class="chip ${AppState.ledgerMarketFilter === "TOTAL" ? "active" : ""}" onclick="window.setLedgerMarketFilter('TOTAL')">Total</button>
+                <button type="button" class="chip ${AppState.ledgerMarketFilter === "ML" ? "active" : ""}" onclick="window.setLedgerMarketFilter('ML')">ML</button>
+                <input type="text" class="search-input" placeholder="Filter team..." value="${AppState.ledgerSearchQuery || ""}" oninput="window.setLedgerSearchQuery(this.value)" />
+            </div>
+        </div>
+    `;
+
     container.innerHTML = `
+        ${ledgerFilterBarHTML}
         <div class="vault-grid">
             <div class="vault-tile ${AppState.activeLedgerVault === (isPorkysCard ? "porkys_5pack" : "flagship_5pack") ? "active" : ""}" onclick="window.toggleLedgerVault('${isPorkysCard ? "porkys_5pack" : "flagship_5pack"}', event)">
                 <div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">
@@ -3154,4 +3663,4 @@ function renderLiveBottomTicker() {
     track.style.animationDuration = `${durSec}s`;
     track.innerHTML = `<span>${joined}</span>${sep}<span>${joined}</span>`;
 }
-// === END OF APP_CONTROLLER.JS (v262) ===
+// === END OF APP_CONTROLLER.JS (v263) ===
