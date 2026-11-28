@@ -1,5 +1,5 @@
 """
-DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v239 — 6-STAGE NCAA TIERS + SOS + NCAA INJURIES + ML GUARDRAILS + PRE-KICK SNAPSHOT + WEATHER BADGES)
+DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE NFL + NCAA LIVE TELEMETRY MASTER SCRAPER (v240 — NCAA 58.7% ML UPSET FLOOR + EXPANDED ESPN CODE SYNC + 6-STAGE NCAA TIERS)
 Zero-MD5-Hash, Zero-Vegas-Crutch Live Data Architecture:
   1. The Odds API: Live NFL (2 credits) & NCAA (2 credits) spreads & totals (4 credits/run).
   2. Live 2026 NFL EPA/Play & Turnovers: Pulls real 2026 weekly team stats CSV directly from nflverse-data
@@ -45,6 +45,7 @@ PI_OVER_PHI_HFA = 1.9416110252
 NCAA_HFA_BASE = 2.6180339887  # Phi + 1.0 for College Campus Hostile Environments
 LOGISTIC_K_TIGHT = GOLDEN_RATIO_PHI / (4.0 * math.pi)  # ~0.12875903
 SMASH_EV_THRESHOLD = 10.0  # +10.0% EV cutoff (~57.62% Win Prob at -110)
+NCAA_ML_UPSET_FLOOR = 0.587  # 58.7% minimum outright win prob required to call an NCAA ML dog upset
 
 # ==============================================================================
 # 1. MASTER 32-TEAM NFL STADIUM & BASELINE FALLBACK REGISTRY
@@ -246,7 +247,14 @@ ELITE_FCS_KEYWORDS = {
     "south dakota coyotes", "villanova", "idaho vandals", "uc davis", "tarleton", "mercer"
 }
 
-ESPN_CODE_MAP = {"WSH": "WAS", "JAC": "JAX", "LA": "LAR"}
+ESPN_CODE_MAP = {
+    "WSH": "WAS", "JAC": "JAX", "LA": "LAR",
+    "TA&M": "TAMU", "MIZ": "MIZZ", "SC": "SCAR", "KU": "KAN",
+    "M-OH": "MIOH", "UL": "ULL", "BOIS": "BSU", "BUFF": "UB",
+    "UCONN": "CONN", "UMASS": "MASS", "TLS": "TLSA", "OKLA": "OU",
+    "BAMA": "ALA", "SFLA": "USF", "SMISS": "USM", "LATECH": "LT",
+    "SACST": "SAC", "CSUS": "SAC"
+}
 WEATHER_CACHE = {}
 
 # Name aliases for matching Odds API team names to ESPN FPI / Standings names
@@ -2427,6 +2435,11 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
         best_spread = max(spread_props, key=lambda x: x.get("ev_pct", -100.0))
         best_total = total_props[0] if total_props else None
         best_ml = max(ml_props, key=lambda x: x.get("model_win_prob", 0.0)) if ml_props else None
+        # v240 NCAA 58.7% ML Upset Floor: keep NCAA ML aligned with the Vegas favorite unless the dog clears >=58.7%
+        if best_ml and g.get("league") == "NCAA" and best_ml.get("is_underdog") and float(best_ml.get("model_win_prob", 0.0)) < NCAA_ML_UPSET_FLOOR:
+            fav_ml = next((m for m in ml_props if not m.get("is_underdog")), None)
+            if fav_ml:
+                best_ml = fav_ml
 
         # Reject live in-game garbage juice (e.g. +430 / -1000 during a 45-7 blowout) from poisoning pre-game ledger snapshots!
         has_live_garbage_odds = (
@@ -2968,16 +2981,23 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
                 fair_home = sr_tip_proj if sr_is_home else -sr_tip_proj
                 vegas_home = sr_line if sr_is_home else -sr_line
                 pick_home_ml = (fair_home <= 0.0)
+                e_lg_ml = entry.get("league", "NFL")
+                lg_ml = get_dedicated_engine(e_lg_ml)
+                raw_dog_ml = bool((vegas_home > 0.0) if pick_home_ml else (vegas_home < 0.0))
+                raw_wp_dec = lg_ml.win_prob(abs(fair_home))
+                # v240 NCAA 58.7% ML Upset Floor: stay with Vegas favorite if NCAA dog is below 58.7%
+                if e_lg_ml == "NCAA" and raw_dog_ml and raw_wp_dec < NCAA_ML_UPSET_FLOOR:
+                    pick_home_ml = (vegas_home <= 0.0)
+                    raw_dog_ml = False
+                    raw_wp_dec = 1.0 - raw_wp_dec
                 ml_team = entry["home_team"] if pick_home_ml else entry["away_team"]
-                is_dog_ml = bool((vegas_home > 0.0) if pick_home_ml else (vegas_home < 0.0))
-                lg_ml = get_dedicated_engine(entry.get("league", "NFL"))
-                ml_wp = round(lg_ml.win_prob(abs(fair_home)) * 100.0, 2)
+                ml_wp = round(raw_wp_dec * 100.0, 2)
                 m_rec = {
                     "pick_label": f"{ml_team} ML (Proj)",
                     "pick_team": ml_team,
                     "ml_odds": None,
-                    "is_underdog": is_dog_ml,
-                    "is_upset_pick": is_dog_ml,
+                    "is_underdog": raw_dog_ml,
+                    "is_upset_pick": raw_dog_ml,
                     "tip_win_pct": ml_wp,
                     "tip_ev_pct": 0.0,
                     "balls_deep_win_pct": ml_wp,
@@ -3044,7 +3064,7 @@ def update_and_grade_ledger(ledger, games_slate, espn_scores, now_utc, porkys_by
         m_rec = entry.get("ml_record")
         if m_rec and m_rec.get("result_tip") in ("HIT", "MISS"):
             tally("ml_winners", m_rec["result_tip"])
-            if m_rec.get("is_upset_pick") or m_rec.get("is_underdog"):
+            if m_rec.get("is_upset_pick"):
                 tally("ml_upsets", m_rec["result_tip"])
 
     summary_out = {}
@@ -3391,10 +3411,12 @@ def build_master_payload():
                         ml_ev_tip = calc_ev_pct(ml_prob_tip, ml_px)
                         ml_ev_bd = calc_ev_pct(ml_prob_bd, ml_px)
                         is_dog = bool(ml_px > 0)
-                        # UPGRADE #2 ML CREDIBILITY GUARDRAILS:
-                        # Prevent mega-underdog cupcakes (e.g. +1500 @ 9% win prob) from getting stamped SMASH or UPSET ALERT
-                        ml_credible = bool(ml_prob_tip >= 0.48 and ml_px <= 300)
-                        is_upset = bool(is_dog and ml_prob_tip > 0.50 and ml_px <= 300)
+                        # UPGRADE #2 + v240 NCAA 58.7% ML UPSET FLOOR:
+                        # Prevent mega-underdog cupcakes AND 50%-58.6% college coin-flip dogs from bleeding the ML vault
+                        upset_floor = NCAA_ML_UPSET_FLOOR if game_league == "NCAA" else 0.5001
+                        ml_cred_floor = NCAA_ML_UPSET_FLOOR if (game_league == "NCAA" and is_dog) else 0.48
+                        ml_credible = bool(ml_prob_tip >= ml_cred_floor and ml_px <= 300)
+                        is_upset = bool(is_dog and ml_prob_tip >= upset_floor and ml_px <= 300)
                         ml_badge = "SMASH" if (ml_ev_tip >= SMASH_EV_THRESHOLD and ml_credible) else ("PASS" if ml_ev_tip <= -19.0 else "TOO_CLOSE")
                         ml_pfx = "@" if is_away_ml else "vs"
                         props_board.append({
@@ -3656,7 +3678,7 @@ def build_master_payload():
             "league": "NFL_NCAA",
             "week": dynamic_week,
             "last_updated": now_iso,
-            "telemetry_version": "v239_ncaa_tiers_snapshot_weather_ml",
+            "telemetry_version": "v240_ncaa_ml587_espn_sync",
             "ranked_ncaa_teams": live_ranked_ncaa
         },
         "games": games_slate,
@@ -3671,7 +3693,7 @@ def write_atomic_json(payload, filepath=DATA_FILE):
 
 def run_daemon():
     print("=========================================================")
-    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v239 — 6-STAGE NCAA TIERS + ML GUARDRAILS + PRE-KICK SNAPSHOT + WEATHER BADGES)")
+    print(" DIXPIX QUANTITATIVE ENGINE — DUAL-LEAGUE LIVE DAEMON (v240 — NCAA 58.7% ML UPSET FLOOR + EXPANDED ESPN CODE SYNC)")
     print(f" Target Feed: ./{DATA_FILE} | Refresh Cadence: {POLL_INTERVAL_SECONDS}s")
     print("=========================================================")
 
