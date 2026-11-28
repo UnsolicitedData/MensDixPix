@@ -1426,6 +1426,61 @@
       .market-strip { grid-template-columns: 1fr; }
     }
 
+    /* Persistent Production Engine Overall (W13+) Strip in Ledger */
+    .engine-overall-strip {
+      background: linear-gradient(90deg, rgba(16, 185, 129, 0.08), rgba(6, 182, 212, 0.08));
+      border: 1px solid var(--emerald-bd);
+      border-radius: var(--r-md);
+      padding: 11px 14px;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      cursor: pointer;
+      transition: border-color 0.14s ease, background 0.14s ease;
+    }
+    .engine-overall-strip:hover {
+      border-color: var(--emerald);
+      background: linear-gradient(90deg, rgba(16, 185, 129, 0.13), rgba(6, 182, 212, 0.12));
+    }
+    .engine-overall-strip.active {
+      border-color: var(--cyan);
+      box-shadow: inset 0 0 0 1px rgba(6, 182, 212, 0.25);
+    }
+    .eos-metrics {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+    }
+    .eos-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(14, 16, 21, 0.72);
+      border: 1px solid var(--border);
+    }
+    .beta-tag {
+      display: inline-flex;
+      align-items: center;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      font-weight: 800;
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: rgba(245, 158, 11, 0.14);
+      border: 1px solid var(--gold-bd);
+      color: var(--gold);
+      letter-spacing: 0.04em;
+      margin-left: 4px;
+    }
+
   </style>
 </head>
 <body>
@@ -1570,7 +1625,7 @@
       <div class="section-head">
         <div>
           <h2 class="section-title">13-Module Fibonacci Compendium (&Sigma;F = 76)</h2>
-          <p class="section-sub">Full-slate module telemetry, Fibonacci tier weighting, and unified win-and-cover probabilities.</p>
+          <p class="section-sub">Full-slate module telemetry, Fibonacci tier weighting, and Home ATS spread-cover probabilities (with Outright ML Winner shown per matchup).</p>
         </div>
         <div class="chip-group">
           <button type="button" class="chip active" id="mod-tab-comp" onclick="window.setModulesSubView('compendium')">Compendium Matrix</button>
@@ -1583,7 +1638,7 @@
       <!-- Explicit Home-Team Perspective Callout -->
       <div class="home-perspective-banner">
         <div style="font-size:12.5px; color:var(--text-2); line-height:1.5;">
-          <strong style="color:var(--text-1);">Home-Team Frame Rule:</strong> Every column and variable in the 13-Module Compendium below feeds directly into the <strong style="color:var(--cyan);">Home Team's Unified Win &amp; Cover Probability (P_agg)</strong>. Even when M8 (Travel CSI) or M11 (10-Zone Altitude) measures strain hitting the visiting team, it enters the composite as an edge for or against the Home Team.
+          <strong style="color:var(--text-1);">Home-Team Frame Rule:</strong> Every column and variable in the 13-Module Compendium below feeds directly into the <strong style="color:var(--cyan);">Home Team's Spread-Cover Probability — Home ATS Cover (P_agg) (separate from the Outright ML Winner shown under each matchup)</strong>. Even when M8 (Travel CSI) or M11 (10-Zone Altitude) measures strain hitting the visiting team, it enters the composite as an edge for or against the Home Team.
         </div>
         <button type="button" class="chip" onclick="window.setAppView('faq')">Full Guide in FAGquestions →</button>
       </div>
@@ -1605,7 +1660,7 @@
           <strong>M13:</strong> First number (e.g. <code>1.08x</code>) is the underdog's ambush multiplier; the signed number in parentheses flips it into the <strong>Home Team's</strong> edge.
         </div>
         <div class="guide-tile">
-          <div class="mono" style="font-size:10.5px; font-weight:800; color:var(--gold); margin-bottom:5px;">MASTER SCORE (&Omega;_fib) &amp; UNIFIED P_agg</div>
+          <div class="mono" style="font-size:10.5px; font-weight:800; color:var(--gold); margin-bottom:5px;">MASTER SCORE (&Omega;_fib) &amp; HOME ATS COVER (P_agg)</div>
           Combines Tier 1 (34), Tier 2 (21), Tier 3 (13), Tier 4 (8), and M13 into the <strong>Home Team's</strong> aggregate cover probability. <strong>&gt; 52.4% (Green)</strong> clears -110 break-even for the Home side; <strong>&lt; 52.4% (Red)</strong> leans Away.
         </div>
       </div>
@@ -1641,7 +1696,7 @@
                 <th>M12 Turnover EPA</th>
                 <th>M13 Sacred Geo (M_rise)</th>
                 <th>Home Master (&Omega;_fib)</th>
-                <th>Home Win &amp; Cover (P_agg)</th>
+                <th>Home ATS Cover (P_agg)</th>
               </tr>
             </thead>
             <tbody id="compendium-board-body"></tbody>
@@ -1715,7 +1770,7 @@
     <div class="drawer-head">
       <div>
         <div style="font-weight:800; font-size:15px;" id="dossier-drawer-title">13-Module Game Dossier</div>
-        <div class="mono" style="font-size:11px; color:var(--text-2);" id="dossier-drawer-sub">HOME-TEAM UNIFIED P_AGG FRAME</div>
+        <div class="mono" style="font-size:11px; color:var(--text-2);" id="dossier-drawer-sub">HOME-TEAM ATS COVER (P_AGG) FRAME</div>
       </div>
       <button type="button" class="chip" onclick="window.closeModuleDossier()">✕</button>
     </div>
@@ -1745,6 +1800,6 @@
 
   <!-- Live Engine & Controller Scripts -->
   <script src="./js/math_engine.js?v=324"></script>
-  <script src="./js/app_controller.js?v=263"></script>
+  <script src="./js/app_controller.js?v=264"></script>
 </body>
 </html>
